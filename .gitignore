@@ -1,0 +1,23 @@
+# Environments
+venv/
+env/
+.env
+.spotify_token.json
+.cicada_config.json
+
+# MacOS
+.DS_Store
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# IDEs
+.vscode/
+.idea/
+
+# Logs and Reports
+cicada_report.json
+*.log
