@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional
 import httpx
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, BackgroundTasks, HTTPException
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from dotenv import set_key
@@ -42,6 +43,9 @@ metadata_manager = MetadataManager()
 audio_processor = AudioProcessor()
 download_manager = DownloadManager()
 playlist_manager = PlaylistManager()
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 CONFIG_FILE = Path(__file__).resolve().parent / ".cicada_config.json"
 
@@ -672,11 +676,12 @@ def select_file():
 async def get():
     html_content = """
     <!DOCTYPE html>
-    <html class="dark" lang="es">
+    <html class="dark" lang="es" data-theme="grafito" data-color="azul">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Cicada Mission Control</title>
+        <title>Cicada</title>
+        <link id="favicon-link" rel="icon" type="image/svg+xml" href="/static/logos/cicada_blue.svg">
         <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
         <link rel="preconnect" href="https://fonts.googleapis.com">
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -768,6 +773,14 @@ async def get():
           [data-color="morado"] { --accent: #8A2BE2; --accent-hover: #7b27c9; --accent-light: rgba(138, 43, 226, 0.15); }
           [data-color="naranja"] { --accent: #FF8800; --accent-hover: #e67a00; --accent-light: rgba(255, 136, 0, 0.15); }
           [data-color="rosa"] { --accent: #E62E6B; --accent-hover: #cc295f; --accent-light: rgba(230, 46, 107, 0.15); }
+
+          /* LOGO DE CICADA: se muestra la variante que coincide con el color de acento activo */
+          .cicada-logo-img { display: none; }
+          [data-color="azul"] .cicada-logo-img[data-logo-color="azul"],
+          [data-color="verde"] .cicada-logo-img[data-logo-color="verde"],
+          [data-color="morado"] .cicada-logo-img[data-logo-color="morado"],
+          [data-color="naranja"] .cicada-logo-img[data-logo-color="naranja"],
+          [data-color="rosa"] .cicada-logo-img[data-logo-color="rosa"] { display: block; }
         </style>
         <style>
             body {
@@ -892,7 +905,13 @@ async def get():
         <!-- Barra de navegación lateral -->
         <aside class="h-full w-[100px] bg-sidebar rounded-[20px] flex flex-col items-center py-8 z-50 text-sidebar">
             <div class="mb-12">
-                <span class="font-display-lg text-[24px] font-bold tracking-tighter cursor-pointer hover:opacity-70 transition-opacity" onclick="openAbout()" title="Sobre Cicada" data-i18n-title="about_tooltip">C.</span>
+                <div class="relative w-14 h-14 rounded-2xl overflow-hidden cursor-pointer hover:opacity-70 transition-opacity" onclick="openAbout()" title="Sobre Cicada" data-i18n-title="about_tooltip">
+                    <img src="/static/logos/cicada_blue.svg" class="cicada-logo-img absolute inset-0 w-full h-full object-cover" data-logo-color="azul" alt="Cicada">
+                    <img src="/static/logos/cicada_green.svg" class="cicada-logo-img absolute inset-0 w-full h-full object-cover" data-logo-color="verde" alt="Cicada">
+                    <img src="/static/logos/cicada_purple.svg" class="cicada-logo-img absolute inset-0 w-full h-full object-cover" data-logo-color="morado" alt="Cicada">
+                    <img src="/static/logos/cicada_orange.svg" class="cicada-logo-img absolute inset-0 w-full h-full object-cover" data-logo-color="naranja" alt="Cicada">
+                    <img src="/static/logos/cicada_pink.svg" class="cicada-logo-img absolute inset-0 w-full h-full object-cover" data-logo-color="rosa" alt="Cicada">
+                </div>
             </div>
             <nav class="flex-1 w-full flex flex-col items-stretch gap-4">
                 <button type="button" class="nav-item nav-item-active flex flex-col items-center py-4 transition-all w-full" data-view="process" onclick="showView('process')">
@@ -1041,8 +1060,12 @@ async def get():
             <div class="w-full max-w-sm mx-4 p-6 flex flex-col items-center gap-3 rounded-2xl border border-theme bg-card text-center">
                 <button type="button" onclick="closeAbout()" class="material-symbols-outlined text-muted/60 hover:text-main transition-colors self-end -mb-2 -mt-2 -mr-2">close</button>
 
-                <div class="w-16 h-16 rounded-2xl bg-sidebar flex items-center justify-center">
-                    <span class="font-display-lg text-[28px] font-bold tracking-tighter text-sidebar">C.</span>
+                <div class="relative w-16 h-16 rounded-2xl bg-sidebar flex items-center justify-center overflow-hidden">
+                    <img src="/static/logos/cicada_blue.svg" class="cicada-logo-img absolute inset-0 w-full h-full object-cover" data-logo-color="azul" alt="Cicada">
+                    <img src="/static/logos/cicada_green.svg" class="cicada-logo-img absolute inset-0 w-full h-full object-cover" data-logo-color="verde" alt="Cicada">
+                    <img src="/static/logos/cicada_purple.svg" class="cicada-logo-img absolute inset-0 w-full h-full object-cover" data-logo-color="morado" alt="Cicada">
+                    <img src="/static/logos/cicada_orange.svg" class="cicada-logo-img absolute inset-0 w-full h-full object-cover" data-logo-color="naranja" alt="Cicada">
+                    <img src="/static/logos/cicada_pink.svg" class="cicada-logo-img absolute inset-0 w-full h-full object-cover" data-logo-color="rosa" alt="Cicada">
                 </div>
 
                 <span class="font-display-lg text-[20px] font-bold tracking-tighter text-main">Cicada</span>
@@ -2882,6 +2905,22 @@ async def get():
                 document.documentElement.setAttribute('data-theme', theme);
             }
 
+            // Nombre de archivo de logo (en inglés) para cada color de acento (en español)
+            const LOGO_FILE_BY_COLOR = {
+                azul: 'blue',
+                verde: 'green',
+                morado: 'purple',
+                naranja: 'orange',
+                rosa: 'pink'
+            };
+
+            function setAccentColor(color) {
+                document.documentElement.setAttribute('data-color', color);
+                let favicon = document.getElementById('favicon-link');
+                let logoFile = LOGO_FILE_BY_COLOR[color] || 'blue';
+                if (favicon) favicon.href = '/static/logos/cicada_' + logoFile + '.svg';
+            }
+
             function selectColorUI(color) {
                 document.getElementById('settings_color').value = color;
                 document.querySelectorAll('.color-btn').forEach(function(btn) {
@@ -2891,7 +2930,7 @@ async def get():
                         btn.classList.remove('border-[2.5px]', 'border-[#1a1b20]', 'ring-[4px]', 'ring-accent-light');
                     }
                 });
-                document.documentElement.setAttribute('data-color', color);
+                setAccentColor(color);
             }
 
             async function loadSettingsIntoForm() {
@@ -2955,7 +2994,7 @@ async def get():
                     }
                     
                     document.documentElement.setAttribute('data-theme', payload.theme);
-                    document.documentElement.setAttribute('data-color', payload.color_accent);
+                    setAccentColor(payload.color_accent);
 
                     statusEl.textContent = t("settings_saved");
                     setTimeout(function() { statusEl.textContent = ""; }, 2500);
@@ -3006,7 +3045,7 @@ async def get():
             // Cargar y aplicar tema inicial
             fetch('/api/settings').then(r => r.json()).then(data => {
                 document.documentElement.setAttribute('data-theme', data.theme || "grafito");
-                document.documentElement.setAttribute('data-color', data.color_accent || "azul");
+                setAccentColor(data.color_accent || "azul");
             }).catch(e => console.error("Error loading theme", e));
             handleSpotifyAuthRedirect();
         </script>
@@ -3038,6 +3077,26 @@ def print_signature():
         pass
 
 if __name__ == "__main__":
+    import threading
     import uvicorn
+    from tray_icon import run_tray_icon
+
     print_signature()
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+
+    HOST = "127.0.0.1"
+    PORT = 8000
+    APP_URL = f"http://{HOST}:{PORT}"
+
+    server = uvicorn.Server(uvicorn.Config(app, host=HOST, port=PORT))
+    server_thread = threading.Thread(target=server.run, daemon=True)
+    server_thread.start()
+
+    def _quit_app():
+        server.should_exit = True
+        server_thread.join(timeout=5)
+
+    # El icono de bandeja del sistema debe correr en el hilo principal (AppKit,
+    # en macOS, sólo puede manejar su loop de eventos ahí). Si no hay entorno
+    # gráfico disponible, Cicada sigue funcionando como servidor sin el icono.
+    if not run_tray_icon(APP_URL, on_quit=_quit_app):
+        server_thread.join()
