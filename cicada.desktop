@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Cicada
+GenericName=Organizador musical
+Comment=Herramienta local de organización musical y sincronización automática de metadatos de alta fidelidad
+Exec=Cicada
+Icon=cicada_logo
+Terminal=false
+Categories=AudioVideo;Audio;Music;
+StartupNotify=true
+StartupWMClass=Cicada

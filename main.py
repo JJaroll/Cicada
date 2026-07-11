@@ -30,7 +30,9 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from dotenv import set_key
+from dotenv import load_dotenv, set_key
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 from metadata_manager import MetadataManager
 from audio_processor import AudioProcessor
