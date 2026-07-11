@@ -32,7 +32,11 @@ from pydantic import BaseModel
 
 from dotenv import load_dotenv, set_key
 
-load_dotenv(Path(__file__).resolve().parent / ".env")
+from app_paths import get_app_data_dir
+
+APP_DATA_DIR = get_app_data_dir()
+ENV_FILE = APP_DATA_DIR / ".env"
+load_dotenv(ENV_FILE)
 
 from metadata_manager import MetadataManager
 from audio_processor import AudioProcessor
@@ -49,7 +53,7 @@ playlist_manager = PlaylistManager()
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-CONFIG_FILE = Path(__file__).resolve().parent / ".cicada_config.json"
+CONFIG_FILE = APP_DATA_DIR / ".cicada_config.json"
 
 def load_app_config() -> Dict[str, Any]:
     if not CONFIG_FILE.exists():
@@ -442,9 +446,6 @@ async def set_library_config(request: LibraryConfigRequest):
     config["library_dir"] = request.library_dir
     save_app_config(config)
     return {"library_dir": request.library_dir}
-
-# Archivo .env del proyecto, donde viven las credenciales de las APIs externas
-ENV_FILE = Path(__file__).resolve().parent / ".env"
 
 @app.get("/api/settings")
 async def get_settings():

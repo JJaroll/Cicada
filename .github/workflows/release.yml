@@ -77,14 +77,12 @@ jobs:
       # ------------------------------------------------------------------
       # Paso 4 (solo macOS): empaquetar Cicada.app -> Cicada_macOS*.dmg
       # ------------------------------------------------------------------
-      - name: "[macOS] Crear DMG con hdiutil"
+      - name: "[macOS] Instalar create-dmg"
         if: matrix.platform == 'macos'
         run: |
-          mkdir -p out_release
-          hdiutil create -volname "Cicada" \
-            -srcfolder "dist/Cicada.app" \
-            -ov -format UDZO \
-            "out_release/Cicada_macOS_${{ matrix.arch_suffix }}.dmg"
+          brew untap aws/tap || true
+          export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
+          brew install create-dmg
 
       # ------------------------------------------------------------------
       # Paso 5 (solo Linux): appimagetool -> Cicada_Linux.AppImage

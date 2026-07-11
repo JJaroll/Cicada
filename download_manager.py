@@ -7,11 +7,12 @@ import re
 import subprocess
 import sys
 import time
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlencode, quote
 
 import httpx
+
+from app_paths import get_app_data_dir
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,7 @@ class DownloadManager:
     REDIRECT_URI = "http://127.0.0.1:8000/api/auth/callback"
     SCOPE = "playlist-read-private playlist-read-collaborative"
 
-    TOKEN_FILE = Path(__file__).resolve().parent / ".spotify_token.json"
+    TOKEN_FILE = get_app_data_dir() / ".spotify_token.json"
     TOKEN_EXPIRY_MARGIN_SECONDS = 60
 
     def __init__(self) -> None:
