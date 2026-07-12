@@ -1,14 +1,4 @@
 # -*- mode: python ; coding: utf-8 -*-
-"""
-PyInstaller spec para Cicada.
-Compila main.py como aplicación "windowed" (sin consola), incluyendo la
-carpeta static/ completa y las dependencias ocultas que PyInstaller no
-detecta automáticamente (uvicorn/fastapi usan carga dinámica de módulos,
-mutagen y yt_dlp registran plugins por introspección).
-
-Uso:
-    pyinstaller Cicada.spec
-"""
 
 import sys
 
@@ -20,44 +10,21 @@ if sys.platform == "win32":
 elif sys.platform == "darwin":
     APP_ICON = "static/logos/cicada_logo.icns"
 else:
-    # Linux no soporta iconos embebidos en el binario ELF; PyInstaller
-    # simplemente ignora el icono en este caso (se maneja vía .desktop).
     APP_ICON = "static/logos/cicada_logo.png"
 
 # --- Hidden imports ----------------------------------------------------------
 HIDDEN_IMPORTS = [
-    # uvicorn carga sus loops/protocolos dinámicamente
-    "uvicorn",
-    "uvicorn.logging",
-    "uvicorn.loops",
-    "uvicorn.loops.auto",
-    "uvicorn.protocols",
-    "uvicorn.protocols.http",
-    "uvicorn.protocols.http.auto",
-    "uvicorn.protocols.websockets",
-    "uvicorn.protocols.websockets.auto",
-    "uvicorn.lifespan",
-    "uvicorn.lifespan.on",
-    # fastapi / starlette y su stack de validación
-    "fastapi",
-    "fastapi.staticfiles",
-    "starlette",
-    "pydantic",
-    # metadatos de audio
-    "mutagen",
-    "mutagen.easyid3",
-    "mutagen.id3",
-    "mutagen.flac",
-    "mutagen.mp4",
-    "mutagen.oggvorbis",
-    # descarga de audio
-    "yt_dlp",
-    "yt_dlp.extractor",
-    # tray icon
+    "uvicorn", "uvicorn.logging", "uvicorn.loops", "uvicorn.loops.auto",
+    "uvicorn.protocols", "uvicorn.protocols.http", "uvicorn.protocols.http.auto",
+    "uvicorn.protocols.websockets", "uvicorn.protocols.websockets.auto",
+    "uvicorn.lifespan", "uvicorn.lifespan.on",
+    "fastapi", "fastapi.staticfiles", "starlette", "pydantic",
+    "mutagen", "mutagen.easyid3", "mutagen.id3", "mutagen.flac",
+    "mutagen.mp4", "mutagen.oggvorbis",
+    "yt_dlp", "yt_dlp.extractor",
     "pystray",
     "pystray._win32" if sys.platform == "win32" else "pystray._dummy",
-    "PIL",
-    "PIL.Image",
+    "PIL", "PIL.Image",
 ]
 
 if sys.platform == "darwin":
@@ -70,9 +37,7 @@ a = Analysis(
     ["main.py"],
     pathex=[],
     binaries=[],
-    datas=[
-        ("static", "static"),
-    ],
+    datas=[("static", "static")],
     hiddenimports=HIDDEN_IMPORTS,
     hookspath=[],
     hooksconfig={},
@@ -86,39 +51,70 @@ a = Analysis(
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 
-exe = EXE(
-    pyz,
-    a.scripts,
-    a.binaries,
-    a.zipfiles,
-    a.datas,
-    [],
-    name="Cicada",
-    debug=False,
-    bootloader_ignore_signals=False,
-    strip=False,
-    upx=True,
-    upx_exclude=[],
-    runtime_tmpdir=None,
-    console=False,
-    disable_windowed_traceback=False,
-    argv_emulation=False,
-    target_arch=None,
-    codesign_identity=None,
-    entitlements_file=None,
-    icon=APP_ICON,
-)
+# --- CONFIGURACIÓN DIVIDIDA SEGÚN SISTEMA OPERATIVO ---
 
-# En macOS, además del binario, se genera el bundle .app con el icono correcto.
 if sys.platform == "darwin":
-    app = BUNDLE(
+    # 🍏 MODO ONEDIR PARA MAC (Evita el cuelgue "usleep" del bootloader)
+    exe = EXE(
+        pyz,
+        a.scripts,
+        [],
+        exclude_binaries=True, # <-- Clave para que no sea un OneFile
+        name="Cicada",
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        console=False,
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+        icon=APP_ICON,
+    )
+    coll = COLLECT(
         exe,
+        a.binaries,
+        a.zipfiles,
+        a.datas,
+        strip=False,
+        upx=True,
+        upx_exclude=[],
+        name="Cicada"
+    )
+    app = BUNDLE(
+        coll, # <-- Se empaqueta el directorio recolectado, no el binario crudo
         name="Cicada.app",
         icon=APP_ICON,
         bundle_identifier="com.jjaroll.cicada",
         info_plist={
-            "CFBundleShortVersionString": "1.0.0",
+            "CFBundleShortVersionString": "1.0.2",
             "NSHighResolutionCapable": True,
             "LSUIElement": False,
         },
+    )
+else:
+    # 🪟🐧 MODO ONEFILE PARA WINDOWS / LINUX
+    exe = EXE(
+        pyz,
+        a.scripts,
+        a.binaries,
+        a.zipfiles,
+        a.datas,
+        [],
+        name="Cicada",
+        debug=False,
+        bootloader_ignore_signals=False,
+        strip=False,
+        upx=True,
+        upx_exclude=[],
+        runtime_tmpdir=None,
+        console=False,
+        disable_windowed_traceback=False,
+        argv_emulation=False,
+        target_arch=None,
+        codesign_identity=None,
+        entitlements_file=None,
+        icon=APP_ICON,
     )

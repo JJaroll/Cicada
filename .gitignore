@@ -21,3 +21,8 @@ __pycache__/
 # Logs and Reports
 cicada_report.json
 *.log
+
+# PyInstaller build artifacts
+build/
+dist/
+dist_installer/

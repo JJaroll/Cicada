@@ -41,10 +41,3 @@ def run_tray_icon(app_url: str, on_quit: Callable[[], None]) -> bool:
                 icon._status_item.button().image().setTemplate_(True)
             except Exception:
                 pass
-
-    try:
-        icon.run(setup=_setup)
-    except Exception as e:
-        print(f"[Cicada] El icono de bandeja del sistema se detuvo con un error: {e}")
-
-    return True
