@@ -45,15 +45,17 @@ class DownloadManager:
 
     def upgrade_ytdlp(self) -> None:
         try:
-            subprocess.run(
-                [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                check=True
-            )
+            # --- FIX: Bloquear actualización automática si la app está compilada ---
+            if not getattr(sys, 'frozen', False):
+                subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=True
+                )
         except Exception as e:
             logger.warning(f"No se pudo auto-actualizar yt-dlp en el inicio: {e}")
-
+            
     @staticmethod
     def _get_client_credentials() -> Tuple[str, str]:
         client_id = os.environ.get("SPOTIFY_CLIENT_ID")
