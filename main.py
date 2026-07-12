@@ -15,7 +15,15 @@ __maintainer__ = "JJaroll"
 __status__ = "Production"
 
 import mimetypes
+import sys
 import os
+
+if getattr(sys, 'frozen', False):
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w")
+
 import json
 import asyncio
 import random
@@ -657,21 +665,39 @@ async def websocket_endpoint(websocket: WebSocket):
 
 @app.get("/api/select_folder")
 def select_folder():
-    script = 'tell application "System Events" to activate\n tell application "System Events" to return POSIX path of (choose folder)'
     try:
-        result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
-        path = result.stdout.strip()
-        return {"path": path}
+        if sys.platform == "darwin":
+            script = 'tell application "System Events" to activate\n tell application "System Events" to return POSIX path of (choose folder)'
+            result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+            path = result.stdout.strip()
+            return {"path": path} if path else {"error": "Cancelado"}
+        elif sys.platform == "win32":
+            script = "Add-Type -AssemblyName System.windows.forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; if ($f.ShowDialog() -eq 'OK') { Write-Output $f.SelectedPath }"
+            kwargs = {'creationflags': 0x08000000} # Evita que se abra una consola negra
+            result = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, **kwargs)
+            path = result.stdout.strip()
+            return {"path": path} if path else {"error": "Cancelado"}
+        else:
+            return {"error": "Selección nativa no soportada. Copia y pega la ruta."}
     except Exception as e:
         return {"error": str(e)}
 
 @app.get("/api/select_file")
 def select_file():
-    script = 'tell application "System Events" to activate\n tell application "System Events" to return POSIX path of (choose file)'
     try:
-        result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
-        path = result.stdout.strip()
-        return {"path": path}
+        if sys.platform == "darwin":
+            script = 'tell application "System Events" to activate\n tell application "System Events" to return POSIX path of (choose file)'
+            result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
+            path = result.stdout.strip()
+            return {"path": path} if path else {"error": "Cancelado"}
+        elif sys.platform == "win32":
+            script = "Add-Type -AssemblyName System.windows.forms; $f = New-Object System.Windows.Forms.OpenFileDialog; if ($f.ShowDialog() -eq 'OK') { Write-Output $f.FileName }"
+            kwargs = {'creationflags': 0x08000000}
+            result = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, **kwargs)
+            path = result.stdout.strip()
+            return {"path": path} if path else {"error": "Cancelado"}
+        else:
+            return {"error": "Selección nativa no soportada. Copia y pega la ruta."}
     except Exception as e:
         return {"error": str(e)}
 
@@ -3082,7 +3108,10 @@ def print_signature():
 if __name__ == "__main__":
     import threading
     import uvicorn
+    import webbrowser
     from tray_icon import run_tray_icon
+    import sys
+    import os
 
     print_signature()
 
@@ -3095,11 +3124,17 @@ if __name__ == "__main__":
     server_thread.start()
 
     def _quit_app():
-        server.should_exit = True
-        server_thread.join(timeout=5)
+        os._exit(0)
 
-    # El icono de bandeja del sistema debe correr en el hilo principal (AppKit,
-    # en macOS, sólo puede manejar su loop de eventos ahí). Si no hay entorno
-    # gráfico disponible, Cicada sigue funcionando como servidor sin el icono.
+    @app.post("/api/shutdown")
+    async def shutdown_app():
+        threading.Timer(0.5, lambda: os._exit(0)).start()
+        return {"message": "Cicada apagada correctamente"}
+
+    # --- FIX DEFINITIVO: Lanzar el navegador de forma independiente ---
+    # Esto espera 1 segundo a que el servidor y el Dock estén listos,
+    # y luego abre la página sin bloquear la app nativa de macOS.
+    threading.Timer(1.0, lambda: webbrowser.open(APP_URL)).start()
+
     if not run_tray_icon(APP_URL, on_quit=_quit_app):
         server_thread.join()
