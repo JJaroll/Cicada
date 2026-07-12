@@ -10,7 +10,7 @@ Licencia: GNU GPLv3
 """
 
 __author__ = "JJaroll"
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __maintainer__ = "JJaroll"
 __status__ = "Production"
 
