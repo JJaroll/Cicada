@@ -1,6 +1,7 @@
 name: Release
 
 # Se dispara al hacer push de un tag de versión, ej: v1.0.0
+#v.1.0.1
 on:
   push:
     tags:
