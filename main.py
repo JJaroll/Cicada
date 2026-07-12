@@ -627,10 +627,16 @@ async def stream_track(path: str, request: Request):
         headers=headers,
     )
 
+from urllib.parse import quote
+
 @app.get("/api/auth/login")
 async def spotify_login():
-    auth_url = download_manager.get_auth_url()
-    return RedirectResponse(auth_url)
+    try:
+        auth_url = download_manager.get_auth_url()
+        return RedirectResponse(auth_url)
+    except ValueError as e:
+        error_msg = quote(str(e))
+        return RedirectResponse(url=f"/?spotify_auth=error&reason={error_msg}")
 
 @app.get("/api/auth/status")
 async def spotify_auth_status():
