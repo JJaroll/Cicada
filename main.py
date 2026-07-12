@@ -1072,7 +1072,7 @@ async def get():
                 </div>
 
                 <span class="font-display-lg text-[20px] font-bold tracking-tighter text-main">Cicada</span>
-                <span class="font-label-caps text-[11px] text-secondary" id="about-version" data-i18n="about_version">Versión 1.0.0</span>
+                <span class="font-label-caps text-[11px] text-secondary" id="about-version" data-i18n="about_version">Versión 1.0.1</span>
 
                 <p class="font-data-sm text-[13px] text-muted/70" data-i18n="about_description">Herramienta local de organización musical y sincronización automática de metadatos de alta fidelidad.</p>
 
@@ -3068,7 +3068,7 @@ def print_signature():
     ║ ╚█████╔╝╚█████╔╝ ██║  ██║██║  ██║╚██████╔╝███████╗███████╗           ║
     ║  ╚════╝  ╚════╝  ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚══════╝           ║
     ║                                                                      ║
-    ║   Cicada v1.0.0 - "Dando vida a los píxeles."                    ║
+    ║   Cicada v1.0.1 - "Dando vida a los píxeles."                    ║
     ║   GitHub: github.com/JJaroll                                         ║
     ║                                                                      ║
     ╚══════════════════════════════════════════════════════════════════════╝
