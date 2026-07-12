@@ -1,7 +1,6 @@
 name: Release
 
 # Se dispara al hacer push de un tag de versión, ej: v1.0.0
-#v.1.0.1
 on:
   push:
     tags:
@@ -17,7 +16,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest, macos-14, ubuntu-latest]
+        # Eliminamos la lista 'os: [...]' que causaba el conflicto.
+        # Solo usamos 'include' para definir explícitamente cada máquina.
         include:
           - os: windows-latest
             platform: windows
@@ -84,6 +84,24 @@ jobs:
           brew untap aws/tap || true
           export HOMEBREW_NO_REQUIRE_TAP_TRUST=1
           brew install create-dmg
+
+      - name: "[macOS] Empaquetar Cicada.app en un .dmg"
+        if: matrix.platform == 'macos'
+        run: |
+          mkdir -p out_release
+          DMG_NAME="out_release/Cicada_macOS_${{ matrix.arch_suffix }}.dmg"
+          rm -rf dmg_root && mkdir dmg_root
+          cp -R "dist/Cicada.app" "dmg_root/"
+          create-dmg \
+            --volname "Cicada" \
+            --window-size 500 300 \
+            --icon-size 100 \
+            --icon "Cicada.app" 125 150 \
+            --app-drop-link 375 150 \
+            "$DMG_NAME" \
+            "dmg_root/" || true
+          # Verificamos que se haya creado el DMG correctamente
+          test -f "$DMG_NAME"
 
       # ------------------------------------------------------------------
       # Paso 5 (solo Linux): appimagetool -> Cicada_Linux.AppImage
