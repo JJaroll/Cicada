@@ -1113,7 +1113,7 @@ async def get():
                 <p class="font-data-sm text-[13px] text-muted/70"><span data-i18n="about_author_label">Desarrollado por</span> <b>JJaroll</b></p>
                 <p class="font-data-sm text-[11px] text-muted/40" data-i18n="about_license">Distribuido bajo Licencia GNU GPLv3</p>
 
-                <button type="button" onclick="window.open('https://github.com/JJaroll', '_blank')" class="mt-2 w-full px-4 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors inline-flex items-center justify-center gap-1.5">
+                <button type="button" onclick="window.open('https://github.com/JJaroll/Cicada', '_blank')" class="mt-2 w-full px-4 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors inline-flex items-center justify-center gap-1.5">
                     <span class="material-symbols-outlined text-[16px]">code</span>
                     <span data-i18n="about_github_btn">Ver en GitHub</span>
                 </button>
@@ -3100,8 +3100,8 @@ def print_signature():
     ║ ╚█████╔╝╚█████╔╝ ██║  ██║██║  ██║╚██████╔╝███████╗███████╗           ║
     ║  ╚════╝  ╚════╝  ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚══════╝           ║
     ║                                                                      ║
-    ║   Cicada v1.0.0 - "Dando vida a los píxeles."                    ║
-    ║   GitHub: github.com/JJaroll                                         ║
+    ║   Cicada v1.0.0 - "Dando vida a los píxeles."                        ║
+    ║   github.com/JJaroll                                                 ║
     ║                                                                      ║
     ╚══════════════════════════════════════════════════════════════════════╝
     """
