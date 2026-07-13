@@ -42,7 +42,6 @@ def run_tray_icon(app_url: str, on_quit: Callable[[], None]) -> bool:
             except Exception:
                 pass
 
-    # --- FIX CRÍTICO: Estas son las líneas que faltaban para encender el ícono ---
     try:
         icon.run(setup=_setup)
     except Exception as e:

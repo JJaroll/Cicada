@@ -16,8 +16,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Eliminamos la lista 'os: [...]' que causaba el conflicto.
-        # Solo usamos 'include' para definir explícitamente cada máquina.
         include:
           - os: windows-latest
             platform: windows
@@ -99,8 +97,9 @@ jobs:
             --icon "Cicada.app" 125 150 \
             --app-drop-link 375 150 \
             "$DMG_NAME" \
-            "dmg_root/" || true
-          # Verificamos que se haya creado el DMG correctamente
+            "dmg_root/"
+            
+          # Verificación final
           test -f "$DMG_NAME"
 
       # ------------------------------------------------------------------

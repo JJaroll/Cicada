@@ -1,8 +1,7 @@
 """
-Fase 3 de Cicada: Emparejador Difuso y Compilador de Playlists locales.
+Emparejador Difuso y Compilador de Playlists locales.
 
-Conecta las playlists/álbumes resueltos desde Spotify (Fase 2,
-`download_manager.py`) con la biblioteca ya organizada localmente por Cicada,
+Conecta las playlists/álbumes resueltos desde Spotify con la biblioteca ya organizada localmente por Cicada,
 sin necesidad de volver a descargar nada: si la canción ya existe en disco,
 se reutiliza.
 
