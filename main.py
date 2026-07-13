@@ -10,7 +10,7 @@ Licencia: GNU GPLv3
 """
 
 __author__ = "JJaroll"
-__version__ = "1.0.1"
+__version__ = "1.0.0"
 __maintainer__ = "JJaroll"
 __status__ = "Production"
 
@@ -3100,7 +3100,7 @@ def print_signature():
     ║ ╚█████╔╝╚█████╔╝ ██║  ██║██║  ██║╚██████╔╝███████╗███████╗           ║
     ║  ╚════╝  ╚════╝  ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚══════╝           ║
     ║                                                                      ║
-    ║   Cicada v1.0.1 - "Dando vida a los píxeles."                    ║
+    ║   Cicada v1.0.0 - "Dando vida a los píxeles."                    ║
     ║   GitHub: github.com/JJaroll                                         ║
     ║                                                                      ║
     ╚══════════════════════════════════════════════════════════════════════╝
@@ -3137,9 +3137,6 @@ if __name__ == "__main__":
         threading.Timer(0.5, lambda: os._exit(0)).start()
         return {"message": "Cicada apagada correctamente"}
 
-    # --- FIX DEFINITIVO: Lanzar el navegador de forma independiente ---
-    # Esto espera 1 segundo a que el servidor y el Dock estén listos,
-    # y luego abre la página sin bloquear la app nativa de macOS.
     threading.Timer(1.0, lambda: webbrowser.open(APP_URL)).start()
 
     if not run_tray_icon(APP_URL, on_quit=_quit_app):

@@ -59,7 +59,7 @@ if sys.platform == "darwin":
         pyz,
         a.scripts,
         [],
-        exclude_binaries=True, # <-- Clave para que no sea un OneFile
+        exclude_binaries=True,
         name="Cicada",
         debug=False,
         bootloader_ignore_signals=False,
