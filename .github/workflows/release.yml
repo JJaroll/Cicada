@@ -19,9 +19,6 @@ jobs:
         include:
           - os: windows-latest
             platform: windows
-          - os: macos-13
-            platform: macos
-            arch_suffix: Intel
           - os: macos-latest
             platform: macos
             arch_suffix: ARM64
