@@ -55,22 +55,64 @@ Cicada identifica tus canciones, les aplica metadatos completos (título, artist
 
 ---
 
-## 🔑 Obtener Claves API
+## 📥 Descargas
 
-Para sacar el máximo provecho a Cicada, necesitas configurar un par de claves gratuitas en tu archivo `.env` o desde los Ajustes de la app.
+Puedes descargar la versión más reciente (v1.0.0) según tu sistema operativo:
 
-### 1️⃣ Spotify (Para leer playlists y metadatos extendidos)
-1. Ve al [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) e inicia sesión.
-2. Haz clic en "Create app".
-3. En la configuración de la app, como **Redirect URI**, debes agregar exactamente: `http://127.0.0.1:8000/api/auth/callback`
-4. Guarda los cambios y copia tu **Client ID** y **Client Secret**.
+*   **Windows:** [Cicada_Setup_Windows.exe](https://github.com/JJaroll/Cicada/releases/download/v1.0.0/Cicada_Setup_Windows.exe)
+*   **macOS (Apple Silicon):** [Cicada_macOS_ARM64.dmg](https://github.com/JJaroll/Cicada/releases/download/v1.0.0/Cicada_macOS_ARM64.dmg)
+*   **macOS (Intel):** [Cicada_macOS_Intel.dmg](https://github.com/JJaroll/Cicada/releases/download/v1.0.0/Cicada_macOS_Intel.dmg)
+*   **Linux:** [Cicada_Linux.AppImage](https://github.com/JJaroll/Cicada/releases/download/v1.0.0/Cicada_Linux.AppImage)
 
-### 2️⃣ AcoustID (Para identificar canciones difíciles)
-1. Ve a [AcoustID New Application](https://acoustid.org/new-application) e inicia sesión.
-2. Registra una nueva aplicación para obtener tu **Client Key** gratuita.
+> **⚠️ Nota para usuarios de macOS:**
+> Al ser una aplicación de código abierto, macOS podría impedir su ejecución inicial por seguridad (Gatekeeper). Si el sistema bloquea la app, simplemente dirígete a **Ajustes del Sistema > Privacidad y seguridad**, desplázate hasta el apartado de seguridad y haz clic en el botón **"Abrir de todos modos"** para autorizar la ejecución.
 
-> **Configuración:** Renombra el archivo `.env.example` a `.env` y pega tus claves allí. ¡También puedes introducirlas directamente en la interfaz de Cicada, abriendo la sección de Ajustes (⚙️)! Los cambios se aplican en caliente.
+---
 
+## 🔑 Configuración de Claves API
+
+Para habilitar las funciones de integración con Spotify y la identificación de pistas mediante AcoustID, es necesario configurar las credenciales correspondientes. Sigue los pasos descritos a continuación.
+
+### 1. Spotify (Gestión de Playlists)
+Esta integración permite a Cicada autenticar tu cuenta para leer playlists y sincronizar metadatos.
+
+1. Accede al [Spotify Developer Dashboard](https://developer.spotify.com/dashboard) e inicia sesión con tu cuenta de Spotify.
+2. Selecciona la opción **"Create App"**.
+3. Una vez creada, localiza el botón **"Edit Settings"**.
+4. En el campo **Redirect URI**, ingresa la siguiente dirección exacta:
+   `http://127.0.0.1:8000/api/auth/callback`
+5. Guarda los cambios. El sistema generará un **Client ID** y un **Client Secret**. Consérvalos para el siguiente paso.
+
+### 2. AcoustID (Identificación de Pistas)
+Este servicio permite a la aplicación identificar archivos de audio basándose en su huella acústica.
+
+1. Regístrate o inicia sesión en [AcoustID](https://acoustid.org/login).
+2. Registra una nueva aplicación para obtener una **API Key**.
+3. Al finalizar, obtendrás una clave única de identificación que deberás configurar en Cicada.
+
+---
+
+### Configuración en Cicada
+
+Puedes gestionar estas credenciales directamente desde la interfaz de la aplicación:
+
+1. Inicia **Cicada**.
+2. Dirígete a la sección de **Ajustes** (ícono de engranaje ⚙️) en la parte inferior de la barra lateral.
+3. Introduce el **Client ID**, **Client Secret** y la **API Key de AcoustID** en los campos correspondientes.
+4. Haz clic en **Guardar**.
+
+> **Nota:** La aplicación también permite gestionar estas claves de forma local mediante un archivo `.env` en la carpeta de instalación, reemplazando el archivo `env.example`. Sin embargo, el panel de Ajustes es el método recomendado para una gestión rápida.
+---
+
+### 🧩 Primeros pasos
+
+Una vez que hayas configurado tus claves API en los Ajustes (⚙️), el proceso de vinculación es automático:
+
+1. **Conexión:** Haz clic en el botón **"Conectar con Spotify"** dentro del modal de **Ajustes**.
+2. **Autorización:** Se abrirá tu navegador predeterminado. Inicia sesión en Spotify si se te solicita y acepta los permisos de acceso.
+3. **Sincronización:** Una vez aceptado, el navegador te devolverá a la aplicación. Cicada guardará tus credenciales de forma segura y ya estarás listo para importar tus listas.
+
+*Nota: Solo necesitas realizar este proceso la primera vez. La aplicación recordará tu sesión de forma segura para futuras ejecuciones.*
 ---
 
 ## 🚀 Uso
