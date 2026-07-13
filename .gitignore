@@ -4,6 +4,7 @@ env/
 .env
 .spotify_token.json
 .cicada_config.json
+compile_intel.sh
 
 # MacOS
 .DS_Store
