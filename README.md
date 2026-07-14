@@ -48,6 +48,7 @@ Esta integración permite a Cicada autenticar tu cuenta para leer playlists y si
 4. En el campo **Redirect URI**, ingresa la siguiente dirección exacta:
    `http://127.0.0.1:8000/api/auth/callback`
 5. Guarda los cambios. El sistema generará un **Client ID** y un **Client Secret**. Consérvalos para el siguiente paso.
+6. **Importante (Modo Desarrollo):** Debido a que la aplicación se encuentra en fase de desarrollo, debes autorizar tu cuenta explícitamente. En el mismo panel de tu proyecto en Spotify, ve a la sección **"Users and Access"** y añade el correo electrónico vinculado a tu cuenta de Spotify. Sin este paso, la aplicación no podrá conectarse.
 
 ### 2. AcoustID (Identificación de Pistas)
 Este servicio permite a la aplicación identificar archivos de audio basándose en su huella acústica.
