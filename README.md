@@ -21,40 +21,6 @@ Cicada identifica tus canciones, les aplica metadatos completos (título, artist
 
 ---
 
-## 📥 Descarga e Instalación
-
-### Requisitos Previos
-* Python 3.10 o superior.
-* [`ffmpeg`](https://ffmpeg.org/) instalado en el sistema (necesario para las descargas).
-* `chromaprint` (binario `fpcalc`) instalado en el sistema para la identificación por AcoustID (Opcional):
-  * **macOS:** `brew install chromaprint`
-  * **Debian/Ubuntu:** `apt-get install libchromaprint-tools`
-
-### Pasos de Instalación
-1. **Clonar el repositorio:**
-   ```bash
-   git clone https://github.com/JJaroll/Cicada.git
-   cd Cicada
-   ```
-
-2. **Crear un entorno virtual (Recomendado):**
-   ```bash
-   # Windows
-   python -m venv venv
-   .\venv\Scripts\activate
-
-   # macOS / Linux
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
-
-3. **Instalar dependencias:**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
----
-
 ## 📥 Descargas
 
 Puedes descargar la versión más reciente (v1.0.0) según tu sistema operativo:
@@ -82,6 +48,7 @@ Esta integración permite a Cicada autenticar tu cuenta para leer playlists y si
 4. En el campo **Redirect URI**, ingresa la siguiente dirección exacta:
    `http://127.0.0.1:8000/api/auth/callback`
 5. Guarda los cambios. El sistema generará un **Client ID** y un **Client Secret**. Consérvalos para el siguiente paso.
+6. **Importante (Modo Desarrollo):** Debido a que la aplicación se encuentra en fase de desarrollo, debes autorizar tu cuenta explícitamente. En el mismo panel de tu proyecto en Spotify, ve a la sección **"Users and Access"** y añade el correo electrónico vinculado a tu cuenta de Spotify. Sin este paso, la aplicación no podrá conectarse.
 
 ### 2. AcoustID (Identificación de Pistas)
 Este servicio permite a la aplicación identificar archivos de audio basándose en su huella acústica.
@@ -113,6 +80,40 @@ Una vez que hayas configurado tus claves API en los Ajustes (⚙️), el proceso
 3. **Sincronización:** Una vez aceptado, el navegador te devolverá a la aplicación. Cicada guardará tus credenciales de forma segura y ya estarás listo para importar tus listas.
 
 *Nota: Solo necesitas realizar este proceso la primera vez. La aplicación recordará tu sesión de forma segura para futuras ejecuciones.*
+---
+
+## 📥 Descarga e Instalación por Terminal
+
+### Requisitos Previos
+* Python 3.10 o superior.
+* [`ffmpeg`](https://ffmpeg.org/) instalado en el sistema (necesario para las descargas).
+* `chromaprint` (binario `fpcalc`) instalado en el sistema para la identificación por AcoustID (Opcional):
+  * **macOS:** `brew install chromaprint`
+  * **Debian/Ubuntu:** `apt-get install libchromaprint-tools`
+
+### Pasos de Instalación
+1. **Clonar el repositorio:**
+   ```bash
+   git clone https://github.com/JJaroll/Cicada.git
+   cd Cicada
+   ```
+
+2. **Crear un entorno virtual (Recomendado):**
+   ```bash
+   # Windows
+   python -m venv venv
+   .\venv\Scripts\activate
+
+   # macOS / Linux
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+
+3. **Instalar dependencias:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+   
 ---
 
 ## 🚀 Uso
