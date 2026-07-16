@@ -27,3 +27,7 @@ cicada_report.json
 build/
 dist/
 dist_installer/
+
+# Scripts de prueba manual (locales, no forman parte del release)
+test_kofi_banner.py
+test_update_banner.py

@@ -289,7 +289,16 @@ async def process_library(input_dir: str, output_dir: str):
     if cancel_requested:
         await manager.broadcast(json.dumps({"type": "done", "message": "Proceso detenido. (Reporte parcial guardado)", "report_path": str(report_path)}))
     else:
-        await manager.broadcast(json.dumps({"type": "done", "message": "Proceso completado.", "report_path": str(report_path)}))
+        tagged_count = len(report['successes']) + len(report['incomplete'])
+        elapsed_seconds = round(time.time() - start_time)
+        await manager.broadcast(json.dumps({
+            "type": "done",
+            "message": "Proceso completado.",
+            "report_path": str(report_path),
+            "count": tagged_count,
+            "total_files": total_files,
+            "elapsed_seconds": elapsed_seconds
+        }))
 
 async def _download_and_tag_tracks(tracks: List[Dict[str, Any]], output_dir: str):
     """ Descarga (YouTube Music) e inyecta metadata a una lista ya resuelta de tracks de Spotify. """
@@ -660,6 +669,36 @@ async def cancel_processing():
     cancel_requested = True
     return {"message": "Cancelando..."}
 
+@app.post("/api/debug/simulate_process_done")
+async def debug_simulate_process_done(count: int = 300, elapsed_seconds: int = 3725, total_files: Optional[int] = None):
+    """Solo para pruebas locales: emite el mismo mensaje 'done' que el WS envía al
+    terminar un procesamiento real, para poder verificar en el navegador el aviso de
+    apoyo (>250 canciones) sin tener que procesar una biblioteca real. `total_files`
+    permite simular un lote grande con canciones saltadas (total_files > count)."""
+    if total_files is None:
+        total_files = count
+    await manager.broadcast(json.dumps({
+        "type": "done",
+        "message": "Proceso completado.",
+        "report_path": "",
+        "count": count,
+        "total_files": total_files,
+        "elapsed_seconds": elapsed_seconds
+    }))
+    return {"status": "ok", "count": count, "total_files": total_files, "elapsed_seconds": elapsed_seconds}
+
+@app.post("/api/debug/simulate_update_available")
+async def debug_simulate_update_available(latest_version: str = "9.9.9", url: str = "https://github.com/JJaroll/Cicada/releases/latest"):
+    """Solo para pruebas locales: hace aparecer de inmediato el banner de "nueva versión
+    disponible" en cualquier pestaña abierta de Cicada, sin depender de que exista
+    realmente un release más nuevo en GitHub."""
+    await manager.broadcast(json.dumps({
+        "type": "debug_update_available",
+        "latest_version": latest_version,
+        "url": url
+    }))
+    return {"status": "ok", "latest_version": latest_version, "url": url}
+
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     await manager.connect(websocket)
@@ -706,6 +745,34 @@ def select_file():
             return {"error": "Selección nativa no soportada. Copia y pega la ruta."}
     except Exception as e:
         return {"error": str(e)}
+
+GITHUB_REPO = "JJaroll/Cicada"
+
+def _parse_version(v: str):
+    parts = re.findall(r'\d+', v or "")
+    return tuple(int(p) for p in parts) if parts else (0,)
+
+@app.get("/api/check_update")
+async def check_update():
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(
+                f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
+                headers={"Accept": "application/vnd.github+json", "User-Agent": "Cicada-App"}
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        latest_tag = data.get("tag_name", "")
+        latest_version = latest_tag.lstrip("vV")
+        return {
+            "update_available": _parse_version(latest_version) > _parse_version(__version__),
+            "current_version": __version__,
+            "latest_version": latest_version,
+            "url": data.get("html_url") or f"https://github.com/{GITHUB_REPO}/releases/latest"
+        }
+    except Exception:
+        return {"update_available": False}
 
 @app.get("/")
 async def get():
@@ -887,16 +954,16 @@ async def get():
                 flex-shrink: 0;
             }
 
-            .library-group-btn, .lang-btn {
+            .library-group-btn, .lang-btn, .library-view-btn {
                 background: var(--btn-bg);
                 color: var(--text-muted);
                 transition: background 0.2s, color 0.2s;
             }
-            .library-group-btn:hover, .lang-btn:hover {
+            .library-group-btn:hover, .lang-btn:hover, .library-view-btn:hover {
                 background: var(--btn-hover);
                 color: var(--text-main);
             }
-            .library-group-btn.active, .lang-btn.active {
+            .library-group-btn.active, .lang-btn.active, .library-view-btn.active {
                 background: var(--accent-light);
                 color: var(--accent);
             }
@@ -1004,7 +1071,10 @@ async def get():
                 </div>
 
                 <div class="flex flex-col gap-2 border-t border-theme pt-3">
-                    <span class="font-label-caps text-[11px] text-accent/70" data-i18n="settings_credentials_title">Claves de Acceso</span>
+                    <div class="flex items-center gap-1.5">
+                        <span class="font-label-caps text-[11px] text-accent/70" data-i18n="settings_credentials_title">Claves de Acceso</span>
+                        <button type="button" onclick="window.open('https://github.com/JJaroll/Cicada/blob/main/README.md#-configuraci%C3%B3n-de-claves-api', '_blank')" data-i18n-title="settings_credentials_help_tooltip" title="¿Cómo obtener las claves?" class="material-symbols-outlined text-[15px] text-muted/50 hover:text-accent transition-colors leading-none">help</button>
+                    </div>
 
                     <label class="font-label-caps text-[10px] text-muted/50" data-i18n="settings_acoustid_label">Clave de AcoustID</label>
                     <div class="flex gap-2">
@@ -1117,7 +1187,39 @@ async def get():
                     <span class="material-symbols-outlined text-[16px]">code</span>
                     <span data-i18n="about_github_btn">Ver en GitHub</span>
                 </button>
+                <button type="button" onclick="window.open('https://ko-fi.com/jjaroll', '_blank')" class="w-full px-4 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors inline-flex items-center justify-center gap-1.5">
+                    <span class="material-symbols-outlined text-[16px]">favorite</span>
+                    <span data-i18n="about_contribute_btn">Contribuir</span>
+                </button>
             </div>
+        </div>
+
+        <!-- Modal de apoyo (Ko-fi): aparece tras completar un proceso de más de 250 canciones -->
+        <div id="kofi-modal" class="hidden fixed inset-0 z-[100] items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div class="w-full max-w-sm mx-4 p-6 flex flex-col items-center gap-3 rounded-2xl border border-theme bg-card text-center">
+                <button type="button" onclick="closeKofiSupport()" class="material-symbols-outlined text-muted/60 hover:text-main transition-colors self-end -mb-2 -mt-2 -mr-2">close</button>
+
+                <span class="material-symbols-outlined text-accent text-[40px]">volunteer_activism</span>
+
+                <span class="font-display-lg text-[18px] font-bold tracking-tighter text-main" data-i18n="kofi_support_title">¡Gran trabajo!</span>
+
+                <p class="font-data-sm text-[13px] text-muted/70" id="kofi-support-message"></p>
+
+                <button type="button" onclick="window.open('https://ko-fi.com/jjaroll', '_blank')" class="mt-2 w-full px-4 py-2 rounded-lg bg-accent text-white font-label-caps text-[11px] hover:brightness-110 transition-all inline-flex items-center justify-center gap-1.5">
+                    <span class="material-symbols-outlined text-[16px]">favorite</span>
+                    <span data-i18n="about_contribute_btn">Contribuir</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Aviso de actualización: mensaje pequeño no bloqueante cuando hay un nuevo release estable en GitHub -->
+        <div id="update-banner" class="hidden fixed top-4 right-4 z-[200] max-w-xs p-3 rounded-xl border-2 border-yellow-400 bg-card shadow-lg items-start gap-2">
+            <span class="material-symbols-outlined text-accent text-[20px]">new_releases</span>
+            <div class="flex-1 flex flex-col gap-1">
+                <p class="font-data-sm text-[12px] text-main" id="update-banner-text"></p>
+                <a href="#" id="update-banner-link" target="_blank" rel="noopener" class="font-label-caps text-[11px] text-accent hover:underline" data-i18n="update_available_link">Ver última versión</a>
+            </div>
+            <button type="button" onclick="dismissUpdateBanner()" class="material-symbols-outlined text-muted/60 hover:text-main transition-colors text-[16px]">close</button>
         </div>
 
         <!-- Main Canvas: contenido por pestaña (izquierda) + módulo de proceso persistente (derecha) -->
@@ -1319,11 +1421,32 @@ async def get():
                             <button type="button" onclick="saveLibraryDirAndScan()" class="px-4 rounded-lg bg-accent text-white font-label-caps text-[11px] hover:brightness-110 transition-all" data-i18n="library_save_scan_btn">Guardar y Buscar Canciones</button>
                         </div>
                         <div class="flex items-center gap-2">
+                            <span class="material-symbols-outlined text-[18px] text-muted/40">search</span>
+                            <input type="text" id="library_search" placeholder="Buscar por título, artista o álbum..." data-i18n-placeholder="library_search_placeholder" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[13px]" oninput="filterLibrary()"/>
+                        </div>
+                        <div class="flex items-center gap-2 flex-wrap">
                             <span class="font-label-caps text-[11px] text-muted/50" data-i18n="library_group_by_label">Agrupar por</span>
                             <button type="button" class="library-group-btn active px-3 py-1 rounded-full font-label-caps text-[11px] transition-colors" data-group="all" onclick="setLibraryGrouping('all')" data-i18n="library_group_all">Todas</button>
                             <button type="button" class="library-group-btn px-3 py-1 rounded-full font-label-caps text-[11px] transition-colors" data-group="artist" onclick="setLibraryGrouping('artist')" data-i18n="library_group_artist">Artista</button>
                             <button type="button" class="library-group-btn px-3 py-1 rounded-full font-label-caps text-[11px] transition-colors" data-group="album" onclick="setLibraryGrouping('album')" data-i18n="library_group_album">Álbum</button>
                             <button type="button" class="library-group-btn px-3 py-1 rounded-full font-label-caps text-[11px] transition-colors" data-group="playlist" onclick="setLibraryGrouping('playlist')" data-i18n="library_group_playlist">Playlist</button>
+
+                            <span class="w-px h-4 bg-theme mx-1"></span>
+
+                            <button type="button" id="library-sort-btn" class="library-group-btn active px-3 py-1 rounded-full font-label-caps text-[11px] transition-colors inline-flex items-center gap-1" onclick="toggleLibrarySort()" data-i18n-title="library_sort_tooltip" title="Orden alfabético">
+                                <span class="material-symbols-outlined text-[14px]">sort_by_alpha</span>
+                                <span data-i18n="library_sort_alpha">A-Z</span>
+                            </button>
+
+                            <div class="flex items-center rounded-full bg-btn p-0.5 gap-0.5">
+                                <button type="button" id="library-view-list-btn" class="library-view-btn active p-1.5 rounded-full transition-colors inline-flex items-center" onclick="setLibraryViewMode('list')" data-i18n-title="library_view_list" title="Lista">
+                                    <span class="material-symbols-outlined text-[16px]">view_list</span>
+                                </button>
+                                <button type="button" id="library-view-grid-btn" class="library-view-btn p-1.5 rounded-full transition-colors inline-flex items-center" onclick="setLibraryViewMode('grid')" data-i18n-title="library_view_grid" title="Grilla">
+                                    <span class="material-symbols-outlined text-[16px]">grid_view</span>
+                                </button>
+                            </div>
+
                             <span class="ml-auto font-data-sm text-[12px] text-muted/40" id="library-track-count"></span>
                         </div>
                     </div>
@@ -1438,6 +1561,7 @@ async def get():
                     settings_spotify_connect_btn: "Conectar con Spotify",
                     settings_spotify_reconnect_btn: "Reconectar con Spotify",
                     settings_credentials_title: "Claves de Acceso",
+                    settings_credentials_help_tooltip: "¿Cómo obtener las claves?",
                     settings_acoustid_label: "Clave de AcoustID",
                     settings_spotify_id_label: "ID de Cliente de Spotify",
                     settings_spotify_secret_label: "Clave Secreta de Spotify",
@@ -1454,6 +1578,11 @@ async def get():
                     about_author_label: "Desarrollado por",
                     about_license: "Distribuido bajo Licencia GNU GPLv3",
                     about_github_btn: "Ver en GitHub",
+                    about_contribute_btn: "Contribuir",
+                    kofi_support_title: "¡Gran trabajo!",
+                    kofi_support_message: "Has etiquetado {count} canciones en {time}. Hacer esto a mano te habría tomado {manual_time}. Apoya a mantener Cicada libre de anuncios.",
+                    update_available_text: "Nueva versión disponible: v{version}",
+                    update_available_link: "Ver última versión",
                     common_choose: "Elegir", common_cancel: "Cancelar", common_save: "Guardar",
                     settings_saving: "Guardando...", settings_saved: "Guardado ✓",
                     process_folders_title: "Carpetas de Trabajo",
@@ -1531,6 +1660,10 @@ async def get():
                     library_scanning: "Escaneando biblioteca...", library_track_count_suffix: " canciones",
                     library_no_songs_in_folder: "No se encontraron canciones en esa carpeta.",
                     library_no_playlist_group: "Sin playlist",
+                    library_search_placeholder: "Buscar por título, artista o álbum...",
+                    library_no_search_results: "No se encontraron canciones que coincidan con la búsqueda.",
+                    library_sort_alpha: "A-Z", library_sort_tooltip: "Orden alfabético",
+                    library_view_list: "Lista", library_view_grid: "Grilla",
                     alert_error_saving_settings: "Error guardando ajustes: ",
                     player_waiting_status: "En espera", player_cicada_label: "Cicada", player_no_cover: "Sin carátula",
                     player_waiting_title: "En espera...", player_configure_source_hint: "Configura una fuente para comenzar",
@@ -1553,6 +1686,7 @@ async def get():
                     settings_spotify_connect_btn: "Connect with Spotify",
                     settings_spotify_reconnect_btn: "Reconnect with Spotify",
                     settings_credentials_title: "Access Keys",
+                    settings_credentials_help_tooltip: "How do I get these keys?",
                     settings_acoustid_label: "AcoustID Key",
                     settings_spotify_id_label: "Spotify Client ID",
                     settings_spotify_secret_label: "Spotify Client Secret",
@@ -1569,6 +1703,11 @@ async def get():
                     about_author_label: "Developed by",
                     about_license: "Distributed under the GNU GPLv3 License",
                     about_github_btn: "View on GitHub",
+                    about_contribute_btn: "Contribute",
+                    kofi_support_title: "Great work!",
+                    kofi_support_message: "You've tagged {count} songs in {time}. Doing this by hand would have taken you {manual_time}. Support keeping Cicada ad-free.",
+                    update_available_text: "New version available: v{version}",
+                    update_available_link: "View latest release",
                     common_choose: "Choose", common_cancel: "Cancel", common_save: "Save",
                     settings_saving: "Saving...", settings_saved: "Saved ✓",
                     process_folders_title: "Working Folders",
@@ -1646,6 +1785,10 @@ async def get():
                     library_scanning: "Scanning library...", library_track_count_suffix: " songs",
                     library_no_songs_in_folder: "No songs found in that folder.",
                     library_no_playlist_group: "No playlist",
+                    library_search_placeholder: "Search by title, artist or album...",
+                    library_no_search_results: "No songs match your search.",
+                    library_sort_alpha: "A-Z", library_sort_tooltip: "Alphabetical order",
+                    library_view_list: "List", library_view_grid: "Grid",
                     alert_error_saving_settings: "Error saving settings: ",
                     player_waiting_status: "Waiting", player_cicada_label: "Cicada", player_no_cover: "No cover",
                     player_waiting_title: "Waiting...", player_configure_source_hint: "Set up a source to get started",
@@ -1668,6 +1811,7 @@ async def get():
                     settings_spotify_connect_btn: "Spotifyで接続",
                     settings_spotify_reconnect_btn: "Spotifyに再接続",
                     settings_credentials_title: "アクセスキー",
+                    settings_credentials_help_tooltip: "キーの取得方法は?",
                     settings_acoustid_label: "AcoustIDキー",
                     settings_spotify_id_label: "SpotifyクライアントID",
                     settings_spotify_secret_label: "Spotifyクライアントシークレット",
@@ -1684,6 +1828,11 @@ async def get():
                     about_author_label: "開発者:",
                     about_license: "GNU GPLv3ライセンスの下で配布",
                     about_github_btn: "GitHubで見る",
+                    about_contribute_btn: "支援する",
+                    kofi_support_title: "お疲れ様でした!",
+                    kofi_support_message: "{count}曲にタグ付けし、所要時間は{time}でした。手作業で行うと{manual_time}かかっていたはずです。Cicadaを広告なしで維持するためにご支援ください。",
+                    update_available_text: "新しいバージョンがあります: v{version}",
+                    update_available_link: "最新リリースを見る",
                     common_choose: "選択", common_cancel: "キャンセル", common_save: "保存",
                     settings_saving: "保存中...", settings_saved: "保存しました ✓",
                     process_folders_title: "作業フォルダ",
@@ -1761,6 +1910,10 @@ async def get():
                     library_scanning: "ライブラリをスキャン中...", library_track_count_suffix: " 曲",
                     library_no_songs_in_folder: "このフォルダには楽曲が見つかりませんでした。",
                     library_no_playlist_group: "プレイリストなし",
+                    library_search_placeholder: "タイトル、アーティスト、アルバムで検索...",
+                    library_no_search_results: "検索に一致する曲が見つかりませんでした。",
+                    library_sort_alpha: "A-Z", library_sort_tooltip: "アルファベット順",
+                    library_view_list: "リスト", library_view_grid: "グリッド",
                     alert_error_saving_settings: "設定の保存中にエラーが発生しました: ",
                     player_waiting_status: "待機中", player_cicada_label: "Cicada", player_no_cover: "カバーなし",
                     player_waiting_title: "待機中...", player_configure_source_hint: "ソースを設定して開始してください",
@@ -2025,7 +2178,10 @@ async def get():
                     setStatusPill(isCancel ? "process_cancelled_status" : "process_completed_status", isCancel ? "#f43f5e" : "#10b981");
                     hasStartedProcessing = true;
                     trackSubtitle.textContent = isCancel ? t("process_stopped") : t("process_done_all");
+                    if (!isCancel) showKofiSupport(data.count, data.elapsed_seconds, data.total_files);
                     resetUi();
+                } else if (data.type === 'debug_update_available') {
+                    renderUpdateBanner(data);
                 } else {
                     let isError = data.type === 'error';
                     appendLog(data.message, isError ? "error" : "info");
@@ -2563,6 +2719,9 @@ async def get():
             let libraryTracks = [];
             let libraryPlaylists = [];
             let libraryGrouping = "all";
+            let libraryViewMode = "list";
+            let librarySortAlpha = true;
+            let librarySearchQuery = "";
             let libraryQueues = {};
             let currentQueueKey = null;
             let currentQueueIndex = -1;
@@ -2625,10 +2784,45 @@ async def get():
 
             function setLibraryGrouping(group) {
                 libraryGrouping = group;
-                document.querySelectorAll(".library-group-btn").forEach(function(btn) {
+                document.querySelectorAll(".library-group-btn[data-group]").forEach(function(btn) {
                     btn.classList.toggle("active", btn.dataset.group === group);
                 });
                 renderLibraryBrowser();
+            }
+
+            function filterLibrary() {
+                librarySearchQuery = document.getElementById("library_search").value.trim().toLowerCase();
+                renderLibraryBrowser();
+            }
+
+            function matchesLibrarySearch(track) {
+                if (!librarySearchQuery) return true;
+                return (track.title || "").toLowerCase().includes(librarySearchQuery) ||
+                    (track.artist || "").toLowerCase().includes(librarySearchQuery) ||
+                    (track.album || "").toLowerCase().includes(librarySearchQuery);
+            }
+
+            function toggleLibrarySort() {
+                librarySortAlpha = !librarySortAlpha;
+                document.getElementById("library-sort-btn").classList.toggle("active", librarySortAlpha);
+                renderLibraryBrowser();
+            }
+
+            function sortTracksAlpha(tracks) {
+                return tracks.slice().sort(function(a, b) { return (a.title || "").localeCompare(b.title || ""); });
+            }
+
+            function setLibraryViewMode(mode) {
+                libraryViewMode = mode;
+                document.getElementById("library-view-list-btn").classList.toggle("active", mode === "list");
+                document.getElementById("library-view-grid-btn").classList.toggle("active", mode === "grid");
+                renderLibraryBrowser();
+            }
+
+            function libraryTracksContainerClass() {
+                return libraryViewMode === "grid"
+                    ? "grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3"
+                    : "flex flex-col gap-0.5";
             }
 
             function libraryTrackRowHtml(track, queueKey, index) {
@@ -2643,42 +2837,67 @@ async def get():
                     '</div></div>';
             }
 
+            function libraryTrackCardHtml(track, queueKey, index) {
+                return '<div class="flex flex-col gap-2 p-2 rounded-lg cursor-pointer hover:bg-btn-hover transition-colors" onclick="playFromQueue(\\'' + queueKey + '\\', ' + index + ')">' +
+                    '<div class="relative w-full aspect-square rounded-lg bg-btn overflow-hidden flex items-center justify-center">' +
+                    '<span class="material-symbols-outlined text-[28px] text-muted/30">music_note</span>' +
+                    '<img src="/api/library/artwork?path=' + encodeURIComponent(track.path) + '" class="absolute inset-0 w-full h-full object-cover" loading="lazy" onerror="this.remove()" alt="">' +
+                    '</div>' +
+                    '<div class="overflow-hidden">' +
+                    '<p class="font-data-sm text-[13px] truncate">' + escapeHtml(track.title) + '</p>' +
+                    '<p class="font-label-caps text-[10px] text-muted/40 truncate">' + escapeHtml(track.artist || "") + '</p>' +
+                    '</div></div>';
+            }
+
             function libraryGroupSectionHtml(name, tracks, key) {
+                let rowFn = libraryViewMode === "grid" ? libraryTrackCardHtml : libraryTrackRowHtml;
                 return '<details class="library-group" open>' +
                     '<summary class="font-label-caps text-[13px] text-main font-bold py-2 mt-1">' + escapeHtml(name) +
                     ' <span class="font-normal text-[12px] text-muted">(' + tracks.length + ')</span></summary>' +
-                    '<div class="flex flex-col gap-0.5 pl-3 pb-2">' +
-                    tracks.map(function(track, i) { return libraryTrackRowHtml(track, key, i); }).join("") +
+                    '<div class="' + libraryTracksContainerClass() + ' pl-3 pb-2">' +
+                    tracks.map(function(track, i) { return rowFn(track, key, i); }).join("") +
                     '</div></details>';
             }
 
             function renderLibraryBrowser() {
                 let browserEl = document.getElementById("library-browser");
                 libraryQueues = {};
+                browserEl.className = "flex flex-col gap-1";
 
                 if (libraryTracks.length === 0) {
                     browserEl.innerHTML = '<p class="font-data-sm text-[13px] text-muted/40">' + t("library_no_songs_in_folder") + '</p>';
                     return;
                 }
 
+                let filtered = libraryTracks.filter(matchesLibrarySearch);
+                if (filtered.length === 0) {
+                    browserEl.innerHTML = '<p class="font-data-sm text-[13px] text-muted/40">' + t("library_no_search_results") + '</p>';
+                    return;
+                }
+
                 if (libraryGrouping === "all") {
-                    let sorted = libraryTracks.slice().sort(function(a, b) {
-                        return ((a.artist || "") + (a.album || "") + (a.title || "")).localeCompare((b.artist || "") + (b.album || "") + (b.title || ""));
-                    });
+                    let sorted = librarySortAlpha ? sortTracksAlpha(filtered) : filtered;
                     libraryQueues["all"] = sorted;
-                    browserEl.innerHTML = sorted.map(function(track, i) { return libraryTrackRowHtml(track, "all", i); }).join("");
+                    browserEl.className = libraryTracksContainerClass();
+                    let rowFn = libraryViewMode === "grid" ? libraryTrackCardHtml : libraryTrackRowHtml;
+                    browserEl.innerHTML = sorted.map(function(track, i) { return rowFn(track, "all", i); }).join("");
                     return;
                 }
 
                 if (libraryGrouping === "playlist") {
                     let sections = libraryPlaylists.map(function(p) {
                         let pathSet = new Set(p.paths);
-                        return {name: p.name, tracks: libraryTracks.filter(function(track) { return pathSet.has(track.path); })};
+                        return {name: p.name, tracks: filtered.filter(function(track) { return pathSet.has(track.path); })};
                     });
                     let assigned = new Set();
                     sections.forEach(function(s) { s.tracks.forEach(function(track) { assigned.add(track.path); }); });
-                    let unassigned = libraryTracks.filter(function(track) { return !assigned.has(track.path); });
+                    let unassigned = filtered.filter(function(track) { return !assigned.has(track.path); });
                     if (unassigned.length > 0) sections.push({name: t("library_no_playlist_group"), tracks: unassigned});
+
+                    if (librarySortAlpha) {
+                        sections.sort(function(a, b) { return a.name.localeCompare(b.name); });
+                        sections.forEach(function(s) { s.tracks = sortTracksAlpha(s.tracks); });
+                    }
 
                     browserEl.innerHTML = sections.filter(function(s) { return s.tracks.length > 0; }).map(function(s) {
                         let key = "pl:" + s.name;
@@ -2693,16 +2912,19 @@ async def get():
                     : function(track) { return track.artist || t("track_unknown_artist"); };
 
                 let groups = {};
-                libraryTracks.forEach(function(track) {
+                filtered.forEach(function(track) {
                     let key = groupKeyFn(track);
                     if (!groups[key]) groups[key] = [];
                     groups[key].push(track);
                 });
-                let groupNames = Object.keys(groups).sort(function(a, b) { return a.localeCompare(b); });
+                let groupNames = Object.keys(groups);
+                if (librarySortAlpha) groupNames.sort(function(a, b) { return a.localeCompare(b); });
+
                 browserEl.innerHTML = groupNames.map(function(name) {
                     let key = libraryGrouping + ":" + name;
-                    libraryQueues[key] = groups[name];
-                    return libraryGroupSectionHtml(name, groups[name], key);
+                    let tracks = librarySortAlpha ? sortTracksAlpha(groups[name]) : groups[name];
+                    libraryQueues[key] = tracks;
+                    return libraryGroupSectionHtml(name, tracks, key);
                 }).join("");
             }
 
@@ -2915,6 +3137,74 @@ async def get():
                 modal.classList.remove("flex");
             }
 
+            // --- Modal de apoyo (Ko-fi): tras completar un lote grande de canciones ---
+            const KOFI_SUPPORT_THRESHOLD = 250;
+            const MANUAL_TAGGING_MINUTES_PER_SONG = 5; // estimación de tiempo de etiquetado manual por canción
+
+            function formatDurationWords(totalSeconds) {
+                totalSeconds = Math.max(0, Math.round(totalSeconds));
+                let h = Math.floor(totalSeconds / 3600);
+                let m = Math.floor((totalSeconds % 3600) / 60);
+                let s = totalSeconds % 60;
+                if (h > 0) return h + "h " + m + "m";
+                if (m > 0) return m + "m " + s + "s";
+                return s + "s";
+            }
+
+            function showKofiSupport(count, elapsedSeconds, totalFiles) {
+                if (!count) return;
+                if (!totalFiles || totalFiles < KOFI_SUPPORT_THRESHOLD) return;
+
+                let manualSeconds = count * MANUAL_TAGGING_MINUTES_PER_SONG * 60;
+                let message = t("kofi_support_message", {
+                    count: count,
+                    time: formatDurationWords(elapsedSeconds),
+                    manual_time: formatDurationWords(manualSeconds)
+                });
+
+                document.getElementById("kofi-support-message").textContent = message;
+                let modal = document.getElementById("kofi-modal");
+                modal.classList.remove("hidden");
+                modal.classList.add("flex");
+            }
+
+            function closeKofiSupport() {
+                let modal = document.getElementById("kofi-modal");
+                modal.classList.add("hidden");
+                modal.classList.remove("flex");
+            }
+
+            // --- Aviso de actualización: comprueba el último release estable de GitHub ---
+            function renderUpdateBanner(data) {
+                if (localStorage.getItem("cicada_dismissed_update") === data.latest_version) return;
+
+                document.getElementById("update-banner-text").textContent = t("update_available_text", {version: data.latest_version});
+                let link = document.getElementById("update-banner-link");
+                link.href = data.url;
+                link.textContent = t("update_available_link");
+
+                let banner = document.getElementById("update-banner");
+                banner.dataset.latestVersion = data.latest_version;
+                banner.classList.remove("hidden");
+                banner.classList.add("flex");
+            }
+
+            function checkForUpdates() {
+                fetch('/api/check_update').then(function(r) { return r.json(); }).then(function(data) {
+                    if (!data.update_available) return;
+                    renderUpdateBanner(data);
+                }).catch(function(e) { console.error("Error comprobando actualizaciones:", e); });
+            }
+
+            function dismissUpdateBanner() {
+                let banner = document.getElementById("update-banner");
+                if (banner.dataset.latestVersion) {
+                    localStorage.setItem("cicada_dismissed_update", banner.dataset.latestVersion);
+                }
+                banner.classList.add("hidden");
+                banner.classList.remove("flex");
+            }
+
             function toggleSecretVisibility(inputId, btn) {
                 let input = document.getElementById(inputId);
                 if (input.type === "password") {
@@ -3083,6 +3373,7 @@ async def get():
                 setAccentColor(data.color_accent || "azul");
             }).catch(e => console.error("Error loading theme", e));
             handleSpotifyAuthRedirect();
+            checkForUpdates();
         </script>
     </body>
     </html>
