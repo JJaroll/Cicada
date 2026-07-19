@@ -10,7 +10,7 @@ Licencia: GNU GPLv3
 """
 
 __author__ = "JJaroll"
-__version__ = "1.0.0"
+__version__ = "1.1.1"
 __maintainer__ = "JJaroll"
 __status__ = "Production"
 
@@ -1174,7 +1174,7 @@ async def get():
                 </div>
 
                 <span class="font-display-lg text-[20px] font-bold tracking-tighter text-main">Cicada</span>
-                <span class="font-label-caps text-[11px] text-secondary" id="about-version" data-i18n="about_version">Versión 1.0.1</span>
+                <span class="font-label-caps text-[11px] text-secondary" id="about-version" data-i18n="about_version">Versión 1.1.1</span>
 
                 <p class="font-data-sm text-[13px] text-muted/70" data-i18n="about_description">Herramienta local de organización musical y sincronización automática de metadatos de alta fidelidad.</p>
 
@@ -1182,6 +1182,7 @@ async def get():
 
                 <p class="font-data-sm text-[13px] text-muted/70"><span data-i18n="about_author_label">Desarrollado por</span> <b>JJaroll</b></p>
                 <p class="font-data-sm text-[11px] text-muted/40" data-i18n="about_license">Distribuido bajo Licencia GNU GPLv3</p>
+                <p class="font-data-sm text-[11px] text-muted/40 mt-1"><a href="https://github.com/JJaroll/Cicada/blob/main/TERMS.md" target="_blank" class="hover:text-main underline decoration-dashed underline-offset-2 transition-colors" data-i18n="about_terms">Términos y Condiciones</a></p>
 
                 <button type="button" onclick="window.open('https://github.com/JJaroll/Cicada', '_blank')" class="mt-2 w-full px-4 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors inline-flex items-center justify-center gap-1.5">
                     <span class="material-symbols-outlined text-[16px]">code</span>
@@ -1573,10 +1574,11 @@ async def get():
                     settings_input_dir_label: "Carpeta de Origen (Metadatos)",
                     settings_output_dir_label: "Carpeta de Destino (Metadatos)",
                     about_tooltip: "Sobre Cicada",
-                    about_version: "Versión 1.0.0",
+                    about_version: "Versión 1.1.1",
                     about_description: "Herramienta local de organización musical y sincronización automática de metadatos de alta fidelidad.",
                     about_author_label: "Desarrollado por",
                     about_license: "Distribuido bajo Licencia GNU GPLv3",
+                    about_terms: "Términos y Condiciones",
                     about_github_btn: "Ver en GitHub",
                     about_contribute_btn: "Contribuir",
                     kofi_support_title: "¡Gran trabajo!",
@@ -1698,10 +1700,11 @@ async def get():
                     settings_input_dir_label: "Source Folder (Metadata)",
                     settings_output_dir_label: "Destination Folder (Metadata)",
                     about_tooltip: "About Cicada",
-                    about_version: "Version 1.0.0",
+                    about_version: "Version 1.1.1",
                     about_description: "Local music organization tool with high-fidelity automatic metadata syncing.",
                     about_author_label: "Developed by",
                     about_license: "Distributed under the GNU GPLv3 License",
+                    about_terms: "Terms and Conditions",
                     about_github_btn: "View on GitHub",
                     about_contribute_btn: "Contribute",
                     kofi_support_title: "Great work!",
@@ -1823,10 +1826,11 @@ async def get():
                     settings_input_dir_label: "入力フォルダ（メタデータ）",
                     settings_output_dir_label: "出力フォルダ（メタデータ）",
                     about_tooltip: "Cicadaについて",
-                    about_version: "バージョン 1.0.0",
+                    about_version: "バージョン 1.1.1",
                     about_description: "高精度なメタデータの自動同期を行う、ローカル音楽整理ツール。",
                     about_author_label: "開発者:",
                     about_license: "GNU GPLv3ライセンスの下で配布",
+                    about_terms: "利用規約",
                     about_github_btn: "GitHubで見る",
                     about_contribute_btn: "支援する",
                     kofi_support_title: "お疲れ様でした!",
@@ -3391,7 +3395,7 @@ def print_signature():
     ║ ╚█████╔╝╚█████╔╝ ██║  ██║██║  ██║╚██████╔╝███████╗███████╗           ║
     ║  ╚════╝  ╚════╝  ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚══════╝           ║
     ║                                                                      ║
-    ║   Cicada v1.0.0 - "Dando vida a los píxeles."                        ║
+    ║   Cicada v1.1.1 - "Dando vida a los píxeles."                        ║
     ║   github.com/JJaroll                                                 ║
     ║                                                                      ║
     ╚══════════════════════════════════════════════════════════════════════╝

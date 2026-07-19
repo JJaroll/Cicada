@@ -10,7 +10,7 @@
 ; ============================================================================
 
 #define MyAppName "Cicada"
-#define MyAppVersion "1.0.0"
+#define MyAppVersion "1.1.1"
 #define MyAppPublisher "JJaroll"
 #define MyAppURL "https://github.com/JJaroll"
 #define MyAppExeName "Cicada.exe"
