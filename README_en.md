@@ -123,7 +123,7 @@ Once you have configured your API keys in the Settings (⚙️), the linking pro
 Run the main file:
 
 ```bash
-python main.py
+python run.py
 ```
 *(On macOS, you can simply double-click the `start.command` file)*
 
@@ -135,7 +135,7 @@ This will open the application in your web browser at `http://127.0.0.1:8000`.
 
 | File | Responsibility |
 |---|---|
-| `main.py` | FastAPI server, REST/WebSocket endpoints, and interface (HTML/CSS/JS). |
+| `run.py` | Entry point. The app lives in `cicada/core/main.py` (FastAPI server, REST/WebSocket endpoints, HTML/CSS/JS interface). |
 | `metadata_manager.py` | Orchestrates waterfall identification (Shazam → AcoustID → iTunes). |
 | `acoustid_fallback.py` | Secondary identification by acoustic fingerprint. |
 | `audio_processor.py` | Tagging and saving files to the hard drive. |

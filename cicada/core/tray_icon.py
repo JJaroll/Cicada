@@ -3,7 +3,12 @@ import webbrowser
 from pathlib import Path
 from typing import Callable
 
-TRAY_ICON_PATH = Path(__file__).resolve().parent / "static" / "tray_icon.png"
+_BASE_DIR = (
+    Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parents[2]
+)
+TRAY_ICON_PATH = _BASE_DIR / "static" / "tray_icon.png"
 
 
 def run_tray_icon(app_url: str, on_quit: Callable[[], None]) -> bool:

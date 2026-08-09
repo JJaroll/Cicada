@@ -5,7 +5,8 @@ from pathlib import Path
 
 def get_app_data_dir() -> Path:
     if not getattr(sys, "frozen", False):
-        return Path(__file__).resolve().parent
+        # cicada/core/app_paths.py -> raíz del repo
+        return Path(__file__).resolve().parents[2]
 
     if sys.platform == "win32":
         base = Path(os.environ.get("APPDATA", Path.home()))

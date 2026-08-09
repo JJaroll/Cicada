@@ -30,6 +30,7 @@ import random
 import re
 import subprocess
 import time
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import httpx
@@ -38,19 +39,26 @@ from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+# El módulo iPod se construye por fases (ver docs/IPOD_INTEGRATION.md). Aún no
+# existe en Fase 0, así que el import es perezoso: la app arranca sin él.
+try:
+    from cicada.ipod.device import scanner as ipod_scanner
+except ImportError:
+    ipod_scanner = None
+
 from dotenv import load_dotenv, set_key
 
-from app_paths import get_app_data_dir
+from cicada.core.app_paths import get_app_data_dir
 
 APP_DATA_DIR = get_app_data_dir()
 ENV_FILE = APP_DATA_DIR / ".env"
 load_dotenv(ENV_FILE)
 
-from metadata_manager import MetadataManager
-from audio_processor import AudioProcessor
-from download_manager import DownloadManager
-from playlist_manager import PlaylistManager
-import acoustid_fallback
+from cicada.core.metadata_manager import MetadataManager
+from cicada.core.audio_processor import AudioProcessor
+from cicada.core.download_manager import DownloadManager
+from cicada.core.playlist_manager import PlaylistManager
+from cicada.core import acoustid_fallback
 
 app = FastAPI()
 metadata_manager = MetadataManager()
@@ -58,7 +66,11 @@ audio_processor = AudioProcessor()
 download_manager = DownloadManager()
 playlist_manager = PlaylistManager()
 
-STATIC_DIR = Path(__file__).resolve().parent / "static"
+STATIC_DIR = (
+    Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parents[2]
+) / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 CONFIG_FILE = APP_DATA_DIR / ".cicada_config.json"
@@ -100,6 +112,10 @@ class ManualMatchRequest(BaseModel):
     file_path: str
     library_dir: str
 
+class DownloadSingleTrackRequest(BaseModel):
+    track: Dict[str, Any]
+    output_dir: str
+
 class GeneratePlaylistRequest(BaseModel):
     playlist_name: str
     file_paths: List[str]
@@ -107,6 +123,13 @@ class GeneratePlaylistRequest(BaseModel):
 
 class LibraryConfigRequest(BaseModel):
     library_dir: str
+
+class TrackActionRequest(BaseModel):
+    path: str
+
+class TrackInfoUpdateRequest(BaseModel):
+    path: str
+    metadata: Dict[str, Any]
 
 class SettingsRequest(BaseModel):
     acoustid_api_key: Optional[str] = None
@@ -406,6 +429,35 @@ async def list_spotify_playlists():
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error inesperado listando playlists: {e}")
 
+# --- IPOD ENDPOINTS ---
+@app.get("/api/ipod/scan")
+async def scan_ipods():
+    if ipod_scanner is None:
+        raise HTTPException(status_code=503, detail="El módulo iPod aún no está disponible en esta versión.")
+    try:
+        ipods = ipod_scanner.scan_for_ipods()
+        # Convert dataclasses to dict for JSON serialization
+        import dataclasses
+        ipod_list = [dataclasses.asdict(ip) for ip in ipods]
+        return {"ipods": ipod_list}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error escaneando iPods: {e}")
+
+@app.post("/api/ipod/sync")
+async def sync_ipod(request: Request):
+    # Endpoint de sincronización (Stub)
+    return {"message": "Sincronización iniciada", "unsupported_formats": []}
+
+@app.get("/api/ipod/backups")
+async def list_ipod_backups():
+    # Endpoint para listar backups (Stub)
+    return {"backups": []}
+
+@app.post("/api/ipod/backups")
+async def create_ipod_backup():
+    # Endpoint para crear backup manual (Stub)
+    return {"message": "Backup creado"}
+
 def _match_tracks_against_library(tracks: List[Dict[str, Any]], library_dir: str) -> List[Dict[str, Any]]:
     local_index = playlist_manager.index_local_library(library_dir)
     matches = []
@@ -439,6 +491,76 @@ async def manual_match_track(request: ManualMatchRequest):
         return {"path": new_path}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error re-etiquetando el archivo: {e}")
+
+@app.post("/api/spotify/download_single")
+async def download_single_track(request: DownloadSingleTrackRequest):
+    try:
+        search_query = f"ytsearch1:{request.track.get('artist', '')} {request.track.get('title', '')} Topic"
+        file_path = await download_manager.download_audio(search_query, request.output_dir)
+        new_path = await audio_processor.apply_metadata_and_move(file_path, request.output_dir, request.track)
+        return {"path": str(new_path)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/library/show_in_folder")
+async def show_in_folder(request: TrackActionRequest):
+    import platform
+    import subprocess
+    import os
+    path = request.path
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="El archivo no existe.")
+    try:
+        sys_plat = platform.system()
+        if sys_plat == 'Darwin':
+            subprocess.run(['open', '-R', path])
+        elif sys_plat == 'Windows':
+            subprocess.run(['explorer', '/select,', path])
+        else: # Linux
+            subprocess.run(['dbus-send', '--session', '--dest=org.freedesktop.FileManager1', '--type=method_call', '--print-reply', '/org/freedesktop/FileManager1', 'org.freedesktop.FileManager1.ShowItems', f'array:string:"file://{path}"', 'string:""'])
+        return {"message": "Carpeta abierta"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error abriendo la carpeta: {e}")
+
+@app.delete("/api/library/track")
+async def delete_track(request: TrackActionRequest):
+    import os
+    path = request.path
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="El archivo no existe.")
+    try:
+        os.remove(path)
+        return {"message": "Archivo eliminado correctamente"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error eliminando el archivo: {e}")
+
+@app.get("/api/library/track_info")
+async def get_track_info(path: str):
+    import os
+    if not os.path.exists(path):
+        raise HTTPException(status_code=404, detail="El archivo no existe.")
+    try:
+        meta = await asyncio.to_thread(audio_processor.read_full_metadata, path)
+        return meta
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error leyendo metadatos: {e}")
+
+@app.post("/api/library/track_info")
+async def update_track_info(request: TrackInfoUpdateRequest):
+    import os
+    if not os.path.exists(request.path):
+        raise HTTPException(status_code=404, detail="El archivo original no existe.")
+    
+    config = load_app_config()
+    library_dir = config.get("library_dir")
+    if not library_dir:
+        raise HTTPException(status_code=400, detail="El directorio de la biblioteca no está configurado.")
+
+    try:
+        new_path = await audio_processor.apply_metadata_and_move(request.path, library_dir, request.metadata)
+        return {"path": new_path, "message": "Metadatos actualizados"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error actualizando metadatos: {e}")
 
 @app.post("/api/library/generate_playlist")
 async def generate_playlist_file(request: GeneratePlaylistRequest):
@@ -939,12 +1061,47 @@ async def get():
                 background: rgba(0, 0, 0, 0.05);
             }
 
+            /* --- Context Menu --- */
+            #library-context-menu {
+                position: fixed;
+                z-index: 200;
+                width: 220px;
+                background-color: var(--bg-card); /* Solid background */
+                border: 1px solid var(--theme);
+                border-radius: 12px;
+                box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+                display: none;
+                flex-direction: column;
+                padding: 6px;
+            }
+            .context-menu-item {
+                padding: 8px 12px;
+                font-size: 13px;
+                cursor: pointer;
+                border-radius: 6px;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                color: var(--text-main);
+                transition: background-color 0.15s;
+            }
+            .context-menu-item:hover {
+                background-color: var(--btn-hover);
+            }
+            .context-menu-item.danger {
+                color: #ef4444;
+            }
+            .context-menu-item.danger:hover {
+                background-color: rgba(239, 68, 68, 0.1);
+            }
+
             /* --- Vistas (PROCESS / SPOTIFY / PLAYLISTS / LIBRARY) --- */
             .view { display: none; }
             #view-process.active { display: grid; }
             #view-spotify.active { display: flex; }
             #view-playlists.active { display: grid; }
             #view-library.active { display: flex; }
+            #view-ipod.active { display: flex; }
 
             .cicada-checkbox {
                 width: 16px;
@@ -1031,6 +1188,10 @@ async def get():
                 <button type="button" class="nav-item nav-item-inactive flex flex-col items-center py-4 transition-all w-full" data-view="library" onclick="showView('library')">
                     <span class="material-symbols-outlined text-[24px] mb-1">library_music</span>
                     <span class="font-label-caps text-[11px]" data-i18n="nav_library">Biblioteca</span>
+                </button>
+                <button type="button" class="nav-item nav-item-inactive flex flex-col items-center py-4 transition-all w-full" data-view="ipod" onclick="showView('ipod')">
+                    <span class="material-symbols-outlined text-[24px] mb-1">developer_board</span>
+                    <span class="font-label-caps text-[11px]" data-i18n="nav_ipod">iPod</span>
                 </button>
             </nav>
             <div class="mt-auto flex flex-col items-center gap-6">
@@ -1221,6 +1382,134 @@ async def get():
                 <a href="#" id="update-banner-link" target="_blank" rel="noopener" class="font-label-caps text-[11px] text-accent hover:underline" data-i18n="update_available_link">Ver última versión</a>
             </div>
             <button type="button" onclick="dismissUpdateBanner()" class="material-symbols-outlined text-muted/60 hover:text-main transition-colors text-[16px]">close</button>
+        </div>
+
+        <!-- Context Menu de Biblioteca -->
+        <div id="library-context-menu">
+            <div class="context-menu-item" onclick="contextShowInFolder()">
+                <span class="material-symbols-outlined text-[18px]">folder_open</span>
+                <span data-i18n="ctx_show_in_folder">Mostrar en la biblioteca</span>
+            </div>
+            <div class="context-menu-item" onclick="contextGetInfo()">
+                <span class="material-symbols-outlined text-[18px]">info</span>
+                <span data-i18n="ctx_get_info">Obtener información</span>
+            </div>
+            <div class="context-menu-item danger" onclick="contextDeleteTrack()">
+                <span class="material-symbols-outlined text-[18px]">delete</span>
+                <span data-i18n="ctx_delete_track">Eliminar de biblioteca</span>
+            </div>
+        </div>
+
+        <!-- Modal de Obtener Información -->
+        <div id="track-info-modal" class="hidden fixed inset-0 z-[100] items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div class="w-full max-w-lg mx-4 p-6 flex flex-col gap-4 max-h-[85vh] overflow-y-auto custom-scrollbar rounded-2xl border border-theme bg-card">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-accent text-[22px]">info</span>
+                        <span class="font-label-caps text-[14px] tracking-widest text-main" data-i18n="track_info_title">Información de la pista</span>
+                    </div>
+                    <button type="button" onclick="closeTrackInfoModal()" class="material-symbols-outlined text-muted/60 hover:text-main transition-colors">close</button>
+                </div>
+                
+                <div class="flex gap-4 border-b border-theme pb-2">
+                    <button type="button" class="font-label-caps text-[12px] text-accent border-b-2 border-accent pb-1" id="tab-info-details" onclick="switchTrackInfoTab('details')" data-i18n="track_info_tab_details">Detalles</button>
+                    <button type="button" class="font-label-caps text-[12px] text-muted/60 hover:text-main pb-1" id="tab-info-artwork" onclick="switchTrackInfoTab('artwork')" data-i18n="track_info_tab_artwork">Carátula</button>
+                </div>
+
+                <div id="track-info-details-panel" class="flex flex-col gap-3">
+                    <div class="flex gap-2">
+                        <div class="flex-1 flex flex-col gap-1">
+                            <label class="font-label-caps text-[10px] text-muted/50">Título</label>
+                            <input type="text" id="info_title" class="cicada-input rounded-lg px-3 py-2 text-[13px]"/>
+                        </div>
+                        <div class="flex-1 flex flex-col gap-1">
+                            <label class="font-label-caps text-[10px] text-muted/50">Artista</label>
+                            <input type="text" id="info_artist" class="cicada-input rounded-lg px-3 py-2 text-[13px]"/>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-2">
+                        <div class="flex-1 flex flex-col gap-1">
+                            <label class="font-label-caps text-[10px] text-muted/50">Álbum</label>
+                            <input type="text" id="info_album" class="cicada-input rounded-lg px-3 py-2 text-[13px]"/>
+                        </div>
+                        <div class="flex-1 flex flex-col gap-1">
+                            <label class="font-label-caps text-[10px] text-muted/50">Artista del álbum</label>
+                            <input type="text" id="info_album_artist" class="cicada-input rounded-lg px-3 py-2 text-[13px]"/>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <div class="flex-1 flex flex-col gap-1">
+                            <label class="font-label-caps text-[10px] text-muted/50">Compositor</label>
+                            <input type="text" id="info_composer" class="cicada-input rounded-lg px-3 py-2 text-[13px]"/>
+                        </div>
+                        <div class="flex-1 flex flex-col gap-1">
+                            <label class="font-label-caps text-[10px] text-muted/50">Agrupación</label>
+                            <input type="text" id="info_grouping" class="cicada-input rounded-lg px-3 py-2 text-[13px]"/>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <div class="flex-1 flex flex-col gap-1">
+                            <label class="font-label-caps text-[10px] text-muted/50">Género</label>
+                            <input type="text" id="info_genre" class="cicada-input rounded-lg px-3 py-2 text-[13px]"/>
+                        </div>
+                        <div class="w-20 flex flex-col gap-1">
+                            <label class="font-label-caps text-[10px] text-muted/50">Año</label>
+                            <input type="text" id="info_year" class="cicada-input rounded-lg px-3 py-2 text-[13px]"/>
+                        </div>
+                        <div class="w-16 flex flex-col gap-1">
+                            <label class="font-label-caps text-[10px] text-muted/50">BPM</label>
+                            <input type="text" id="info_bpm" class="cicada-input rounded-lg px-3 py-2 text-[13px]"/>
+                        </div>
+                    </div>
+                    
+                    <div class="flex gap-2 items-center">
+                        <div class="flex flex-col gap-1">
+                            <label class="font-label-caps text-[10px] text-muted/50">Pista</label>
+                            <div class="flex items-center gap-1">
+                                <input type="text" id="info_track_number" class="cicada-input rounded-lg px-2 py-1 text-[13px] w-12 text-center"/>
+                                <span class="text-muted/50 text-[12px]">de</span>
+                                <input type="text" id="info_track_count" class="cicada-input rounded-lg px-2 py-1 text-[13px] w-12 text-center"/>
+                            </div>
+                        </div>
+                        <div class="flex flex-col gap-1 ml-4">
+                            <label class="font-label-caps text-[10px] text-muted/50">Disco</label>
+                            <div class="flex items-center gap-1">
+                                <input type="text" id="info_disc_number" class="cicada-input rounded-lg px-2 py-1 text-[13px] w-12 text-center"/>
+                                <span class="text-muted/50 text-[12px]">de</span>
+                                <input type="text" id="info_disc_count" class="cicada-input rounded-lg px-2 py-1 text-[13px] w-12 text-center"/>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 ml-auto mt-4">
+                            <input type="checkbox" id="info_compilation" class="cicada-checkbox"/>
+                            <label for="info_compilation" class="font-data-sm text-[12px] text-muted/70">Es compilación</label>
+                        </div>
+                    </div>
+                    
+                    <div class="flex flex-col gap-1 mt-1">
+                        <label class="font-label-caps text-[10px] text-muted/50">Comentarios</label>
+                        <textarea id="info_comments" class="cicada-input rounded-lg px-3 py-2 text-[13px] h-16 resize-none"></textarea>
+                    </div>
+                </div>
+
+                <div id="track-info-artwork-panel" class="hidden flex-col items-center gap-4 py-4">
+                    <div class="relative w-48 h-48 rounded-lg bg-btn overflow-hidden flex items-center justify-center border border-theme">
+                        <span class="material-symbols-outlined text-[48px] text-muted/30">music_note</span>
+                        <img id="info_artwork_img" class="absolute inset-0 w-full h-full object-cover hidden" alt="">
+                    </div>
+                    <label class="px-4 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[12px] cursor-pointer transition-colors">
+                        <span data-i18n="track_info_change_artwork">Cambiar Carátula</span>
+                        <input type="file" id="info_artwork_input" class="hidden" accept="image/jpeg, image/png, image/webp" onchange="handleArtworkSelection(event)"/>
+                    </label>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-2">
+                    <button type="button" onclick="closeTrackInfoModal()" class="px-5 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[12px] transition-colors" data-i18n="common_cancel">Cancelar</button>
+                    <button type="button" onclick="saveTrackInfo()" class="px-5 py-2 rounded-lg bg-accent text-white font-label-caps text-[12px] hover:brightness-110 transition-all" data-i18n="common_save">Guardar</button>
+                </div>
+            </div>
         </div>
 
         <!-- Main Canvas: contenido por pestaña (izquierda) + módulo de proceso persistente (derecha) -->
@@ -1457,6 +1746,66 @@ async def get():
                         </div>
                     </div>
                 </div>
+
+                <!-- Vista: Sincronizar iPod -->
+                <div id="view-ipod" class="view h-full flex-col gap-4 overflow-hidden hidden">
+                    
+                    <!-- Top section: Device Info -->
+                    <div class="glass-card p-6 flex flex-col gap-4">
+                        <div class="flex justify-between items-center border-b border-theme pb-4">
+                            <h2 class="font-label-caps tracking-widest text-[16px] text-main">Dispositivo Conectado</h2>
+                            <button onclick="scanIpod()" class="bg-accent text-white px-4 py-2 rounded-full font-label-caps text-[12px] hover:scale-105 transition-transform flex items-center gap-2">
+                                <span class="material-symbols-outlined text-[16px]">search</span>
+                                Escanear
+                            </button>
+                        </div>
+                        
+                        <div id="ipod-info-container" class="flex items-center gap-6 hidden">
+                            <!-- Placeholder for an iPod image or generic icon -->
+                            <div class="w-24 h-32 bg-black/10 dark:bg-white/10 rounded-lg flex items-center justify-center">
+                                <span class="material-symbols-outlined text-[48px] text-muted">mp3</span>
+                            </div>
+                            <div class="flex-1 flex flex-col gap-2">
+                                <h3 id="ipod-name" class="font-label-caps text-[18px] text-main">--</h3>
+                                <p id="ipod-model" class="font-data-sm text-[13px] text-muted">Modelo: --</p>
+                                <p id="ipod-capacity" class="font-data-sm text-[13px] text-muted">Capacidad: --</p>
+                                <p id="ipod-format" class="font-data-sm text-[13px] text-muted">Formato: --</p>
+                            </div>
+                        </div>
+                        <div id="ipod-no-device" class="text-center py-6 text-muted font-data-sm text-[13px]">
+                            No se ha detectado ningún iPod. Asegúrate de que esté conectado y montado.
+                        </div>
+                    </div>
+
+                    <!-- Middle section: Sync & Backup (side by side) -->
+                    <div class="flex gap-4 h-full">
+                        <!-- Sync -->
+                        <div class="glass-card p-6 flex-1 flex flex-col gap-4 relative">
+                            <h2 class="font-label-caps tracking-widest text-[16px] text-main border-b border-theme pb-4">Sincronización</h2>
+                            <p class="font-data-sm text-[13px] text-muted mb-4">
+                                Transfiere la biblioteca local de Cicada hacia tu iPod. (La conversión de audio se informará antes de transferir si el iPod no soporta ciertos formatos).
+                            </p>
+                            <div class="mt-auto flex justify-end">
+                                <button onclick="syncIpod()" id="btn-sync-ipod" class="bg-secondary text-white px-6 py-2 rounded-full font-label-caps text-[12px] hover:scale-105 transition-transform opacity-50 cursor-not-allowed" disabled>
+                                    Sincronizar Biblioteca
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Backup -->
+                        <div class="glass-card p-6 flex-1 flex flex-col gap-4 relative">
+                            <h2 class="font-label-caps tracking-widest text-[16px] text-main border-b border-theme pb-4">Respaldos</h2>
+                            <p class="font-data-sm text-[13px] text-muted mb-4">
+                                Crea una copia de seguridad manual de los archivos internos del iPod.
+                            </p>
+                            <div class="mt-auto flex justify-end">
+                                <button onclick="backupIpod()" id="btn-backup-ipod" class="border border-secondary text-secondary px-6 py-2 rounded-full font-label-caps text-[12px] hover:bg-secondary hover:text-white transition-colors opacity-50 cursor-not-allowed" disabled>
+                                    Crear Backup Manual
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Módulo derecho: Progreso (Metadatos/Descarga) o Reproductor (Biblioteca). Oculto en Playlist. -->
@@ -1618,6 +1967,11 @@ async def get():
                     spotify_download_selected_btn: "Descargar Seleccionadas",
                     alert_paste_link_first: "Pega un link de Spotify primero.",
                     spotify_analyzing_status: "Analizando enlace...", spotify_analyzing_btn: "Analizando...",
+                    ctx_show_in_folder: "Mostrar en la biblioteca",
+                    ctx_get_info: "Obtener información",
+                    ctx_delete_track: "Eliminar de biblioteca",
+                    track_info_title: "Información de la pista", track_info_tab_details: "Detalles", track_info_tab_artwork: "Carátula",
+                    track_info_change_artwork: "Cambiar Carátula",
                     error_unknown: "Error desconocido", error_prefix: "Error: ",
                     spotify_could_not_analyze: "No se pudo analizar el enlace.",
                     spotify_no_tracks_found: "No se encontraron pistas en ese enlace.",
@@ -2583,14 +2937,15 @@ async def get():
                     let statusIcon = matched
                         ? '<span class="material-symbols-outlined text-[16px] text-secondary" title="Encontrada">check_circle</span>'
                         : '<span class="material-symbols-outlined text-[16px] text-muted/40" title="No encontrada">help</span>';
-                    // Solo las pistas no encontradas automáticamente pueden asociarse a mano;
+                    // Solo las pistas no encontradas automáticamente pueden asociarse a mano o descargarse;
                     // las que ya matchearon quedan intactas.
                     let manualBtn = matched ? '' :
-                        '<button type="button" onclick="manualMatchTrack(' + i + ')" title="Asociar con un archivo de mi biblioteca" class="material-symbols-outlined text-[16px] text-accent/80 hover:text-accent">attach_file</button>';
+                        '<button type="button" onclick="manualMatchTrack(' + i + ')" title="Asociar con un archivo de mi biblioteca" class="material-symbols-outlined text-[16px] text-accent/80 hover:text-accent">attach_file</button>' +
+                        '<button type="button" onclick="downloadMissingTrack(' + i + ')" title="Descargar e inyectar metadatos" class="material-symbols-outlined text-[16px] text-secondary hover:text-accent ml-1">download</button>';
                     return '<div class="replicate-track-row flex items-center gap-2 ' + rowClasses + ' border border-transparent rounded-lg p-2" ' +
                         'draggable="true" data-index="' + i + '" ' +
                         'ondragstart="handleTrackDragStart(event, ' + i + ')" ondragend="handleTrackDragEnd(event)" ' +
-                        'ondragover="handleTrackDragOver(event)" ondragleave="handleTrackDragLeave(event)" ondrop="handleTrackDrop(event, ' + i + ')">' +
+                        'ondragover="handleTrackDragOver(event)" ondrop="handleTrackDrop(event)">' +
                         '<span class="material-symbols-outlined text-[18px] text-muted/40 cursor-grab" title="Arrastrar para reordenar">drag_indicator</span>' +
                         '<input type="checkbox" class="cicada-checkbox" data-index="' + i + '" ' + (matched && m.included ? 'checked' : '') + ' ' + (matched ? '' : 'disabled') + ' onchange="toggleReplicateTrackIncluded(' + i + ', this.checked)"/>' +
                         statusIcon +
@@ -2604,39 +2959,51 @@ async def get():
 
             // --- Drag and drop libre para reordenar el preview de la playlist ---
             let dragSourceIndex = null;
+            let draggedNode = null;
 
             function handleTrackDragStart(e, index) {
                 dragSourceIndex = index;
+                draggedNode = e.currentTarget;
                 e.dataTransfer.effectAllowed = "move";
                 e.dataTransfer.setData("text/plain", String(index));
-                e.currentTarget.classList.add("opacity-40");
+                e.currentTarget.classList.add("opacity-40", "dragging");
             }
 
             function handleTrackDragEnd(e) {
-                e.currentTarget.classList.remove("opacity-40");
-                document.querySelectorAll(".replicate-track-row").forEach(function(row) {
-                    row.classList.remove("border-accent");
-                });
-                dragSourceIndex = null;
+                e.currentTarget.classList.remove("opacity-40", "dragging");
+                draggedNode = null;
             }
 
             function handleTrackDragOver(e) {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = "move";
-                e.currentTarget.classList.add("border-accent");
+                
+                if (draggedNode && draggedNode !== e.currentTarget) {
+                    const bounding = e.currentTarget.getBoundingClientRect();
+                    const offset = bounding.y + (bounding.height / 2);
+                    if (e.clientY - offset > 0) {
+                        e.currentTarget.after(draggedNode);
+                    } else {
+                        e.currentTarget.before(draggedNode);
+                    }
+                }
             }
 
-            function handleTrackDragLeave(e) {
-                e.currentTarget.classList.remove("border-accent");
-            }
-
-            function handleTrackDrop(e, targetIndex) {
+            function handleTrackDrop(e) {
                 e.preventDefault();
-                e.currentTarget.classList.remove("border-accent");
-                if (dragSourceIndex === null || dragSourceIndex === targetIndex) return;
-                let moved = replicateMatches.splice(dragSourceIndex, 1)[0];
-                replicateMatches.splice(targetIndex, 0, moved);
+                if (dragSourceIndex === null) return;
+                
+                const container = document.getElementById("replicate-track-list");
+                const newRows = container.querySelectorAll(".replicate-track-row");
+                let newMatches = [];
+                newRows.forEach(row => {
+                    let oldIdx = parseInt(row.dataset.index);
+                    newMatches.push(replicateMatches[oldIdx]);
+                });
+                
+                replicateMatches = newMatches;
                 dragSourceIndex = null;
+                draggedNode = null;
                 renderReplicateTrackList();
             }
 
@@ -2683,6 +3050,55 @@ async def get():
                     renderReplicateTrackList();
                 } catch (e) {
                     alert(t("alert_error_associating_file") + e.message);
+                }
+            }
+
+            async function downloadMissingTrack(index) {
+                let entry = replicateMatches[index];
+                if (!entry) return;
+
+                let libraryDir = document.getElementById("library_dir").value.trim();
+                if (!libraryDir) {
+                    alert(t("alert_choose_local_library_first"));
+                    return;
+                }
+
+                let confirmed = confirm("¿Deseas descargar '" + entry.title + "' a tu biblioteca? (La descarga se procesará de forma inmediata, esto puede tomar unos segundos)");
+                if (!confirmed) return;
+
+                let originalBtnHTML = null;
+                let btn = null;
+                // Encontrar el botón visualmente para mostrar estado de carga
+                let row = document.querySelector('.replicate-track-row[data-index="' + index + '"]');
+                if (row) {
+                    btn = row.querySelector('button[title*="Descargar"]');
+                    if (btn) {
+                        originalBtnHTML = btn.innerHTML;
+                        btn.innerHTML = 'hourglass_empty';
+                        btn.classList.add('animate-spin');
+                        btn.disabled = true;
+                    }
+                }
+
+                try {
+                    let res = await fetch('/api/spotify/download_single', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({track: entry, output_dir: libraryDir})
+                    });
+                    let data = await res.json();
+                    if (!res.ok) throw new Error(data.detail || t("error_unknown"));
+
+                    replicateMatches[index].path = data.path;
+                    replicateMatches[index].included = true;
+                    renderReplicateTrackList();
+                } catch (e) {
+                    alert("Error al descargar: " + e.message);
+                    if (btn && originalBtnHTML) {
+                        btn.innerHTML = originalBtnHTML;
+                        btn.classList.remove('animate-spin');
+                        btn.disabled = false;
+                    }
                 }
             }
 
@@ -2833,7 +3249,8 @@ async def get():
                 let subtitle = libraryGrouping === "album"
                     ? escapeHtml(track.artist || "")
                     : escapeHtml(track.artist || "") + (track.album ? " &middot; " + escapeHtml(track.album) : "");
-                return '<div class="flex items-center gap-3 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-btn-hover transition-colors" onclick="playFromQueue(\\'' + queueKey + '\\', ' + index + ')">' +
+                let pathEscaped = escapeHtml(track.path);
+                return '<div class="flex items-center gap-3 px-2 py-1.5 rounded-lg cursor-pointer hover:bg-btn-hover transition-colors" data-path="' + pathEscaped + '" onclick="playFromQueue(\\'' + queueKey + '\\', ' + index + ')" oncontextmenu="showLibraryContextMenu(event, this)">' +
                     '<span class="material-symbols-outlined text-[18px] text-muted/40">music_note</span>' +
                     '<div class="overflow-hidden flex-1">' +
                     '<p class="font-data-sm text-[14px] truncate">' + escapeHtml(track.title) + '</p>' +
@@ -2842,7 +3259,8 @@ async def get():
             }
 
             function libraryTrackCardHtml(track, queueKey, index) {
-                return '<div class="flex flex-col gap-2 p-2 rounded-lg cursor-pointer hover:bg-btn-hover transition-colors" onclick="playFromQueue(\\'' + queueKey + '\\', ' + index + ')">' +
+                let pathEscaped = escapeHtml(track.path);
+                return '<div class="flex flex-col gap-2 p-2 rounded-lg cursor-pointer hover:bg-btn-hover transition-colors" data-path="' + pathEscaped + '" onclick="playFromQueue(\\'' + queueKey + '\\', ' + index + ')" oncontextmenu="showLibraryContextMenu(event, this)">' +
                     '<div class="relative w-full aspect-square rounded-lg bg-btn overflow-hidden flex items-center justify-center">' +
                     '<span class="material-symbols-outlined text-[28px] text-muted/30">music_note</span>' +
                     '<img src="/api/library/artwork?path=' + encodeURIComponent(track.path) + '" class="absolute inset-0 w-full h-full object-cover" loading="lazy" onerror="this.remove()" alt="">' +
@@ -2851,6 +3269,173 @@ async def get():
                     '<p class="font-data-sm text-[13px] truncate">' + escapeHtml(track.title) + '</p>' +
                     '<p class="font-label-caps text-[10px] text-muted/40 truncate">' + escapeHtml(track.artist || "") + '</p>' +
                     '</div></div>';
+            }
+
+            let contextMenuTrackPath = null;
+            function showLibraryContextMenu(event, el) {
+                event.preventDefault();
+                event.stopPropagation();
+                contextMenuTrackPath = el.dataset.path;
+                const menu = document.getElementById("library-context-menu");
+                menu.style.display = "flex";
+                
+                // Adjust position
+                let x = event.clientX;
+                let y = event.clientY;
+                if (x + 220 > window.innerWidth) x -= 220;
+                if (y + menu.offsetHeight > window.innerHeight) y -= menu.offsetHeight;
+                
+                menu.style.left = x + "px";
+                menu.style.top = y + "px";
+            }
+            
+            document.addEventListener('click', function(e) {
+                const menu = document.getElementById("library-context-menu");
+                if (menu && menu.style.display === "flex") {
+                    menu.style.display = "none";
+                }
+            });
+
+            async function contextShowInFolder() {
+                if (!contextMenuTrackPath) return;
+                try {
+                    await fetch('/api/library/show_in_folder', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: contextMenuTrackPath })
+                    });
+                } catch (e) {
+                    console.error("Error abriendo carpeta:", e);
+                }
+            }
+
+            async function contextDeleteTrack() {
+                if (!contextMenuTrackPath) return;
+                if (!confirm("¿Estás seguro de que deseas eliminar esta pista de la biblioteca? Esta acción no se puede deshacer.")) return;
+                try {
+                    let res = await fetch('/api/library/track', {
+                        method: 'DELETE',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: contextMenuTrackPath })
+                    });
+                    if (res.ok) {
+                        let libraryDir = document.getElementById("library_dir").value || document.getElementById("input_dir").value;
+                        if (libraryDir) scanLibrary(libraryDir);
+                    } else {
+                        let data = await res.json();
+                        alert("Error: " + data.detail);
+                    }
+                } catch (e) {
+                    console.error("Error eliminando pista:", e);
+                }
+            }
+
+            let currentArtworkBase64 = null;
+
+            function switchTrackInfoTab(tab) {
+                document.getElementById('tab-info-details').className = 'font-label-caps text-[12px] ' + (tab === 'details' ? 'text-accent border-b-2 border-accent pb-1' : 'text-muted/60 hover:text-main pb-1');
+                document.getElementById('tab-info-artwork').className = 'font-label-caps text-[12px] ' + (tab === 'artwork' ? 'text-accent border-b-2 border-accent pb-1' : 'text-muted/60 hover:text-main pb-1');
+                document.getElementById('track-info-details-panel').style.display = tab === 'details' ? 'flex' : 'none';
+                document.getElementById('track-info-artwork-panel').style.display = tab === 'artwork' ? 'flex' : 'none';
+            }
+
+            function handleArtworkSelection(event) {
+                const file = event.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    currentArtworkBase64 = e.target.result;
+                    const img = document.getElementById("info_artwork_img");
+                    img.src = currentArtworkBase64;
+                    img.classList.remove("hidden");
+                };
+                reader.readAsDataURL(file);
+            }
+
+            async function contextGetInfo() {
+                if (!contextMenuTrackPath) return;
+                try {
+                    let res = await fetch('/api/library/track_info?path=' + encodeURIComponent(contextMenuTrackPath));
+                    let meta = await res.json();
+                    
+                    document.getElementById("info_title").value = meta.title || "";
+                    document.getElementById("info_artist").value = meta.artist || "";
+                    document.getElementById("info_album").value = meta.album || "";
+                    document.getElementById("info_album_artist").value = meta.album_artist || "";
+                    document.getElementById("info_composer").value = meta.composer || "";
+                    document.getElementById("info_grouping").value = meta.grouping || "";
+                    document.getElementById("info_genre").value = meta.genre || "";
+                    document.getElementById("info_year").value = meta.year || "";
+                    document.getElementById("info_bpm").value = meta.bpm || "";
+                    document.getElementById("info_track_number").value = meta.track_number || "";
+                    document.getElementById("info_track_count").value = meta.track_count || "";
+                    document.getElementById("info_disc_number").value = meta.disc_number || "";
+                    document.getElementById("info_disc_count").value = meta.disc_count || "";
+                    document.getElementById("info_compilation").checked = meta.compilation || false;
+                    document.getElementById("info_comments").value = meta.comments || "";
+                    
+                    switchTrackInfoTab('details');
+                    currentArtworkBase64 = null;
+                    document.getElementById("info_artwork_input").value = "";
+                    const img = document.getElementById("info_artwork_img");
+                    img.onload = function() { img.classList.remove("hidden"); };
+                    img.onerror = function() { img.classList.add("hidden"); };
+                    img.src = '/api/library/artwork?path=' + encodeURIComponent(contextMenuTrackPath) + '&_t=' + Date.now();
+
+                    document.getElementById("track-info-modal").classList.remove("hidden");
+                    document.getElementById("track-info-modal").classList.add("flex");
+                } catch (e) {
+                    console.error("Error obteniendo info:", e);
+                    alert("Error obteniendo info de la pista.");
+                }
+            }
+
+            function closeTrackInfoModal() {
+                document.getElementById("track-info-modal").classList.remove("flex");
+                document.getElementById("track-info-modal").classList.add("hidden");
+            }
+            
+            async function saveTrackInfo() {
+                if (!contextMenuTrackPath) return;
+                const meta = {
+                    title: document.getElementById("info_title").value,
+                    artist: document.getElementById("info_artist").value,
+                    album: document.getElementById("info_album").value,
+                    album_artist: document.getElementById("info_album_artist").value,
+                    composer: document.getElementById("info_composer").value,
+                    grouping: document.getElementById("info_grouping").value,
+                    genre: document.getElementById("info_genre").value,
+                    year: document.getElementById("info_year").value,
+                    bpm: document.getElementById("info_bpm").value,
+                    track_number: document.getElementById("info_track_number").value,
+                    track_count: document.getElementById("info_track_count").value,
+                    disc_number: document.getElementById("info_disc_number").value,
+                    disc_count: document.getElementById("info_disc_count").value,
+                    compilation: document.getElementById("info_compilation").checked,
+                    comments: document.getElementById("info_comments").value
+                };
+                if (currentArtworkBase64) {
+                    meta.artwork_base64 = currentArtworkBase64;
+                }
+                
+                try {
+                    let res = await fetch('/api/library/track_info', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: contextMenuTrackPath, metadata: meta })
+                    });
+                    if (res.ok) {
+                        closeTrackInfoModal();
+                        let libraryDir = document.getElementById("library_dir").value || document.getElementById("input_dir").value;
+                        if (libraryDir) scanLibrary(libraryDir);
+                    } else {
+                        let data = await res.json();
+                        alert("Error: " + data.detail);
+                    }
+                } catch (e) {
+                    console.error("Error guardando info:", e);
+                    alert("Error al guardar información.");
+                }
             }
 
             function libraryGroupSectionHtml(name, tracks, key) {
@@ -3365,8 +3950,72 @@ async def get():
                 }
             }
 
-            // Vista inicial
-            applyLanguage(currentLang);
+            // --- IPOD SYNC LOGIC ---
+            async function scanIpod() {
+                try {
+                    const res = await fetch('/api/ipod/scan');
+                    const data = await res.json();
+                    
+                    const container = document.getElementById("ipod-info-container");
+                    const noDevice = document.getElementById("ipod-no-device");
+                    const btnSync = document.getElementById("btn-sync-ipod");
+                    const btnBackup = document.getElementById("btn-backup-ipod");
+
+                    if (data.ipods && data.ipods.length > 0) {
+                        const ipod = data.ipods[0]; // Usar el primero por ahora
+                        
+                        document.getElementById("ipod-name").textContent = ipod.ipod_name || "iPod (Sin Nombre)";
+                        
+                        let modelParts = [];
+                        if (ipod.model_family) modelParts.push(ipod.model_family);
+                        if (ipod.generation) modelParts.push(ipod.generation);
+                        if (ipod.color) modelParts.push(ipod.color);
+                        
+                        document.getElementById("ipod-model").textContent = "Modelo: " + (modelParts.join(" ") || "Desconocido");
+                        
+                        let cap = ipod.capacity || ipod.disk_size_gb;
+                        document.getElementById("ipod-capacity").textContent = "Capacidad: " + (cap ? cap + " GB" : "Desconocida");
+                        document.getElementById("ipod-format").textContent = "Formato: " + (ipod.filesystem_type || "Desconocido");
+                        
+                        container.classList.remove("hidden");
+                        noDevice.classList.add("hidden");
+                        
+                        btnSync.disabled = false;
+                        btnSync.classList.remove("opacity-50", "cursor-not-allowed");
+                        btnBackup.disabled = false;
+                        btnBackup.classList.remove("opacity-50", "cursor-not-allowed");
+                    } else {
+                        container.classList.add("hidden");
+                        noDevice.classList.remove("hidden");
+                        
+                        btnSync.disabled = true;
+                        btnSync.classList.add("opacity-50", "cursor-not-allowed");
+                        btnBackup.disabled = true;
+                        btnBackup.classList.add("opacity-50", "cursor-not-allowed");
+                    }
+                } catch (e) {
+                    console.error("Error escaneando iPod:", e);
+                    alert("Ocurrió un error al intentar escanear dispositivos.");
+                }
+            }
+
+            async function syncIpod() {
+                alert("Verificando formatos antes de sincronizar...");
+                // Endpoint stub for now
+                try {
+                    await fetch('/api/ipod/sync', { method: 'POST' });
+                } catch(e){}
+            }
+
+            async function backupIpod() {
+                alert("Creando backup de seguridad (manual)...");
+                try {
+                    await fetch('/api/ipod/backups', { method: 'POST' });
+                } catch(e){}
+            }
+
+            // Inicialización de la UI
+           applyLanguage(currentLang);
             showView('process');
             loadLibraryConfig();
             prefillProcessDirsFromSettings();
@@ -3410,7 +4059,7 @@ if __name__ == "__main__":
     import threading
     import uvicorn
     import webbrowser
-    from tray_icon import run_tray_icon
+    from cicada.core.tray_icon import run_tray_icon
     import sys
     import os
 

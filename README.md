@@ -123,7 +123,7 @@ Una vez que hayas configurado tus claves API en los Ajustes (⚙️), el proceso
 Ejecuta el archivo principal:
 
 ```bash
-python main.py
+python run.py
 ```
 *(En macOS, puedes simplemente hacer doble clic en el archivo `start.command`)*
 
@@ -135,7 +135,7 @@ Esto abrirá la aplicación en tu navegador web en la dirección `http://127.0.0
 
 | Archivo | Responsabilidad |
 |---|---|
-| `main.py` | Servidor FastAPI, endpoints REST/WebSocket e interfaz (HTML/CSS/JS). |
+| `run.py` | Punto de entrada. La app vive en `cicada/core/main.py` (Servidor FastAPI, endpoints REST/WebSocket e interfaz HTML/CSS/JS). |
 | `metadata_manager.py` | Orquesta la identificación en cascada (Shazam → AcoustID → iTunes). |
 | `acoustid_fallback.py` | Identificación secundaria por huella acústica. |
 | `audio_processor.py` | Etiquetado y guardado de archivos en el disco duro. |

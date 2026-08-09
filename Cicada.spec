@@ -34,7 +34,7 @@ elif sys.platform.startswith("linux"):
     HIDDEN_IMPORTS.append("Xlib")
 
 a = Analysis(
-    ["main.py"],
+    ["run.py"],
     pathex=[],
     binaries=[],
     datas=[("static", "static")],

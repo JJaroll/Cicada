@@ -123,7 +123,7 @@ Spotifyの統合機能やAcoustIDによるトラック識別を有効にする�
 メインファイルを実行します：
 
 ```bash
-python main.py
+python run.py
 ```
 *(macOSでは、`start.command`ファイルをダブルクリックするだけでも実行できます)*
 
@@ -135,7 +135,7 @@ python main.py
 
 | ファイル | 責任 |
 |---|---|
-| `main.py` | FastAPIサーバー、REST/WebSocketエンドポイント、インターフェース（HTML/CSS/JS）。 |
+| `run.py` | エントリーポイント。アプリ本体は `cicada/core/main.py`（FastAPIサーバー、REST/WebSocketエンドポイント、HTML/CSS/JSインターフェース）。 |
 | `metadata_manager.py` | ウォーターフォール識別（Shazam → AcoustID → iTunes）をオーケストレーションします。 |
 | `acoustid_fallback.py` | 音響指紋による二次識別。 |
 | `audio_processor.py` | タグ付けとハードドライブへのファイルの保存。 |

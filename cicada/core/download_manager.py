@@ -12,7 +12,7 @@ from urllib.parse import urlencode, quote
 
 import httpx
 
-from app_paths import get_app_data_dir
+from cicada.core.app_paths import get_app_data_dir
 
 logger = logging.getLogger(__name__)
 

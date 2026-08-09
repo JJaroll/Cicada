@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Dict, Any
 from shazamio import Shazam
 
-from acoustid_fallback import identificar_con_acoustid
+from cicada.core.acoustid_fallback import identificar_con_acoustid
 
 class MetadataManager:
     """

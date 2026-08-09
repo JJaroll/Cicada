@@ -2,6 +2,15 @@
 
 Todos los cambios notables de este proyecto se documentarán en este archivo.
 
+## [1.1.2] - 2026-08-07
+### Agregado
+- **Playlists:** Nuevo botón de descarga individual (en tiempo real) para pistas no encontradas en la biblioteca local durante la replicación, inyectando metadatos de Spotify y organizando el archivo automáticamente.
+- **Biblioteca:** Menú contextual en la vista de biblioteca con opciones para mostrar en el explorador, eliminar de forma segura y un nuevo editor avanzado de metadatos de las canciones (incluyendo manejo de carátulas).
+
+### Cambiado
+- **Playlists:** Animaciones de reordenamiento de canciones (Drag & Drop) más fluidas en la vista de réplica, brindando feedback visual inmediato.
+
+
 ## [1.1.1] - 2026-07-19
 ### Agregado
 - Nuevas traducciones del `README` al inglés (`README_en.md`) y japonés (`README_ja.md`) con barra de navegación de idiomas.
