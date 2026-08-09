@@ -104,7 +104,18 @@ que cumple la interfaz que espera `info.py` (`read_authority`,
 
 Tests: `tests/ipod/device/test_authority.py` (12).
 
-**Pendiente en 2b:** `scanner`, `info`, `sysinfo`, `lookup`, `durability`, y el
+**`sysinfo.py` — vendorizado sin modificar.** Origen: `src/iopenpod/device/sysinfo.py`
+@ `ea72e3e`. **Estado: copiado y verificado.** Parseo puro de SysInfo/SysInfoExtended;
+sin probing de hardware, sin `pyusb`, sin `import os`, cero escrituras. Única dep
+interna: `.lookup.extract_model_number` (import perezoso y **guardado** con
+`try/except` → degrada al string crudo si `lookup` no está; solo se usa cuando hay
+`ModelNumStr`, ausente en el Nano 7G). Ahora `authority._normalise_sysinfo_extended`
+usa este parser real.
+
+Tests: `tests/ipod/device/test_sysinfo.py` (9), incl. el obligatorio contra el
+fixture real (FireWireGUID, FamilyID=18, MaxTracks=65534, DBVersion=5).
+
+**Pendiente en 2b:** `scanner`, `info`, `lookup`, `durability`, y el
 `write_guard.py` de iOpenPod (otro concern: sesión/lock/generación) que se
 vendorizará **renombrado** (`write_session.py`) para no colisionar con el nuestro.
 Toda escritura al volumen pasa por nuestro `write_guard`.
