@@ -81,15 +81,32 @@ leyendo `mhbd[0x30]` (el `hashing_scheme`): en el iTunesCDB real ese campo vale
 **capacidad** (`checksum_type_for_family_gen("iPod Nano","7th Gen")`). Registrado
 en los tests. Relevante para el dispatcher de hash (Fase 2).
 
-#### Etapa 2b — pendiente (scanner, info, sysinfo, lookup, durability, …)
+#### Etapa 2b — en curso
 
-Bloque pesado con adaptaciones. Decisiones ya tomadas:
-- El `write_guard.py` de iOpenPod (otro concern: sesión/lock/generación) se
-  vendorizará **renombrado** (p. ej. `write_session.py`) para no colisionar con
-  el nuestro; se adaptan sus consumidores.
-- **`authority.py` NO se copia**: se **reimplementa** apuntando a `~/.cicada/`
-  (escribir `iOpenPodSysInfoAuthority`/SysInfo en `iPod_Control/Device/` hace que
-  Music.app pida restaurar el iPod).
-- Toda escritura al volumen pasa por nuestro `write_guard`.
+Bloque pesado con adaptaciones.
+
+**`authority.py` — reimplementado (NO vendorizado).** Es código propio de Cicada
+que cumple la interfaz que espera `info.py` (`read_authority`,
+`check_authority_coverage`, `update_sysinfo`, `cache_sysinfo_extended`,
+`SOURCE_RANK`, `SYSINFO_FIELDS`) pero persiste **fuera del dispositivo**, en
+`~/.cicada/sysinfo/<sha256(guid)[:16]>/`. Motivos y decisiones:
+- iOpenPod escribe `iOpenPodSysInfoAuthority`/SysInfo en `iPod_Control/Device/`,
+  lo que hace que Music.app pida restaurar el iPod. Cicada no toca el volumen.
+- Indexado por **FireWireGUID**, no por punto de montaje (el mismo iPod puede
+  montarse en rutas distintas; puede haber varios dispositivos).
+- El nombre de carpeta es `sha256(guid)[:16]` (GUID no en claro en rutas/logs);
+  el GUID real vive dentro del `authority.json`.
+- Las tablas de ranking/procedencia (`_SOURCE_ORDER`, `SYSINFO_FIELDS`) y la
+  semántica derivan de iOpenPod (MIT) — atribución en NOTICE.
+- Añadida `clean_foreign_authority(ipod_path)` (vía `write_guard`), expuesta como
+  `cicada ipod clean-foreign`: elimina el `iOpenPodSysInfoAuthority` ajeno del
+  dispositivo. No automática — para verificar la hipótesis del rechazo de Music.app.
+
+Tests: `tests/ipod/device/test_authority.py` (12).
+
+**Pendiente en 2b:** `scanner`, `info`, `sysinfo`, `lookup`, `durability`, y el
+`write_guard.py` de iOpenPod (otro concern: sesión/lock/generación) que se
+vendorizará **renombrado** (`write_session.py`) para no colisionar con el nuestro.
+Toda escritura al volumen pasa por nuestro `write_guard`.
 
 Atribución completa en `cicada/ipod/NOTICE`.
