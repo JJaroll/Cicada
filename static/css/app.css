@@ -1,0 +1,200 @@
+/* Extraído de cicada/core/main.py — sin cambios de comportamiento. */
+/* TEMA OSCURO: GRAFITO */
+:root {
+--bg-app: #151618;
+--bg-main: #25262A;
+--bg-card: #1C1D21;
+--input-bg: #151618;
+--bg-sidebar: #F5F6F8;
+
+--btn-bg: rgba(255,255,255,0.05);
+--btn-hover: rgba(255,255,255,0.1);
+
+--text-main: #FFFFFF;
+--text-muted: #9CA3AF;
+--text-sidebar: #1A1A1A;
+--text-sidebar-muted: #6B7280;
+
+--border-color: rgba(255,255,255,0.1);
+}
+
+/* TEMA CLARO: ALUMINIO */
+[data-theme="aluminio"] {
+--bg-app: #D8DCE0;
+--bg-main: #E8ECEF;
+--bg-card: #FFFFFF;
+--input-bg: #F9FAFB;
+
+--btn-bg: rgba(0,0,0,0.05);
+--btn-hover: rgba(0,0,0,0.1);
+
+--text-main: #1A1A1A;
+--text-muted: #6B7280;
+
+--border-color: rgba(0,0,0,0.1);
+}
+
+/* COLORES DE ACENTO */
+[data-color="azul"] { --accent: #0099FF; --accent-hover: #0088e6; --accent-light: rgba(0, 153, 255, 0.15); }
+[data-color="verde"] { --accent: #77C800; --accent-hover: #6ab300; --accent-light: rgba(119, 200, 0, 0.15); }
+[data-color="morado"] { --accent: #8A2BE2; --accent-hover: #7b27c9; --accent-light: rgba(138, 43, 226, 0.15); }
+[data-color="naranja"] { --accent: #FF8800; --accent-hover: #e67a00; --accent-light: rgba(255, 136, 0, 0.15); }
+[data-color="rosa"] { --accent: #E62E6B; --accent-hover: #cc295f; --accent-light: rgba(230, 46, 107, 0.15); }
+
+/* LOGO DE CICADA: se muestra la variante que coincide con el color de acento activo */
+.cicada-logo-img { display: none; }
+[data-color="azul"] .cicada-logo-img[data-logo-color="azul"],
+[data-color="verde"] .cicada-logo-img[data-logo-color="verde"],
+[data-color="morado"] .cicada-logo-img[data-logo-color="morado"],
+[data-color="naranja"] .cicada-logo-img[data-logo-color="naranja"],
+[data-color="rosa"] .cicada-logo-img[data-logo-color="rosa"] { display: block; }
+body {
+    background-color: #0b0c10;
+    color: #e3e2e8;
+    overflow: hidden;
+}
+
+.glass-card {
+    background: rgba(31, 38, 57, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(16px);
+    border-radius: 12px;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.02);
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+@keyframes scanline {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100%); }
+}
+.scanline-effect {
+    position: relative;
+    overflow: hidden;
+}
+.scanline-effect::after {
+    content: "";
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(to bottom, transparent, rgba(6, 182, 212, 0.03), transparent);
+    height: 100%;
+    animation: scanline 6s linear infinite;
+    pointer-events: none;
+}
+
+.nav-item-active {
+    border-left: 2px solid #10b981;
+    box-shadow: -4px 0 12px rgba(16, 185, 129, 0.3);
+    background: rgba(255, 255, 255, 0.05);
+    color: #1a1b20 !important;
+}
+.nav-item-inactive {
+    color: rgba(26, 27, 32, 0.4);
+}
+.nav-item:hover {
+    background: rgba(0, 0, 0, 0.05);
+}
+
+/* --- Context Menu --- */
+#library-context-menu {
+    position: fixed;
+    z-index: 200;
+    width: 220px;
+    background-color: var(--bg-card); /* Solid background */
+    border: 1px solid var(--theme);
+    border-radius: 12px;
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    display: none;
+    flex-direction: column;
+    padding: 6px;
+}
+.context-menu-item {
+    padding: 8px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-main);
+    transition: background-color 0.15s;
+}
+.context-menu-item:hover {
+    background-color: var(--btn-hover);
+}
+.context-menu-item.danger {
+    color: #ef4444;
+}
+.context-menu-item.danger:hover {
+    background-color: rgba(239, 68, 68, 0.1);
+}
+
+/* --- Vistas (PROCESS / SPOTIFY / PLAYLISTS / LIBRARY) --- */
+.view { display: none; }
+#view-process.active { display: grid; }
+#view-spotify.active { display: flex; }
+#view-playlists.active { display: grid; }
+#view-library.active { display: flex; }
+#view-ipod.active { display: flex; }
+
+.cicada-checkbox {
+    width: 16px;
+    height: 16px;
+    accent-color: #10b981;
+    cursor: pointer;
+    flex-shrink: 0;
+}
+
+.library-group-btn, .lang-btn, .library-view-btn {
+    background: var(--btn-bg);
+    color: var(--text-muted);
+    transition: background 0.2s, color 0.2s;
+}
+.library-group-btn:hover, .lang-btn:hover, .library-view-btn:hover {
+    background: var(--btn-hover);
+    color: var(--text-main);
+}
+.library-group-btn.active, .lang-btn.active, .library-view-btn.active {
+    background: var(--accent-light);
+    color: var(--accent);
+}
+
+details.library-group > summary {
+    list-style: none;
+    cursor: pointer;
+}
+details.library-group > summary::-webkit-details-marker {
+    display: none;
+}
+details.library-group > summary::before {
+    content: "▸ ";
+    color: rgba(255, 255, 255, 0.3);
+}
+details.library-group[open] > summary::before {
+    content: "▾ ";
+}
+
+.cicada-input {
+    background: var(--input-bg) !important;
+    border: none !important;
+    border-bottom: 1px solid var(--border-color) !important;
+    border-radius: 8px !important;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-main) !important;
+    outline: none;
+    box-shadow: none !important;
+    transition: border-color 0.2s ease;
+}
+.cicada-input:focus {
+    border-color: var(--accent) !important;
+}
+.cicada-input::placeholder {
+    color: var(--text-muted);
+}

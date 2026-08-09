@@ -1,0 +1,9 @@
+Portions of this module are derived from iOpenPod
+Copyright (c) John Gibbons — MIT License
+https://github.com/TheRealSavi/iOpenPod
+
+calcHashAB.wasm is from dstaley/hashab — The Unlicense (public domain)
+https://github.com/dstaley/hashab
+Clean-room reimplementation of Apple's white-box AES signing algorithm.
+
+Incorporated into Cicada and redistributed under GPLv3.

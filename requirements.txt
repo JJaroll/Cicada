@@ -14,3 +14,5 @@ pystray==0.19.5
 Pillow==12.3.0
 pyobjc-framework-Cocoa==12.2.1; sys_platform == "darwin"
 python-xlib; sys_platform == "linux"
+# Módulo iPod (Fase 0): backups .tar.zst
+zstandard==0.25.0
