@@ -115,9 +115,36 @@ usa este parser real.
 Tests: `tests/ipod/device/test_sysinfo.py` (9), incl. el obligatorio contra el
 fixture real (FireWireGUID, FamilyID=18, MaxTracks=65534, DBVersion=5).
 
-**Pendiente en 2b:** `scanner`, `info`, `lookup`, `durability`, y el
-`write_guard.py` de iOpenPod (otro concern: sesión/lock/generación) que se
-vendorizará **renombrado** (`write_session.py`) para no colisionar con el nuestro.
-Toda escritura al volumen pasa por nuestro `write_guard`.
+**`lookup.py` — vendorizado sin modificar.** Origen: `src/iopenpod/device/lookup.py`
+@ `ea72e3e`. **Estado: copiado y verificado.** Solo depende de `.capabilities` y
+`.models` (2a) + `re`; sin escrituras/subprocess/pyusb. Degrada a `None` sin
+ModelNumStr. Tests: `tests/ipod/device/test_lookup.py` (4). Nota: el mapeo
+`FamilyID(int)→(familia,gen)` **no** está aquí — llega con scanner/info.
+
+**`durability.py` — vendorizado con una adaptación mínima.** Origen:
+`src/iopenpod/device/durability.py` @ `ea72e3e`. **Estado: copiado y verificado.**
+Primitivas de flush/replace (`durable_replace`, `durable_unlink`,
+`durable_publish_new`, `flush_filesystem`); **no** hace eject. `flush_filesystem`
+ya devuelve `(bool, mensaje)` con `timeout`.
+- **Adaptación (única):** el import perezoso `from .info import resolve_itdb_path`
+  en `_committed_database_path` se envolvió en `try/except ImportError` con log
+  explícito. `info` llega al final de 2b; hasta entonces `flush_filesystem` omite
+  el flush del ancla de DB en vez de lanzar un `ImportError` confuso.
+
+**`safe_write.py` — código propio de Cicada** (no vendorizado). Envuelve las
+primitivas de `durability` validando el target con
+`write_guard.assert_within_ipod_control` **antes** de delegar
+(`guarded_durable_replace`/`_publish_new`/`_unlink`). Regla de integración: nadie
+escribe en el volumen sin pasar por aquí. Tests: `tests/ipod/device/test_safe_write.py`
+(5), incl. rechazo vía symlink que apunta fuera.
+
+**Pendiente en 2b:**
+- **eject propio** (paso siguiente): flush + `diskutil eject` no forzado con
+  timeout, y **detección del proceso que bloquea** (PID+binario, p. ej.
+  `AMPDevicesAgent`) devuelta al llamador. `eject.py` de iOpenPod (1.153 líneas)
+  NO identifica al bloqueador; se reimplementa, no se copia.
+- `scanner`, `info`, y el `write_guard.py` de iOpenPod (sesión/lock/generación)
+  vendorizado **renombrado** (`write_session.py`) para no colisionar con el nuestro.
+- Toda escritura al volumen pasa por nuestro `write_guard`.
 
 Atribución completa en `cicada/ipod/NOTICE`.
