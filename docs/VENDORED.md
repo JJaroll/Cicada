@@ -52,4 +52,44 @@ verificación contra el `iTunesCDB` real del fixture nano7g).
 chunks (`mhsd`, `mhlt`, `mhit`, `mhod`…) viven dentro del payload zlib. Relevante
 para el parser (paquete 3).
 
+### Paquete 2 — `device/` → `cicada/ipod/device/` (por etapas)
+
+El `device/` de iOpenPod son 36 archivos (~17.800 líneas). Se copia por etapas
+para controlar el riesgo. **`write_guard.py` y `backup.py` de este directorio son
+de Cicada (Fase 0), no de iOpenPod: no se tocan.**
+
+#### Etapa 2a — módulos limpios (datos/enums, cero escrituras, cero deps forward)
+
+Origen: `src/iopenpod/device/` @ `ea72e3e` (clon: `../iPod-clon/iOpenPod`).
+Copiados sin modificar. **Estado: copiado y verificado.**
+
+| Archivo (destino `cicada/ipod/device/`) | Origen (commit ea72e3e) |
+|---|---|
+| `checksum.py` | `src/iopenpod/device/checksum.py` |
+| `artwork_presets.py` | `src/iopenpod/device/artwork_presets.py` |
+| `models.py` | `src/iopenpod/device/models.py` |
+| `capabilities.py` | `src/iopenpod/device/capabilities.py` |
+
+Deps internas: `capabilities` → `artwork_presets`, `checksum`, `models` (todos en
+esta etapa). Solo stdlib; ninguna dep forward a paquetes 3/4.
+
+Tests: `tests/ipod/device/test_{checksum,capabilities,models,artwork_presets}.py`.
+
+**Hallazgo de resolución de esquema**: el HASHAB del Nano 7G **no** se resuelve
+leyendo `mhbd[0x30]` (el `hashing_scheme`): en el iTunesCDB real ese campo vale
+`3`, que no está en el mapa wire (HASHAB = wire `4`). HASHAB se determina por
+**capacidad** (`checksum_type_for_family_gen("iPod Nano","7th Gen")`). Registrado
+en los tests. Relevante para el dispatcher de hash (Fase 2).
+
+#### Etapa 2b — pendiente (scanner, info, sysinfo, lookup, durability, …)
+
+Bloque pesado con adaptaciones. Decisiones ya tomadas:
+- El `write_guard.py` de iOpenPod (otro concern: sesión/lock/generación) se
+  vendorizará **renombrado** (p. ej. `write_session.py`) para no colisionar con
+  el nuestro; se adaptan sus consumidores.
+- **`authority.py` NO se copia**: se **reimplementa** apuntando a `~/.cicada/`
+  (escribir `iOpenPodSysInfoAuthority`/SysInfo en `iPod_Control/Device/` hace que
+  Music.app pida restaurar el iPod).
+- Toda escritura al volumen pasa por nuestro `write_guard`.
+
 Atribución completa en `cicada/ipod/NOTICE`.
