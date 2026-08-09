@@ -58,7 +58,13 @@ modelos antiguos cuyo `SysInfoExtended` sea pobre.
 
 En modelos nuevos, `SysInfoExtended` se genera consultando el dispositivo por USB
 (SCSI vía `pyusb`). iOpenPod cachea el resultado en `iPod_Control/Device/iOpenPodSysInfoAuthority`.
-Adopta el mismo patrón, con nombre propio (`CicadaSysInfoAuthority`) para no colisionar.
+
+**Cicada NO cachea en el dispositivo.** iOpenPod escribe su `iOpenPodSysInfoAuthority`
+dentro de `iPod_Control/Device/`, y eso hace que Music.app considere el iPod corrupto y
+pida restaurarlo. Cicada no debe ensuciar el volumen: el caché va **fuera del dispositivo**,
+en `~/.cicada/` (p. ej. `~/.cicada/sysinfo/<guid>.json`), indexado por GUID. El nombre
+`CicadaSysInfoAuthority` se conserva solo como identificador lógico del caché, no como
+archivo en el iPod.
 
 ### 0.3 Hashing — resuelto y redistribuible
 
@@ -171,7 +177,7 @@ cicada/
 │   ├── device/
 │   │   ├── scanner.py         # detección de volúmenes
 │   │   ├── sysinfo.py         # plist XML/binario + SCSI vía pyusb
-│   │   ├── authority.py       # caché CicadaSysInfoAuthority
+│   │   ├── authority.py       # caché CicadaSysInfoAuthority (en ~/.cicada/, NO en el iPod)
 │   │   ├── capabilities.py    # lee capacidades del dispositivo
 │   │   ├── write_guard.py     # bloqueo por fs/modelo/capacidad
 │   │   ├── durability.py      # flush y expulsión segura por SO
@@ -283,7 +289,13 @@ restauras, y el iPod vuelve a su estado anterior. Verificado en el dispositivo r
 ### Fase 1 — Lectura
 
 - [ ] Vendorizar paquetes 1–3.
-- [ ] `scanner.py` funcionando en macOS, Linux y Windows.
+- [ ] `scanner.py` funcionando en macOS, Linux y Windows. Debe distinguir **tres
+      estados**, no dos:
+      1. No hay volumen candidato → "no hay iPod".
+      2. Volumen montado y válido **pero sin `iPod_Control/`** → dispositivo recién
+         formateado (o no inicializado como iPod). **Mensaje propio y distinto** de
+         "no hay iPod": el volumen existe, pero aún no es una biblioteca de iPod.
+      3. Volumen con `iPod_Control/` → iPod utilizable.
 - [ ] `sysinfo.py` con cascada: plist XML → plist binario → SCSI/pyusb → `SysInfo` plano.
 - [ ] Parseo de `iTunesCDB` y de `Library.itdb`.
 - [ ] Verificación (no generación) del hash contra el `iTunesCDB` existente.
