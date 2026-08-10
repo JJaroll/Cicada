@@ -40,6 +40,13 @@ def build_parser() -> argparse.ArgumentParser:
         "clean-foreign",
         help="Elimina el iOpenPodSysInfoAuthority ajeno del dispositivo (vía write_guard)",
     )
+
+    p_eject = sub.add_parser("eject", help="Expulsa el iPod de forma segura")
+    p_eject.add_argument(
+        "--force",
+        action="store_true",
+        help="Fuerza la expulsión aunque un proceso la rechace (decisión explícita)",
+    )
     return parser
 
 
@@ -69,6 +76,18 @@ def _cmd_clean_foreign(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_eject(args: argparse.Namespace) -> int:
+    from cicada.ipod.device.eject import eject_ipod
+    mount = resolve_mount()
+    result = eject_ipod(mount, force=args.force)
+    print(result.message)
+    if not result.ejected and result.blockers:
+        for b in result.blockers:
+            print(f"  PID {b.pid}  {b.friendly_name} ({b.name})")
+        return 1
+    return 0 if result.ejected else 1
+
+
 def _cmd_list(_args: argparse.Namespace) -> int:
     infos = backup_mod.list_backups()
     if not infos:
@@ -85,6 +104,7 @@ _HANDLERS = {
     "restore": _cmd_restore,
     "list-backups": _cmd_list,
     "clean-foreign": _cmd_clean_foreign,
+    "eject": _cmd_eject,
 }
 
 

@@ -138,13 +138,29 @@ primitivas de `durability` validando el target con
 escribe en el volumen sin pasar por aquí. Tests: `tests/ipod/device/test_safe_write.py`
 (5), incl. rechazo vía symlink que apunta fuera.
 
-**Pendiente en 2b:**
-- **eject propio** (paso siguiente): flush + `diskutil eject` no forzado con
-  timeout, y **detección del proceso que bloquea** (PID+binario, p. ej.
-  `AMPDevicesAgent`) devuelta al llamador. `eject.py` de iOpenPod (1.153 líneas)
-  NO identifica al bloqueador; se reimplementa, no se copia.
-- `scanner`, `info`, y el `write_guard.py` de iOpenPod (sesión/lock/generación)
-  vendorizado **renombrado** (`write_session.py`) para no colisionar con el nuestro.
-- Toda escritura al volumen pasa por nuestro `write_guard`.
+**`eject.py` — código propio de Cicada** (no vendorizado). iOpenPod expulsa pero
+NO identifica al proceso que bloquea; esta reimplementación sí. `eject_ipod(mount,
+*, force=False, timeout=30)` → `EjectResult(ejected, message, blockers, forced,
+platform)`. Hace flush (vía `durability`), nunca fuerza por defecto, usa timeout, y
+devuelve `Blocker(pid, name, path, ppid, parent, friendly_name)` al llamador.
+`friendly_name` mapea binarios conocidos a nombres entendibles (AMPDevicesAgent→
+"Música", mds→"Spotlight", fseventsd→"sistema de archivos de macOS", bird/cloudd→
+"iCloud"). Expuesto como `cicada ipod eject [--force]`.
+- **macOS**: implementado — parser del disidente de `diskutil` (validado contra la
+  salida real de `AMPDevicesAgent`) + fallback `lsof`; seguridad (no expulsa discos
+  no extraíbles).
+- **Linux**: implementado — `umount` no forzado + bloqueadores vía `lsof`.
+- **Windows**: **ESBOZADO, no implementado.** Devuelve un `EjectResult` honesto
+  ("no se pueden identificar los procesos bloqueadores en Windows todavía").
+  **PENDIENTE**: expulsión vía `DeviceIoControl` (FSCTL_LOCK_VOLUME/DISMOUNT +
+  IOCTL_STORAGE_EJECT_MEDIA) e identificación del bloqueador vía **Restart Manager
+  API** (`RmStartSession`/`RmGetList`, ctypes) — se dejó fuera por no poder
+  probarlo en hardware Windows. Ausencia declarada, no ctypes sin verificar.
+
+Tests: `tests/ipod/device/test_eject.py` (20), incl. parser contra la salida real.
+
+**Pendiente en 2b:** `scanner`, `info`, y el `write_guard.py` de iOpenPod
+(sesión/lock/generación) vendorizado **renombrado** (`write_session.py`) para no
+colisionar con el nuestro. Toda escritura al volumen pasa por nuestro `write_guard`.
 
 Atribución completa en `cicada/ipod/NOTICE`.
