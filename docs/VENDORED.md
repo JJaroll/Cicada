@@ -204,9 +204,27 @@ Tests: `tests/ipod/db/parser/test_ipod_library.py` (9). Verificado contra el
 iTunesCDB real: **25 tracks, 3 playlists** (master "iPod" con 25 items + 2 de usuario
 con 11 y 13). Play Counts: 25 entradas, **sin datos reales** (todo a cero/centinela).
 
+#### Etapa 3b — Verificación HASHAB. **Estado: copiado y verificado. GO/NO-GO: PASS.**
+
+De paquete 4 (`itunesdb_writer`) @ `ea72e3e`, lo mínimo para verificar:
+- `hashab.py` → `cicada/ipod/db/writer/hashab.py` (imports `itunesdb_shared` reescritos).
+- `wasm/calcHashAB.wasm` → `cicada/ipod/db/writer/wasm/` (506 KB, dstaley/hashab, Unlicense).
+- Dep `wasmtime` añadida a requirements.txt.
+- **`verify.py` (propio)**: `verify_hashab(itunescdb, guid) -> HashVerifyResult(valid, stored,
+  computed)`. Computa + compara, **sin escribir**.
+
+**Resultado (criterio de aceptación de Fase 1):** `verify_hashab` reproduce la firma
+HASHAB del iTunesCDB real **byte a byte** → `valid=True`. **Se puede pasar a Fase 2.**
+
+**Hallazgo que corrige el spec (§0.3):** el SHA1 se computa sobre el **iTunesCDB
+COMPRIMIDO** en disco (no el descomprimido), con `hashing_scheme`=4 y el zeroing estándar,
+GUID sin reversión. Encontrado por barrido de variantes (120 combinaciones). Implicación
+para el writer de Fase 2: **comprimir primero, luego firmar**.
+
+Tests: `tests/ipod/db/writer/test_verify_hashab.py` (5), incl. integración con
+`device_info` (el GUID sale de leer solo el volumen).
+
 **Pendiente:**
-- **Etapa 3b** — verificación HASHAB: `hashab.py` + `wasm/calcHashAB.wasm` (de paq. 4)
-  + dep `wasmtime`; `verify_hashab(itdb, guid)` (computa+compara, sin escribir).
 - **Etapa 2d** — enriquecimiento por USB en vivo (opcional, degradable): `usb_backend`
   + parsers `vpd_*` + `linux_identity`, y `vpd_libusb` **adaptado** para volcar a
   `authority` off-device, nunca a `Device/`. `metadata_write` NO se copia. pyusb opcional.

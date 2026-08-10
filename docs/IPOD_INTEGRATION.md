@@ -82,6 +82,14 @@ Los tres esquemas son la misma operación conceptual sobre offsets distintos:
 Los tres toman el `FireWireGUID` como insumo. Diseña un dispatcher único con selección
 por capacidad del dispositivo, no tres rutas separadas.
 
+**Corrección verificada contra el dispositivo real (Fase 1, Etapa 3b):** en el Nano 7G
+el SHA1 que alimenta HASHAB se computa sobre los bytes del **iTunesCDB comprimido tal
+cual están en disco**, NO sobre el iTunesDB descomprimido. Con `hashing_scheme`(0x30)=4,
+los campos db_id/unk_0x32/hash58/hash72/hashab a cero, y el GUID en orden natural
+(`bytes.fromhex`, sin reversión). `verify_hashab` reproduce la firma existente byte a
+byte. **Implicación para el writer (Fase 2): comprimir primero, luego firmar sobre el
+comprimido** — no firmar-y-comprimir.
+
 **HASHAB y su licencia** — verificado, no hay obstáculo:
 
 - iOpenPod lo implementa ejecutando `calcHashAB.wasm` mediante `wasmtime-py`.
