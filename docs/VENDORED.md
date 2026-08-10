@@ -159,8 +159,36 @@ devuelve `Blocker(pid, name, path, ppid, parent, friendly_name)` al llamador.
 
 Tests: `tests/ipod/device/test_eject.py` (20), incl. parser contra la salida real.
 
-**Pendiente en 2b:** `scanner`, `info`, y el `write_guard.py` de iOpenPod
-(sesión/lock/generación) vendorizado **renombrado** (`write_session.py`) para no
-colisionar con el nuestro. Toda escritura al volumen pasa por nuestro `write_guard`.
+#### Etapa 2c — Identidad desde el volumen (código propio, sin vendorizar)
+
+Decisión: la orquestación de `scanner`/`info` de iOpenPod **se reimplementa, no se
+vendoriza** — `vpd_libusb` escribe `SysInfo`/`SysInfoExtended` en
+`iPod_Control/Device/` (lo que corrompe Music.app), `metadata_write` es la sesión
+que escribe ahí, y `bootstrap` crea la DB en el dispositivo. Bajo la regla dura
+(nada escribe en `Device/`), reimplementar es más seguro que quitar caminos de
+escritura a mano en 5.000+ líneas.
+
+- **`family_ids.py`** (propio) — tabla `FamilyID(int)→(familia,gen)` que **iOpenPod
+  no tiene**. Estructura de datos pura, ampliable sin tocar lógica; cada entrada
+  con procedencia y flag `verified`. **Solo el FamilyID 18 (Nano 7G), verificado
+  contra hardware real** (confirmado de forma independiente por sufijo de serie
+  MD476). No se siembran inferidos.
+- **`device_info.py`** (propio) — `read_device_info(mount, *, use_usb=False)` lee la
+  identidad **solo del volumen**, **nunca escribe**, USB opcional (no-op hasta 2d),
+  y **degrada a DeviceInfo parcial** en vez de lanzar. Cascada: FamilyID → sufijo de
+  serie → ModelNumStr → USB PID. Usa los módulos ya copiados (`sysinfo`,
+  `capabilities`, `checksum`, `models`, `lookup`). Resuelve el Nano 7G del fixture:
+  `iPod Nano 7th Gen, HASHAB, identified_by=family_id`.
+
+Tests: `tests/ipod/device/test_device_info.py` (11), incl. **validación cruzada**
+(family_id y sufijo de serie resuelven al mismo modelo) y no-escritura.
+
+**Pendiente:**
+- **Etapa 2d** — enriquecimiento por USB en vivo (opcional, degradable): `usb_backend`
+  + parsers `vpd_*` + `linux_identity`, y `vpd_libusb` **adaptado** para volcar a
+  `authority` off-device, nunca a `Device/`. `metadata_write` NO se copia. pyusb opcional.
+- **Paquete 3** (`itunesdb_parser`) — lectura de `iTunesCDB`/`Library.itdb`.
+- **Nunca entran**: `metadata_write`, `bootstrap`, y el camino de escritura de `vpd_libusb`.
+- Toda escritura al volumen pasa por `write_guard`/`safe_write`.
 
 Atribución completa en `cicada/ipod/NOTICE`.
