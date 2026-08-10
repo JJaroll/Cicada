@@ -183,7 +183,30 @@ escritura a mano en 5.000+ líneas.
 Tests: `tests/ipod/device/test_device_info.py` (11), incl. **validación cruzada**
 (family_id y sufijo de serie resuelven al mismo modelo) y no-escritura.
 
+### Paquete 3 — `itunesdb_parser/` → `cicada/ipod/db/parser/`
+
+#### Etapa 3a — Lectura (parseo + listado), read-only. **Estado: copiado y verificado.**
+
+Origen: `src/iopenpod/itunesdb_parser/` @ `ea72e3e`. 16 archivos vendorizados:
+`exceptions`, `_parsing`, `byte_walk`, `chunk_parser`, `parser`, `mh{bd,sd,it,yp,ip,od,ia,ii}_parser`,
+`ipod_library`, `playcounts`, `otg`. Imports `iopenpod.itunesdb_shared` reescritos a
+`cicada.ipod.db.shared`. Descompresión zlib transparente del iTunesCDB.
+
+- **Excluidos**: `forensics` (escribe informe de diagnóstico), `artwork_links`
+  (depende de `artworkdb_parser`, Fase 4). El uso perezoso de `artwork_links` en
+  `ipod_library` se **guardó con try/except ImportError** (sin artwork se lista igual).
+- **Adaptación (Cicada)**: `load_ipod_library(..., mount=None)` — parámetro opcional
+  de mount explícito. La derivación `dirname³(itunesdb_path)` es frágil (resuelve mal
+  en silencio para un iTunesCDB fuera del layout estándar, p. ej. de un backup); con
+  `mount` dado se usa ese en vez de derivar.
+
+Tests: `tests/ipod/db/parser/test_ipod_library.py` (9). Verificado contra el
+iTunesCDB real: **25 tracks, 3 playlists** (master "iPod" con 25 items + 2 de usuario
+con 11 y 13). Play Counts: 25 entradas, **sin datos reales** (todo a cero/centinela).
+
 **Pendiente:**
+- **Etapa 3b** — verificación HASHAB: `hashab.py` + `wasm/calcHashAB.wasm` (de paq. 4)
+  + dep `wasmtime`; `verify_hashab(itdb, guid)` (computa+compara, sin escribir).
 - **Etapa 2d** — enriquecimiento por USB en vivo (opcional, degradable): `usb_backend`
   + parsers `vpd_*` + `linux_identity`, y `vpd_libusb` **adaptado** para volcar a
   `authority` off-device, nunca a `Device/`. `metadata_write` NO se copia. pyusb opcional.
