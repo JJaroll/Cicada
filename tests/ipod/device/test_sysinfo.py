@@ -14,7 +14,7 @@ from cicada.ipod.device.sysinfo import (
     parse_sysinfo_text,
 )
 
-FIXTURE_SIE = Path(__file__).resolve().parents[2] / "fixtures" / "nano7g" / "Device" / "SysInfoExtended"
+FIXTURE_SIE = Path(__file__).resolve().parents[2] / "fixtures" / "nano7g-iopenpod" / "Device" / "SysInfoExtended"
 
 # Valores conocidos del dispositivo real.
 GUID = "000A27002484DDFB"

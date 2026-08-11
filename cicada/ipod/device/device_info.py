@@ -33,7 +33,10 @@ from cicada.ipod.device.sysinfo import (
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["DeviceInfo", "identification_methods", "read_device_info"]
+__all__ = [
+    "DeviceInfo", "ScanResult", "identification_methods", "read_device_info",
+    "discover_ipods",
+]
 
 
 @dataclass(frozen=True)
@@ -52,6 +55,17 @@ class DeviceInfo:
     identified_by: Optional[str] = None   # family_id|serial_suffix|model_number|usb_pid|None
     partial: bool = True
     sources: dict = field(default_factory=dict)
+    guid_provenance: Optional[str] = None  # disk|cache_strong|usb|cache_weak
+    usb_error: Optional[str] = None        # causa si use_usb=True y falló la lectura
+
+    @property
+    def guid_is_write_safe(self) -> bool:
+        """El GUID es de procedencia fuerte (apto para firmar en Fase 2).
+
+        Rechaza ``cache_weak``: un puntero débil no distingue dos iPods con el
+        mismo nombre y podría resolver a una identidad ajena.
+        """
+        return self.guid_provenance in ("disk", "cache_strong", "usb")
 
 
 def identification_methods(
@@ -83,6 +97,65 @@ def identification_methods(
     return out
 
 
+@dataclass(frozen=True)
+class ScanResult:
+    """Resultado de escanear volúmenes en busca de iPods (3 estados)."""
+    state: str                       # "ready" | "no_ipod_control" | "no_device"
+    ipods: list                      # list[DeviceInfo] legibles (con iPod_Control)
+    volumes_without_control: list    # list[Path] que parecen iPod pero sin iPod_Control
+
+
+# Residuos que delatan un volumen iPod aunque falte iPod_Control (p. ej. tras
+# borrarlo por accidente): evita marcar como iPod cualquier USB suelto.
+_IPOD_RESIDUE = ("iPod_Control", "Calendars", "Contacts", "Notes", "Photos")
+
+
+def _looks_like_ipod_volume(mount: Path) -> bool:
+    if "ipod" in mount.name.lower():
+        return True
+    try:
+        entries = {p.name for p in mount.iterdir()}
+    except OSError:
+        return False
+    return any(r in entries for r in _IPOD_RESIDUE)
+
+
+def discover_ipods(*, candidates: Optional[list] = None) -> ScanResult:
+    """Descubre iPods entre los volúmenes montados. Distingue 3 estados:
+
+    - **ready**: hay al menos un volumen con ``iPod_Control/`` (legible).
+    - **no_ipod_control**: hay un volumen que parece iPod pero sin ``iPod_Control/``
+      (recién formateado, o iPod_Control borrado). Mensaje propio.
+    - **no_device**: no hay ningún candidato.
+
+    Solo lee. No revalida para escritura (eso es de write_guard).
+    """
+    from cicada.ipod.device import write_guard as wg
+    cands = wg._candidate_mounts() if candidates is None else [Path(c) for c in candidates]
+
+    ipods: list = []
+    without_control: list = []
+    for c in cands:
+        c = Path(c)
+        try:
+            if not c.is_dir():
+                continue
+            if (c / "iPod_Control").is_dir():
+                ipods.append(read_device_info(c))
+            elif _looks_like_ipod_volume(c):
+                without_control.append(c)
+        except OSError:
+            continue
+
+    if ipods:
+        state = "ready"
+    elif without_control:
+        state = "no_ipod_control"
+    else:
+        state = "no_device"
+    return ScanResult(state=state, ipods=ipods, volumes_without_control=without_control)
+
+
 def _coerce_family_id(value: object) -> Optional[int]:
     if value in (None, ""):
         return None
@@ -92,23 +165,45 @@ def _coerce_family_id(value: object) -> Optional[int]:
         return None
 
 
-def _try_usb_identify(mount: Path) -> Optional[tuple[str, str]]:
-    """Gancho de identificación por USB en vivo. Vacío hasta la Etapa 2d.
+def _identity_from_vpd_dict(d: dict) -> tuple[Optional[str], Optional[int], Optional[str], Optional[str]]:
+    """(guid, family_id, serial, model_number) desde el dict crudo de VPD/USB."""
+    guid = normalize_guid(d.get("FireWireGUID") or d.get("FirewireGuid")) or None
+    family_id = _coerce_family_id(d.get("FamilyID"))
+    serial = (d.get("SerialNumber") or d.get("pszSerialNumber") or "").strip() or None
+    model_number = (d.get("ModelNumStr") or "").strip() or None
+    return guid, family_id, serial, model_number
 
-    Devuelve ``None`` si no hay backend/módulos VPD (su ausencia no rompe nada).
-    """
-    return None
+
+def _synth_sysinfoextended(guid, family_id, serial, model_number) -> bytes:
+    """Plist SysInfoExtended mínimo desde los campos de USB, para cachear off-device."""
+    import plistlib
+    d: dict = {}
+    if guid: d["FireWireGUID"] = guid
+    if family_id is not None: d["FamilyID"] = int(family_id)
+    if serial: d["SerialNumber"] = serial
+    if model_number: d["ModelNumStr"] = model_number
+    return plistlib.dumps(d)
 
 
 def read_device_info(mount: str | Path, *, use_usb: bool = False) -> DeviceInfo:
-    """Lee la identidad del iPod montado en ``mount``. **No escribe nada.**
+    """Lee la identidad del iPod montado en ``mount``. **No escribe en el volumen.**
 
-    Opera sobre la ruta dada (no revalida el montaje: eso es para escrituras).
-    ``use_usb=False`` por defecto; el enriquecimiento por USB es opcional.
+    Orden de resolución del GUID: **disco → caché fuerte → USB → caché débil.**
+    ``use_usb=False`` por defecto. El fallo de USB nunca es silencioso
+    (``usb_error``). El caché por puntero débil nunca se usa por encima de USB, y
+    no es apto para firmar en Fase 2 (``guid_is_write_safe``).
     """
+    from cicada.ipod.device import authority
+    from cicada.ipod.device.volume_id import volume_fingerprint
+    from cicada.ipod.device.vpd import query_vpd
+
     mount = Path(mount)
     device_dir = mount / "iPod_Control" / "Device"
+    sources: dict = {}
+    usb_error: Optional[str] = None
+    guid_provenance: Optional[str] = None
 
+    # ── 1. DISCO ──────────────────────────────────────────────────────────
     identity: dict = {}
     sie = device_dir / "SysInfoExtended"
     if sie.is_file():
@@ -116,7 +211,6 @@ def read_device_info(mount: str | Path, *, use_usb: bool = False) -> DeviceInfo:
             identity = parse_sysinfo_extended(sie.read_bytes()).identity
         except Exception as exc:
             logger.warning("SysInfoExtended ilegible en %s: %s", sie, exc)
-
     sysinfo_txt: dict = {}
     si = device_dir / "SysInfo"
     if si.is_file():
@@ -130,36 +224,80 @@ def read_device_info(mount: str | Path, *, use_usb: bool = False) -> DeviceInfo:
     serial = (identity.get("serial") or sysinfo_txt.get("SerialNumber")
               or sysinfo_txt.get("pszSerialNumber") or None)
     model_number = identity.get("model_number") or sysinfo_txt.get("ModelNumStr") or None
+    if guid:
+        guid_provenance = "disk"
 
+    fp = volume_fingerprint(mount) if guid is None else None
+
+    def _fill_from_cache(cached_guid: str):
+        nonlocal guid, family_id, serial, model_number
+        guid = cached_guid
+        raw = authority.read_cached_sysinfo_extended(cached_guid)
+        if raw:
+            try:
+                cid = parse_sysinfo_extended(raw).identity
+                family_id = family_id or _coerce_family_id(cid.get("family_id"))
+                serial = serial or cid.get("serial")
+                model_number = model_number or cid.get("model_number")
+            except Exception:
+                pass
+
+    # ── 2. CACHÉ por puntero FUERTE (sin USB) ─────────────────────────────
+    if guid is None and fp is not None and fp.strength == "strong":
+        ptr = authority.read_guid_pointer(fp.value)
+        if ptr:
+            _fill_from_cache(ptr["firewire_guid"])
+            guid_provenance = "cache_strong"
+
+    # ── 3. USB en vivo (si aún no hay GUID y use_usb) ─────────────────────
+    if guid is None and use_usb:
+        vr = query_vpd()
+        if vr.ok:
+            g2, fid2, ser2, mn2 = _identity_from_vpd_dict(vr.data)
+            if g2:
+                guid, guid_provenance = g2, "usb"
+                family_id = family_id or fid2
+                serial = serial or ser2
+                model_number = model_number or mn2
+                # Persistir off-device (NUNCA en Device/): puntero + SysInfoExtended.
+                try:
+                    authority.store_sysinfo_extended_for_guid(
+                        g2, _synth_sysinfoextended(g2, fid2, ser2, mn2))
+                    if fp is not None:
+                        authority.write_guid_pointer(fp.value, g2, strength=fp.strength)
+                except Exception as exc:
+                    logger.debug("No se pudo cachear la identidad USB: %s", exc)
+            else:
+                usb_error = "VPD sin FireWireGUID"
+        else:
+            usb_error = vr.error
+        if usb_error:
+            sources["usb"] = usb_error
+
+    # ── 4. CACHÉ por puntero DÉBIL (último recurso) ───────────────────────
+    if guid is None and fp is not None and fp.strength == "weak":
+        ptr = authority.read_guid_pointer(fp.value)
+        if ptr:
+            _fill_from_cache(ptr["firewire_guid"])
+            guid_provenance = "cache_weak"
+            sources["firewire_guid_strength"] = "weak"
+
+    # ── Cascada de familia/generación ─────────────────────────────────────
     family = generation = capacity = color = None
     identified_by: Optional[str] = None
-    sources: dict = {}
-
     methods = identification_methods(family_id=family_id, serial=serial, model_number=model_number)
-
-    # Cascada: FamilyID → serial → ModelNumStr.
     for method in ("family_id", "serial_suffix", "model_number"):
         if methods[method] is not None:
             family, generation = methods[method]
             identified_by = method
             sources["family"] = sources["generation"] = method
             break
-
-    # Enriquecimiento de capacidad/color desde la vía serial (si la hay).
     if serial:
         res = lookup_by_serial(serial)
         if res:
             _mn, (_f, _g, cap, col) = res
             capacity, color = cap or None, col or None
             model_number = model_number or _mn
-
-    # USB en vivo, opcional (Etapa 2d). Su ausencia no rompe nada.
-    if family is None and use_usb:
-        usb_res = _try_usb_identify(mount)
-        if usb_res:
-            family, generation = usb_res
-            identified_by = "usb_pid"
-            sources["family"] = sources["generation"] = "usb_pid"
 
     caps: Optional[DeviceCapabilities] = None
     checksum: Optional[ChecksumType] = None
@@ -170,11 +308,12 @@ def read_device_info(mount: str | Path, *, use_usb: bool = False) -> DeviceInfo:
         checksum = caps.checksum if caps else checksum_type_for_family_gen(family, generation)
 
     if guid:
-        sources.setdefault("firewire_guid", "sysinfo_extended")
+        sources.setdefault("firewire_guid", guid_provenance or "sysinfo_extended")
 
     return DeviceInfo(
         mount=mount, firewire_guid=guid, family=family, generation=generation,
         model_number=model_number, serial=serial, family_id=family_id,
         capacity=capacity, color=color, checksum=checksum, capabilities=caps,
         identified_by=identified_by, partial=not (family and generation), sources=sources,
+        guid_provenance=guid_provenance, usb_error=usb_error,
     )

@@ -22,7 +22,7 @@ import sys
 # El fixture nano7g captura el CONTENIDO de iPod_Control/ (tiene Device/ e
 # iTunes/ directamente, sin el nivel iPod_Control/). Un iPod real sí tiene
 # iPod_Control/, así que presentamos el fixture como un mount con un symlink.
-FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "nano7g"
+FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "nano7g-iopenpod"
 HAS_FIXTURE = (FIXTURE / "Device" / "SysInfoExtended").exists()
 skip_no_fixture = pytest.mark.skipif(
     not HAS_FIXTURE or sys.platform == "win32",

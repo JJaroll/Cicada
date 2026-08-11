@@ -213,8 +213,15 @@ De paquete 4 (`itunesdb_writer`) @ `ea72e3e`, lo mínimo para verificar:
 - **`verify.py` (propio)**: `verify_hashab(itunescdb, guid) -> HashVerifyResult(valid, stored,
   computed)`. Computa + compara, **sin escribir**.
 
-**Resultado (criterio de aceptación de Fase 1):** `verify_hashab` reproduce la firma
-HASHAB del iTunesCDB real **byte a byte** → `valid=True`. **Se puede pasar a Fase 2.**
+**Resultado (revisado tras probar contra una base de iTunes/Apple): GO con advertencia.**
+`verify_hashab` reproduce **byte a byte** las firmas de **iOpenPod** (mismo WASM), pero
+**NO** las de **Apple/iTunes** (verify=False contra la base real de iTunes). Dos hechos
+verificados con hardware, **distintos**: (1) el **firmware del iPod acepta AMBAS firmas**
+—el dispositivo reproduce lo que escribe iOpenPod—; (2) **Music.app solo acepta la de
+Apple** y pide restaurar el iPod. El go/no-go de Fase 2 es que el dispositivo funcione →
+**la escritura HASHAB es VIABLE**, con la limitación conocida de que **rompe la
+compatibilidad con Music.app de forma irreversible**. Fase 2 debe advertir al usuario
+antes de la primera escritura. Ver §0.3 del spec.
 
 **Hallazgo que corrige el spec (§0.3):** el SHA1 se computa sobre el **iTunesCDB
 COMPRIMIDO** en disco (no el descomprimido), con `hashing_scheme`=4 y el zeroing estándar,
@@ -225,7 +232,37 @@ Tests: `tests/ipod/db/writer/test_verify_hashab.py` (5), incl. integración con
 `device_info` (el GUID sale de leer solo el volumen).
 
 **Pendiente:**
-- **Etapa 2d** — enriquecimiento por USB en vivo (opcional, degradable): `usb_backend`
+#### Etapa 2d-a — Identidad por USB (macOS). **Estado: implementado (falta aceptación en hardware).**
+
+Lee el `FireWireGUID` del hardware cuando no está en disco (iPod restaurado por
+iTunes no tiene `SysInfoExtended`). En macOS corre **`vpd_iokit`** (IOKit
+SCSITaskLib, ctypes) — el módulo más limpio del stack USB: **cero escrituras, sin
+`metadata_write`, sin pyusb, sin root**.
+
+- **`vpd_iokit.py`** — vendorizado sin modificar (autocontenido, solo ctypes).
+- **`vpd.py`** (propio) — dispatcher por plataforma; `query_vpd() -> VpdResult(data,
+  error, transport)`. **Fallo nunca silencioso**: error tipado (IOKit no disponible /
+  rechazó el SCSITaskUserClient / dispositivo no encontrado / plataforma no soportada).
+- **`volume_id.py`** (propio) — huella del volumen para el caché GUID off-device.
+  **strong** = `diskutil VolumeUUID` (VSN, sin root: diskutil hace la lectura
+  privilegiada); **weak** = `sha256(DeviceNode+VolumeName)`. Comprobado: leer el VSN
+  del boot sector directamente **requiere root** (`dd /dev/diskNsM` → Permission
+  denied), por eso se delega en diskutil.
+- **`device_info`** — orden de resolución del GUID: **disco → caché fuerte → USB →
+  caché débil**. Añadidos `usb_error` y `guid_provenance` (disk/cache_strong/usb/
+  cache_weak). El puntero **débil** queda por debajo de USB y **no es write-safe**
+  (`guid_is_write_safe`): la Fase 2 no firmará con un GUID de `cache_weak`.
+- **`authority`** — puntero `huella_volumen → GUID` (`~/.cicada/sysinfo/index/`) +
+  `store_sysinfo_extended_for_guid`. El resultado USB se cachea **off-device**, nunca
+  en `Device/`.
+- CLI: `cicada ipod identify [--usb]` (para la prueba de aceptación).
+
+Restricciones cumplidas: **`vpd_libusb` y `metadata_write` NO entran**; cero escrituras
+de SysInfo al volumen; pyusb opcional (macOS usa IOKit, no lo toca).
+
+Tests: `tests/ipod/device/test_vpd_2d.py` (12), todo mockeado (sin hardware).
+
+**Etapa 2d-b (pendiente)** — Linux/Windows por libusb: `usb_backend`
   + parsers `vpd_*` + `linux_identity`, y `vpd_libusb` **adaptado** para volcar a
   `authority` off-device, nunca a `Device/`. `metadata_write` NO se copia. pyusb opcional.
 - **Paquete 3** (`itunesdb_parser`) — lectura de `iTunesCDB`/`Library.itdb`.

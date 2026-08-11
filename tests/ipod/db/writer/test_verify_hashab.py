@@ -1,7 +1,14 @@
-"""Tests de verificación HASHAB (Etapa 3b) — el go/no-go de la Fase 2.
+"""Tests de verificación HASHAB (Etapa 3b).
 
-Criterio de aceptación: verify_hashab reproduce la firma HASHAB existente en el
-iTunesCDB real del fixture (Nano 7G). Requiere wasmtime.
+HALLAZGO (verificado contra hardware): nuestra implementación (el WASM de
+dstaley/hashab que usa iOpenPod) reproduce las firmas escritas por **iOpenPod**,
+pero **NO** las de **Apple/iTunes**. Ver docs/IPOD_INTEGRATION.md §0.3.
+
+- Fixture ``nano7g-iopenpod`` (base escrita por iOpenPod) → verify == True.
+- Fixture ``nano7g`` (base escrita por iTunes/Apple), si está presente →
+  verify == False. Es el go/no-go real de la escritura de Fase 2.
+
+Requiere wasmtime.
 """
 import sys
 from pathlib import Path
@@ -12,18 +19,37 @@ wasmtime = pytest.importorskip("wasmtime", reason="wasmtime no instalado")
 
 from cicada.ipod.db.writer.verify import canonical_hashab_sha1, verify_hashab
 
-FIXTURE = Path(__file__).resolve().parents[3] / "fixtures" / "nano7g"
+FIXTURE = Path(__file__).resolve().parents[3] / "fixtures" / "nano7g-iopenpod"
 CDB = FIXTURE / "iTunes" / "iTunesCDB"
+APPLE_CDB = Path(__file__).resolve().parents[3] / "fixtures" / "nano7g" / "iTunes" / "iTunesCDB"
 GUID = "000A27002484DDFB"
 skip_no_fixture = pytest.mark.skipif(not CDB.exists(), reason="fixture no presente")
 
 
 @skip_no_fixture
-def test_verify_hashab_reproduce_la_firma_existente():
+def test_verify_hashab_reproduce_la_firma_de_iopenpod():
+    # Reproduce la firma de una base escrita por iOpenPod (mismo WASM que la escribió).
     r = verify_hashab(CDB.read_bytes(), bytes.fromhex(GUID))
     assert r.valid is True
     assert r.stored == r.computed
     assert len(r.stored) == 57
+
+
+@pytest.mark.skipif(not APPLE_CDB.exists(), reason="fixture Apple/iTunes no presente")
+def test_verify_hashab_NO_reproduce_la_firma_de_apple():
+    """HALLAZGO: contra una base escrita por iTunes (Apple), verify FALLA.
+
+    Reproducimos las firmas de iOpenPod pero no las de Apple. Esto NO bloquea la
+    escritura de Fase 2: verificado con hardware que el firmware del iPod acepta
+    AMBAS firmas (reproduce lo que escribe iOpenPod). La divergencia solo rompe
+    la compatibilidad con Music.app. Ver docs/IPOD_INTEGRATION.md §0.3.
+    """
+    r = verify_hashab(APPLE_CDB.read_bytes(), bytes.fromhex(GUID))
+    assert r.valid is False              # nuestra firma != la de Apple
+    assert r.stored != r.computed
+    # La firma de Apple no comparte la estructura invariante del WASM.
+    assert r.stored[4:7] != bytes.fromhex("474d48")   # 'GMH' del WASM
+    assert r.computed[4:7] == bytes.fromhex("474d48")
 
 
 @skip_no_fixture

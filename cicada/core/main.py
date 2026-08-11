@@ -430,18 +430,97 @@ async def list_spotify_playlists():
         raise HTTPException(status_code=500, detail=f"Error inesperado listando playlists: {e}")
 
 # --- IPOD ENDPOINTS ---
+def _ipod_to_ui(info) -> Dict[str, Any]:
+    """DeviceInfo -> dict del contrato que ya espera la UI (ipod.js)."""
+    return {
+        "mount": str(info.mount),
+        "ipod_name": None,                       # el nombre llega con la biblioteca
+        "model_family": info.family,
+        "generation": info.generation,
+        "color": info.color,
+        "capacity": info.capacity,
+        "filesystem_type": None,                 # detección de FS: pendiente (2d)
+        "firewire_guid": info.firewire_guid,
+        "checksum": info.checksum.name if info.checksum else None,
+        "serial": info.serial,
+        "partial": info.partial,
+    }
+
+
+def _revalidate_ipod_mount():
+    """Revalida que hay un iPod montado AHORA y devuelve (mount, DeviceInfo).
+
+    El Nano 7G se desmonta solo: toda lectura vuelve a comprobar el montaje.
+    Lanza HTTPException 503 si no hay iPod legible.
+    """
+    from cicada.ipod.device.device_info import discover_ipods
+    from cicada.ipod.device.write_guard import resolve_mount, WriteGuardError
+    result = discover_ipods()
+    if result.state != "ready" or not result.ipods:
+        raise HTTPException(status_code=503, detail="No hay ningún iPod legible montado.")
+    info = result.ipods[0]
+    try:
+        mount = resolve_mount(candidates=[info.mount])   # revalida el montaje ahora
+    except WriteGuardError:
+        raise HTTPException(status_code=503, detail="El iPod se desmontó; vuelve a conectarlo.")
+    return mount, info
+
+
 @app.get("/api/ipod/scan")
 async def scan_ipods():
-    if ipod_scanner is None:
-        raise HTTPException(status_code=503, detail="El módulo iPod aún no está disponible en esta versión.")
+    """Escanea volúmenes en busca de iPods. 3 estados diferenciados. Solo lectura."""
+    from cicada.ipod.device.device_info import discover_ipods
     try:
-        ipods = ipod_scanner.scan_for_ipods()
-        # Convert dataclasses to dict for JSON serialization
-        import dataclasses
-        ipod_list = [dataclasses.asdict(ip) for ip in ipods]
-        return {"ipods": ipod_list}
+        result = discover_ipods()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error escaneando iPods: {e}")
+    return {
+        "state": result.state,                   # ready | no_ipod_control | no_device
+        "ipods": [_ipod_to_ui(i) for i in result.ipods],
+        "volumes_without_control": [str(v) for v in result.volumes_without_control],
+    }
+
+
+@app.get("/api/ipod/tracks")
+async def ipod_tracks():
+    """Lista los tracks del iPod montado. Revalida el montaje. Solo lectura."""
+    from cicada.ipod.db.parser import load_ipod_library
+    mount, _info = _revalidate_ipod_mount()
+    cdb = mount / "iPod_Control" / "iTunes" / "iTunesCDB"
+    data = await asyncio.to_thread(load_ipod_library, str(cdb), mount=str(mount))
+    if data is None:
+        raise HTTPException(status_code=500, detail="No se pudo leer la biblioteca del iPod.")
+    tracks = [{
+        "title": t.get("Title"),
+        "artist": t.get("Artist"),
+        "album": t.get("Album"),
+        "album_artist": t.get("Album Artist"),
+        "genre": t.get("Genre"),
+        "track_number": t.get("track_number"),
+        "year": t.get("year"),
+        "length_ms": t.get("length"),
+        "filetype": t.get("Filetype"),
+        "play_count": t.get("play_count_1", 0),
+        "rating": t.get("rating", 0),
+    } for t in data.get("mhlt", [])]
+    return {"tracks": tracks, "count": len(tracks)}
+
+
+@app.get("/api/ipod/playlists")
+async def ipod_playlists():
+    """Lista las playlists del iPod montado. Revalida el montaje. Solo lectura."""
+    from cicada.ipod.db.parser import load_ipod_library
+    mount, _info = _revalidate_ipod_mount()
+    cdb = mount / "iPod_Control" / "iTunes" / "iTunesCDB"
+    data = await asyncio.to_thread(load_ipod_library, str(cdb), mount=str(mount))
+    if data is None:
+        raise HTTPException(status_code=500, detail="No se pudo leer la biblioteca del iPod.")
+    playlists = [{
+        "title": p.get("Title"),
+        "is_master": bool(p.get("master_flag")),
+        "count": len(p.get("items", [])),
+    } for p in data.get("mhlp", [])]
+    return {"playlists": playlists, "count": len(playlists)}
 
 @app.post("/api/ipod/sync")
 async def sync_ipod(request: Request):
@@ -1574,9 +1653,10 @@ async def get():
                                 <p id="ipod-format" class="font-data-sm text-[13px] text-muted">Formato: --</p>
                             </div>
                         </div>
-                        <div id="ipod-no-device" class="text-center py-6 text-muted font-data-sm text-[13px]">
+                        <div id="ipod-no-device" class="text-center py-6 text-muted font-data-sm text-[13px]" data-i18n="ipod_no_device">
                             No se ha detectado ningún iPod. Asegúrate de que esté conectado y montado.
                         </div>
+                        <div id="ipod-no-control" class="text-center py-6 text-[#f59e0b] font-data-sm text-[13px] hidden" data-i18n="ipod_no_control"></div>
                     </div>
 
                     <!-- Middle section: Sync & Backup (side by side) -->
@@ -1604,6 +1684,24 @@ async def get():
                                 <button onclick="backupIpod()" id="btn-backup-ipod" class="border border-secondary text-secondary px-6 py-2 rounded-full font-label-caps text-[12px] hover:bg-secondary hover:text-white transition-colors opacity-50 cursor-not-allowed" disabled>
                                     Crear Backup Manual
                                 </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Biblioteca del dispositivo (Fase 1: lectura) -->
+                    <div id="ipod-library" class="glass-card p-6 flex flex-col gap-4 flex-1 overflow-hidden hidden">
+                        <div class="flex justify-between items-center border-b border-theme pb-4">
+                            <h2 class="font-label-caps tracking-widest text-[16px] text-main" data-i18n="ipod_library_title">Biblioteca del iPod</h2>
+                            <span id="ipod-library-counts" class="font-data-sm text-[13px] text-muted"></span>
+                        </div>
+                        <div class="flex gap-4 flex-1 overflow-hidden">
+                            <div class="w-[220px] flex-shrink-0 flex flex-col gap-2 overflow-y-auto">
+                                <h3 class="font-label-caps text-[12px] text-secondary uppercase" data-i18n="ipod_playlists_label">Playlists</h3>
+                                <div id="ipod-playlists-list" class="flex flex-col gap-1"></div>
+                            </div>
+                            <div class="flex-1 flex flex-col gap-1 overflow-y-auto">
+                                <h3 class="font-label-caps text-[12px] text-secondary uppercase" data-i18n="ipod_tracks_label">Canciones</h3>
+                                <div id="ipod-tracks-list" class="flex flex-col gap-1"></div>
                             </div>
                         </div>
                     </div>

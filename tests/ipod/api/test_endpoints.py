@@ -12,7 +12,7 @@ import pytest
 from cicada.ipod.device import write_guard as wg
 from cicada.core import main as app_main
 
-FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "nano7g"
+FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "nano7g-iopenpod"
 skip_no_fixture = pytest.mark.skipif(
     not (FIXTURE / "iTunes" / "iTunesCDB").exists() or sys.platform == "win32",
     reason="fixture no presente (o symlinks no POSIX)",

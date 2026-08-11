@@ -15,7 +15,7 @@ from cicada.ipod.db import shared
 from cicada.ipod.db.shared.constants import identifier_readable_map
 from cicada.ipod.db.shared.field_base import FIELD_REGISTRY, FieldDef, _u32
 
-FIXTURE_CDB = Path(__file__).resolve().parents[3] / "fixtures" / "nano7g" / "iTunes" / "iTunesCDB"
+FIXTURE_CDB = Path(__file__).resolve().parents[3] / "fixtures" / "nano7g-iopenpod" / "iTunes" / "iTunesCDB"
 
 # En el Nano 6G/7G, el iTunesCDB es una cabecera mhbd en claro seguida del cuerpo
 # comprimido con zlib. Solo mhbd es visible en texto; los demás marcadores viven

@@ -15,7 +15,7 @@ from cicada.ipod.db.parser import (
     parse_playcounts,
 )
 
-FIXTURE = Path(__file__).resolve().parents[3] / "fixtures" / "nano7g"
+FIXTURE = Path(__file__).resolve().parents[3] / "fixtures" / "nano7g-iopenpod"
 CDB = FIXTURE / "iTunes" / "iTunesCDB"
 skip_no_fixture = pytest.mark.skipif(
     not CDB.exists() or sys.platform == "win32",

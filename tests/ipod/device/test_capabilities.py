@@ -16,7 +16,7 @@ import pytest
 from cicada.ipod.device.capabilities import capabilities_for_family_gen
 from cicada.ipod.device.checksum import ChecksumType
 
-FIXTURE_SIE = Path(__file__).resolve().parents[2] / "fixtures" / "nano7g" / "Device" / "SysInfoExtended"
+FIXTURE_SIE = Path(__file__).resolve().parents[2] / "fixtures" / "nano7g-iopenpod" / "Device" / "SysInfoExtended"
 
 NANO7G = ("iPod Nano", "7th Gen")
 

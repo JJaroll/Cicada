@@ -66,7 +66,35 @@ en `~/.cicada/` (p. ej. `~/.cicada/sysinfo/<guid>.json`), indexado por GUID. El 
 `CicadaSysInfoAuthority` se conserva solo como identificador lógico del caché, no como
 archivo en el iPod.
 
-### 0.3 Hashing — resuelto y redistribuible
+### 0.3 Hashing — escritura VIABLE con una limitación conocida (Music.app)
+
+> **Corrección (verificada contra hardware, Fase 1).** Nuestra firma HASHAB (vía el WASM
+> de dstaley/hashab que usa iOpenPod) reproduce **byte a byte** las firmas escritas por
+> **iOpenPod**, pero **NO** las de **iTunes/Apple** (contra una base real de iTunes,
+> mismo GUID, `verify_hashab` falla; 120 variantes de SHA1 no la reproducen; el WASM
+> tiene 25 posiciones de bytes invariantes y Apple viola 23 → otra clave del white-box,
+> o algoritmo distinto).
+>
+> **Dos hechos distintos, verificados con hardware — no confundirlos:**
+> 1. **El firmware del iPod ACEPTA AMBAS firmas.** Confirmado: el dispositivo reproduce
+>    en pantalla y suena la música cuya base escribió iOpenPod. Si el firmware exigiera
+>    la firma de Apple, mostraría biblioteca vacía.
+> 2. **Music.app solo acepta la firma de Apple.** Al conectar un iPod cuya base fue
+>    escrita por Cicada/iOpenPod, Music lo considera no reconocido y pide **restaurarlo**
+>    (irreversible: borra la biblioteca).
+>
+> **Go/no-go de Fase 2 = ¿funciona el dispositivo? Sí → GO.** El criterio es que el iPod
+> reproduzca lo que escribimos, no que Music lo apruebe. **La escritura HASHAB es viable**,
+> con esta **limitación conocida: rompe la compatibilidad con Music.app de forma
+> irreversible** (revertir requiere restaurar el iPod desde Music/Finder).
+>
+> **Requisito de Fase 2:** advertir al usuario **antes de la primera escritura**, de forma
+> explícita: *"Cicada escribirá una firma que el dispositivo acepta pero Music.app no
+> reconocerá. Revertirlo requiere restaurar el iPod."*
+>
+> **Investigación paralela (no bloqueante):** una segunda base escrita por iTunes en el
+> mismo dispositivo con contenido distinto (otro SHA1) permitiría desambiguar "clave" vs
+> "algoritmo" — y, si es clave, podría dar compatibilidad total con Apple más adelante.
 
 El firmware verifica una firma en el header `mhbd` del `iTunesCDB`. Sin ella, el iPod
 muestra la biblioteca vacía aunque los archivos estén presentes.

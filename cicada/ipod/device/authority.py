@@ -48,6 +48,9 @@ __all__ = [
     "update_sysinfo",
     "cache_sysinfo_extended",
     "clean_foreign_authority",
+    "read_guid_pointer",
+    "write_guid_pointer",
+    "read_cached_sysinfo_extended",
 ]
 
 #: Nombre de nuestro JSON de autoridad (off-device).
@@ -107,6 +110,61 @@ def _sysinfo_cache_root() -> Path:
 def _cache_dir_for_guid(guid: str) -> Path:
     digest = hashlib.sha256(guid.encode("utf-8")).hexdigest()[:16]
     return _sysinfo_cache_root() / digest
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Índice puntero: huella de volumen -> GUID (para resolver sin USB)
+# ──────────────────────────────────────────────────────────────────────
+def _pointer_path(volume_fp: str) -> Path:
+    digest = hashlib.sha256(volume_fp.encode("utf-8")).hexdigest()[:16]
+    return _sysinfo_cache_root() / "index" / f"{digest}.json"
+
+
+def read_guid_pointer(volume_fp: str) -> Optional[dict]:
+    """Devuelve ``{"firewire_guid", "strength"}`` para una huella de volumen, o None."""
+    path = _pointer_path(volume_fp)
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if isinstance(data, dict) and data.get("firewire_guid"):
+        return data
+    return None
+
+
+def write_guid_pointer(volume_fp: str, guid: str, *, strength: str) -> None:
+    """Guarda el puntero huella_de_volumen -> GUID (off-device)."""
+    path = _pointer_path(volume_fp)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
+    payload = {"firewire_guid": guid, "strength": strength, "updated": _now()}
+    tmp.write_text(json.dumps(payload, sort_keys=True), encoding="utf-8")
+    os.replace(tmp, path)
+
+
+def read_cached_sysinfo_extended(guid: str) -> Optional[bytes]:
+    """Bytes del SysInfoExtended cacheado off-device para ``guid``, o None."""
+    path = _cache_dir_for_guid(guid) / "SysInfoExtended"
+    try:
+        return path.read_bytes() if path.is_file() else None
+    except OSError:
+        return None
+
+
+def store_sysinfo_extended_for_guid(guid: str, raw_xml: bytes | str) -> None:
+    """Guarda el SysInfoExtended por GUID explícito (para el caso USB, donde el
+    dispositivo no lo tiene en disco). Off-device, nunca en el volumen."""
+    data = _normalise_sysinfo_extended(raw_xml)
+    if not data:
+        return
+    directory = _cache_dir_for_guid(guid)
+    directory.mkdir(parents=True, exist_ok=True)
+    payload = directory / "SysInfoExtended"
+    tmp = payload.with_suffix(".tmp")
+    tmp.write_bytes(data)
+    os.replace(tmp, payload)
 
 
 # ──────────────────────────────────────────────────────────────────────

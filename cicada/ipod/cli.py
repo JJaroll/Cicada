@@ -47,6 +47,13 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Fuerza la expulsión aunque un proceso la rechace (decisión explícita)",
     )
+
+    p_id = sub.add_parser("identify", help="Muestra la identidad del iPod montado")
+    p_id.add_argument(
+        "--usb",
+        action="store_true",
+        help="Permite leer el FireWireGUID por USB si no está en disco (Etapa 2d)",
+    )
     return parser
 
 
@@ -74,6 +81,23 @@ def _cmd_clean_foreign(_args: argparse.Namespace) -> int:
     else:
         print("No había iOpenPodSysInfoAuthority en el dispositivo.")
     return 0
+
+
+def _cmd_identify(args: argparse.Namespace) -> int:
+    from cicada.ipod.device.device_info import read_device_info
+    mount = resolve_mount()
+    info = read_device_info(mount, use_usb=args.usb)
+    print(f"Modelo    : {info.family or '?'} {info.generation or ''} {info.color or ''}".rstrip())
+    print(f"Capacidad : {info.capacity or '?'}")
+    print(f"Firma     : {info.checksum.name if info.checksum else '?'}")
+    print(f"GUID      : {info.firewire_guid or '(no resuelto)'}")
+    print(f"Procedencia GUID: {info.guid_provenance or 'ninguna'}"
+          + ("  [write-safe]" if info.guid_is_write_safe else "  [NO write-safe]"))
+    print(f"Serial    : {info.serial or '?'}")
+    print(f"Parcial   : {info.partial}")
+    if info.usb_error:
+        print(f"USB error : {info.usb_error}")
+    return 0 if not info.partial else 1
 
 
 def _cmd_eject(args: argparse.Namespace) -> int:
@@ -105,6 +129,7 @@ _HANDLERS = {
     "list-backups": _cmd_list,
     "clean-foreign": _cmd_clean_foreign,
     "eject": _cmd_eject,
+    "identify": _cmd_identify,
 }
 
 

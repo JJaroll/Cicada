@@ -16,7 +16,7 @@ from cicada.ipod.device.checksum import (
     ChecksumType,
 )
 
-FIXTURE_CDB = Path(__file__).resolve().parents[2] / "fixtures" / "nano7g" / "iTunes" / "iTunesCDB"
+FIXTURE_CDB = Path(__file__).resolve().parents[2] / "fixtures" / "nano7g-iopenpod" / "iTunes" / "iTunesCDB"
 
 
 def test_mapa_wire_hashab_es_4():
