@@ -270,3 +270,39 @@ Tests: `tests/ipod/device/test_vpd_2d.py` (12), todo mockeado (sin hardware).
 - Toda escritura al volumen pasa por `write_guard`/`safe_write`.
 
 Atribución completa en `cicada/ipod/NOTICE`.
+
+### Paquete 4 — `itunesdb_writer/` → `cicada/ipod/db/writer/` (Fase 2, por etapas)
+
+#### Etapa 2a — Escritura del iTunesCDB en staging. **Estado: implementado y verificado (sin hardware).**
+
+Origen: `src/iopenpod/itunesdb_writer/` @ `ea72e3e`. Vendorizados los **builders**:
+`mhbd_writer` (builder puro `write_mhbd -> bytes`), `mh{it,yp,ip,od,sd,lt,la,li,lp}_writer`,
+`mhod_spl_writer`, `mhod52_writer`, `hash58`, `hash72` (hashab ya estaba). Del paquete 6:
+`_track_conversion.py` (conversor dict↔TrackInfo). Imports `itunesdb_shared`→`db.shared`.
+
+**Adaptaciones (clave):** el **stack de escritura-al-dispositivo** de iOpenPod
+(`filesystem`, `path_safety`, `storage_safety`, `write_readiness`, su `write_guard`,
+`metadata_write`) **NO se vendoriza** — se reemplaza el coordinador. Sus imports
+top-level en `mhbd_writer`/`hash72` se envolvieron en `try/except ImportError` (degradan
+a `None`); Cicada no llama esas vías. `ChecksumType`/`DeviceCapabilities` desde
+`cicada.ipod.device`.
+
+**`build.py` (propio)** — `build_itunescdb(tracks, *, firewire_id, checksum, time_context, …)
+-> bytes`: reimplementa la entrada de escritura (que estaba enredada con el stack de
+dispositivo). Hace `write_mhbd` (builder) → comprimir zlib → **firmar sobre el comprimido**
+(§0.3). **Produce bytes; no escribe disco** (el install es del coordinador 2c vía safe_write).
+Gate: `firewire_id` write-safe obligatorio.
+
+**Hallazgo (cazado por la comparación campo por campo):** sin pasar el `time_context`
+del dispositivo, `date_added`/`last_modified` se **desplazan por el offset de zona**
+(mac-en-hora-local ↔ Unix). `build_itunescdb` exige el contexto (el mismo con que se
+leyó) → round-trip exacto.
+
+Tests: `tests/ipod/db/writer/test_build_2a.py` (5): 25→26 tracks, `verify_hashab` True,
+**comparación campo por campo de los 25** (idénticos con contexto), regresión del fix de
+fechas, y **cross-check con el iOpenPod prístino** (`../iPod-clon/iOpenPod/src` vía
+subprocess) — no es independencia (nuestro writer ES el suyo), prueba que las adaptaciones
+no rompieron el formato.
+
+**Pendiente:** 2b (SQLite `.itdb` + `.cbk`, paquete 5), 2c (coordinador propio: dry-run,
+backup, install vía safe_write, verify, rollback, advertencia Music.app).
