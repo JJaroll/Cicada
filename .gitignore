@@ -32,6 +32,7 @@ dist_installer/
 test_kofi_banner.py
 test_update_banner.py
 ipod_architecture_analysis.md
+context.md
 
 tests/fixtures/*
 !tests/fixtures/README.md

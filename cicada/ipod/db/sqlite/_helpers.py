@@ -8,10 +8,22 @@ and genius_writer.
 import os
 import sqlite3
 
+__all__ = [
+    "CORE_DATA_EPOCH",
+    "SQLITE_INT_MASK",
+    "unix_to_coredata",
+    "s64",
+    "u64",
+    "open_db",
+]
+
 # ── Timestamp helpers ──────────────────────────────────────────────────
 # SQLite databases use Core Data timestamps: seconds since 2001-01-01 UTC
 # (the Cocoa/Core Foundation reference date).
 CORE_DATA_EPOCH = 978307200  # Unix timestamp of 2001-01-01 00:00:00 UTC
+
+#: Máscara para normalizar enteros de 64 bits a su representación sin signo (uint64).
+SQLITE_INT_MASK = 0xFFFFFFFFFFFFFFFF
 
 
 def unix_to_coredata(unix_ts: int) -> int:
@@ -37,6 +49,21 @@ def s64(val: int) -> int:
     if val >= (1 << 63):
         return val - (1 << 64)
     return val
+
+
+def u64(val: int) -> int:
+    """Convierte un entero de 64 bits con signo (SQLite INTEGER) a sin signo (parser iTunesCDB).
+
+    Inverso de :func:`s64`. SQLite almacena los INTEGERs como enteros con signo de 64 bits
+    (rango -2^63 a 2^63-1), mientras que el parser de iTunesCDB los lee como enteros sin
+    signo de 64 bits (uint64, rango 0 a 2^64-1).
+
+    Toda comparación de dbids / PIDs entre capas DEBE normalizarse con esta función;
+    sin esto, el MISMO id (cuyo bit más significativo es 1) aparece como un número negativo
+    en SQLite y como un número positivo grande en iTunesCDB, produciendo un "los dbids no cuadran"
+    imposible de depurar.
+    """
+    return val & SQLITE_INT_MASK
 
 
 def open_db(path: str, extra_pragmas: list[str] | None = None) -> tuple[sqlite3.Connection, sqlite3.Cursor]:

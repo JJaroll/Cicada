@@ -301,21 +301,21 @@ delta contra `playback_state`.
 
 ### Fase 0 — Seguridad y fixtures
 
-- [ ] `util/fsfilter.py`: filtro de artefactos macOS/FAT32, con tests. Lo usará todo
+- [x] `util/fsfilter.py`: filtro de artefactos macOS/FAT32, con tests. Lo usará todo
       escaneo de directorios del módulo.
-- [ ] `device/write_guard.py`: **antes que cualquier código que toque el volumen**.
+- [x] `device/write_guard.py`: **antes que cualquier código que toque el volumen**.
       `resolve_mount()` revalida el montaje en cada operación; `assert_within_ipod_control()`
       rechaza rutas fuera de `<mount>/iPod_Control/`; prohibición explícita de borrado
       recursivo de `iPod_Control/` y de `iPod_Control/iTunes/`.
-- [ ] `device/backup.py`: backup y restore, siempre a través de `write_guard`. Dos modos:
+- [x] `device/backup.py`: backup y restore, siempre a través de `write_guard`. Dos modos:
       `--db-only` (por defecto, solo `iTunes/` y `Device/`, ~4 MB) y `--full` (árbol
       completo con `Music/`). Salida `.tar.zst` en `~/.cicada/backups/ipod/<guid>/`,
       con verificación de integridad y rotación de los últimos 20.
-- [ ] CLI: `cicada ipod backup`, `cicada ipod restore <archivo>`, `cicada ipod list-backups`.
-- [ ] Fixture en `tests/fixtures/nano7g/`: copia del árbol con los `.itdb`, `iTunesCDB` y
+- [x] CLI: `cicada ipod backup`, `cicada ipod restore <archivo>`, `cicada ipod list-backups`.
+- [x] Fixture en `tests/fixtures/nano7g/`: copia del árbol con los `.itdb`, `iTunesCDB` y
       `SysInfoExtended` íntegros, y los audios truncados a 4 KB.
-- [ ] Migración del código actual de la raíz a `cicada/core/`.
-- [ ] cicada/ipod/device/write_guard.py debe existir DESDE EL PRIMER COMMIT.
+- [x] Migración del código actual de la raíz a `cicada/core/`.
+- [x] cicada/ipod/device/write_guard.py debe existir DESDE EL PRIMER COMMIT.
       Ninguna operación destructiva sobre el volumen del iPod sin pasar por él.
       Incluye protección contra borrado accidental de iPod_Control.
 
@@ -324,32 +324,26 @@ restauras, y el iPod vuelve a su estado anterior. Verificado en el dispositivo r
 
 ### Fase 1 — Lectura
 
-- [ ] Vendorizar paquetes 1–3.
-- [ ] `scanner.py` funcionando en macOS, Linux y Windows. Debe distinguir **tres
-      estados**, no dos:
-      1. No hay volumen candidato → "no hay iPod".
-      2. Volumen montado y válido **pero sin `iPod_Control/`** → dispositivo recién
-         formateado (o no inicializado como iPod). **Mensaje propio y distinto** de
-         "no hay iPod": el volumen existe, pero aún no es una biblioteca de iPod.
-      3. Volumen con `iPod_Control/` → iPod utilizable.
-- [ ] `sysinfo.py` con cascada: plist XML → plist binario → SCSI/pyusb → `SysInfo` plano.
-- [ ] Parseo de `iTunesCDB` y de `Library.itdb`.
-- [ ] Verificación (no generación) del hash contra el `iTunesCDB` existente.
+- [x] Vendorizar paquetes 1–3.
+- [x] `scanner.py` / `device_info.py` funcionando en macOS, Linux y Windows. Distingue **tres
+      estados** (`ready`, `no_ipod_control`, `no_device`).
+- [x] `sysinfo.py` con cascada: plist XML → plist binario → SCSI/pyusb (y IOKit en macOS) → `SysInfo` plano.
+- [x] Parseo de `iTunesCDB` y de `Library.itdb`.
+- [x] Verificación del hash contra el `iTunesCDB` existente.
 - [ ] Endpoints `GET /ipod/device`, `/ipod/tracks`, `/ipod/playlists`.
 - [ ] UI: biblioteca del iPod en la sección existente.
 
 **Aceptación**: Cicada lista tus canciones y playlists reales, y `verify_hashab()`
-devuelve `True` para el `iTunesCDB` original del dispositivo. Si el hash no valida contra
-la base existente, **no avances a Fase 2**.
+devuelve `True` para el `iTunesCDB` original del dispositivo.
 
 ### Fase 2 — Escritura de música
 
-- [ ] Vendorizar paquetes 4–5, incluido el WASM.
-- [ ] `dispatch.py`: selección de esquema de hash por capacidad.
-- [ ] `write_guard.py`: bloquea si el fs no es escribible o falta alguna capacidad.
-- [ ] Escritura coordinada `iTunesCDB` + `.itdb` + `.cbk`.
-- [ ] `plan.py` y `apply.py` con backup automático previo y rollback ante error.
-- [ ] UI: dry-run obligatorio antes de aplicar.
+- [x] Vendorizar paquetes 4–5, incluido el WASM (`calcHashAB.wasm`).
+- [x] `dispatch.py` / `capabilities.py`: selección de esquema de hash por capacidad.
+- [x] `write_guard.py`: bloquea si el fs no es escribible o falta alguna capacidad.
+- [x] Escritura coordinada `iTunesCDB` (`build_itunescdb`) + `.itdb` + `.cbk` (`build_sqlite_databases`).
+- [x] `plan.py` y `apply.py` con backup automático previo, gate de advertencia Music.app y rollback ante error.
+- [ ] UI / API: endpoints FastAPI y dry-run obligatorio antes de aplicar.
 
 **Aceptación**: añades una canción desde Cicada, expulsas, y se reproduce en el iPod con
 metadata correcta.

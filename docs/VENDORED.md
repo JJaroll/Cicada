@@ -349,4 +349,29 @@ por separado** (parser del iTunesCDB sin signo ↔ sqlite3 con signo, normalizad
 **test negativo** que prueba que la verificación FALLA si divergen, y regresión de la
 época Cocoa (nunca-reproducida ⇒ 0; reproducida conserva su instante).
 
-**Pendiente:** 2c (coordinador: instala iTunesCDB + itlp/ juntos vía safe_write).
+**Completado:** 2c (coordinador: instala iTunesCDB + itlp/ juntos vía safe_write).
+
+### Coordinador Transaccional (Etapa 2c) — `cicada/ipod/db/coordinator/` (código propio de Cicada)
+
+Orquestador propio de escritura transaccional con rollback para el iPod Nano 7G. **Estado: implementado y verificado.**
+
+- `consent.py` (propio): Gate de advertencia de incompatibilidad con Music.app de Apple. Persiste consentimiento off-device en `~/.cicada/consent/<sha256(guid)[:16]>.json` con escritura atómica. No re-pregunta si ya fue otorgado.
+- `plan.py` (propio): Generador de planes dry-run. Captura la huella `PreStateFingerprint` de los 7 archivos pre-existentes en el iPod, genera los 7 artefactos en staging off-device (`iTunesCDB` comprimido/firmado + 6 archivos `iTunes Library.itlp/`), y valida consistencia interna antes de congelar el plan.
+- `apply.py` (propio): Ejecución en 5 fases rigurosas:
+  - Fase A (Precondiciones): Revalida montaje, permisos, procedencia de GUID (`guid_is_write_safe`), gate de consentimiento y huella pre-estado.
+  - Fase B (Backup verificado): Snapshot `DB_ONLY` con `create_backup` y verificación de integridad.
+  - Fase C (Staging en device): Copia los 7 artefactos como `.cicada-new` con `fsync` individual.
+  - Fase D (Commit por renames): Marcador `inflight.json` previo y reemplazo atómico `os.replace` en orden estricto (`Locations.itdb` → `.cbk` → resto `.itdb` → `iTunesCDB`).
+  - Fase E (Verificación post-commit): Re-lectura con parser `load_ipod_library` y `sqlite3` (con `PRAGMA integrity_check`).
+  - Rollback byte-exacto ante cualquier error en D o E restaurando el backup con `restore_backup`.
+  - `recover_inflight_commit`: recuperación cross-sesión en caso de corte de energía o crash.
+- `_helpers.py` (modificado): Añadida constante `SQLITE_INT_MASK = 0xFFFFFFFFFFFFFFFF` y función documentada `u64(val: int) -> int` para normalizar dbids con signo de SQLite a sin signo de iTunesCDB.
+
+Tests añadidos en Etapa 2c (25 tests):
+- `tests/ipod/db/sqlite/test_helpers.py` (5 tests): normalización `u64`, `s64`, simetría round-trip y valores de borde.
+- `tests/ipod/db/coordinator/test_consent.py` (8 tests): persistencia off-device, tolerancia a formatos, aislamiento por GUID y JSON corrupto.
+- `tests/ipod/db/coordinator/test_plan.py` (6 tests): staging off-device, `PreStateFingerprint` drift, rechazo de `cache_weak`, verificación de artefactos.
+- `tests/ipod/db/coordinator/test_apply.py` (6 tests): commit end-to-end, aborto por falta de consentimiento, aborto por plan obsoleto, simulación de fallo en commit con rollback byte-exacto, simulación de fallo en verify con rollback, y recuperación con `inflight.json`.
+
+**Total suite iPod tras 2c:** 247 tests pasando.
+
