@@ -103,8 +103,9 @@ class BackupInfo:
 # Rutas y nombres
 # --------------------------------------------------------------------------- #
 def default_backups_dir() -> Path:
-    """``~/.cicada/backups/ipod`` (el módulo iPod usa ``~/.cicada`` literal)."""
-    return Path.home() / ".cicada" / "backups" / "ipod"
+    """``~/.cicada/backups/ipod`` (o $CICADA_HOME/backups/ipod)."""
+    base = Path(os.environ.get("CICADA_HOME") or (Path.home() / ".cicada"))
+    return base / "backups" / "ipod"
 
 
 def _resolve_guid(mount: Path, guid: Optional[str]) -> str:

@@ -66,6 +66,9 @@ audio_processor = AudioProcessor()
 download_manager = DownloadManager()
 playlist_manager = PlaylistManager()
 
+from cicada.ipod.api import router as ipod_router
+app.include_router(ipod_router)
+
 STATIC_DIR = (
     Path(sys._MEIPASS)  # type: ignore[attr-defined]
     if getattr(sys, "frozen", False)

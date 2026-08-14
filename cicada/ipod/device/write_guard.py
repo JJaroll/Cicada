@@ -113,13 +113,13 @@ def _children_of(base: Path) -> list[Path]:
 
 
 def _read_mount_guid(mount: Path) -> Optional[str]:
-    """Lee el ``FireWireGUID`` del dispositivo montado, o ``None`` si no se puede.
-
-    En Fase 0 el parser de ``SysInfoExtended`` aún no existe (llega en Fase 1),
-    así que devuelve ``None``: la identidad no se puede confirmar todavía. Se
-    aísla aquí para que Fase 1 lo implemente y los tests lo inyecten.
-    """
-    return None
+    """Lee el ``FireWireGUID`` del dispositivo montado, o ``None`` si no se puede."""
+    try:
+        from cicada.ipod.device.device_info import read_device_info
+        info = read_device_info(mount, use_usb=False)
+        return info.firewire_guid
+    except Exception:
+        return None
 
 
 def resolve_mount(
