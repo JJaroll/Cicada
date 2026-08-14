@@ -304,5 +304,49 @@ fechas, y **cross-check con el iOpenPod prístino** (`../iPod-clon/iOpenPod/src`
 subprocess) — no es independencia (nuestro writer ES el suyo), prueba que las adaptaciones
 no rompieron el formato.
 
-**Pendiente:** 2b (SQLite `.itdb` + `.cbk`, paquete 5), 2c (coordinador propio: dry-run,
-backup, install vía safe_write, verify, rollback, advertencia Music.app).
+**Pendiente:** 2c (coordinador propio: dry-run, backup, install vía safe_write, verify,
+rollback, advertencia Music.app).
+
+### Paquete 5 — `sqlitedb_writer/` → `cicada/ipod/db/sqlite/`
+
+#### Etapa 2b — Escritura de las bases SQLite (`iTunes Library.itlp/`) en staging. **Estado: implementado y verificado (sin hardware).**
+
+Origen: `src/iopenpod/sqlitedb_writer/` @ `ea72e3e`. Vendorizados los **builders puros**:
+`library_writer` (`write_library_itdb -> playlist_pids`), `locations_writer`,
+`dynamic_writer`, `extras_writer`, `genius_writer`, `cbk_writer` (`write_locations_cbk`),
+`_helpers`. Imports `itunesdb_shared`→`db.shared`, `itunesdb_writer`→`db.writer`,
+`sqlitedb_writer`→`db.sqlite`.
+
+**Adaptaciones:** como en 2a, el stack de escritura-al-dispositivo (`path_safety`,
+`write_guard`, `write_readiness`, `detect_checksum_type`/`get_firewire_id`) **no se
+vendoriza**: en `sqlite_writer` sus imports top-level van en `try/except ImportError`
+(degradan a `None` + shim `DeviceWriteSafetyError`); Cicada no llama la vía
+`write_sqlite_databases`→install. `ChecksumType`/`DeviceCapabilities` desde
+`cicada.ipod.device`.
+
+**`build.py` (propio)** — `build_sqlite_databases(dest_itlp, tracks, *, firewire_id,
+checksum, time_context, playlists, …) -> dict`: reimplementa la orquestación de
+`write_sqlite_databases` (que estaba enredada con el install), produciendo los **6
+archivos** (`Library/Locations/Dynamic/Extras/Genius.itdb` + `Locations.itdb.cbk`) en un
+directorio **off-device**. El install es del coordinador 2c vía safe_write.
+
+**El `.cbk` NO es un esquema opaco nuevo:** es `[57B firma HASHAB de final_sha1] +
+[20B final_sha1=SHA1(∥ SHA1 de cada bloque 1024B)] + [N×20B SHA1 de cada bloque]` de
+`Locations.itdb` (libgpod `mk_Locations_cbk`). SHA1 abierto + el HASHAB que ya teníamos.
+
+**Hallazgo (época Cocoa, cazado por la comparación campo por campo — 3ª vez del formato
+de fechas):** `Dynamic.item_stats.date_played` de las 25 pistas salía `-14400` (−4h) vs
+`0` del fixture. Causa: el centinela "2001-01-01" (`last_played=978292800`) pasa por
+`unix_to_coredata` (época Cocoa absoluta, sin zona) y expone el offset con que se leyó
+(el fixture no preserva la zona real). Fix en `dynamic_writer`: una pista **nunca
+reproducida/saltada** lleva `date_played=0` (convención iOpenPod/libgpod, y semántica
+correcta). Regresión en el test.
+
+Tests: `tests/ipod/db/sqlite/test_build_2b.py` (7): produce los 6 archivos (los `.itdb`
+son SQLite reales), **comparación campo por campo** de `Library.item` y
+`Dynamic.item_stats` (incluido `date_played`), **coherencia de dbids entre capas leídos
+por separado** (parser del iTunesCDB sin signo ↔ sqlite3 con signo, normalizados U64) con
+**test negativo** que prueba que la verificación FALLA si divergen, y regresión de la
+época Cocoa (nunca-reproducida ⇒ 0; reproducida conserva su instante).
+
+**Pendiente:** 2c (coordinador: instala iTunesCDB + itlp/ juntos vía safe_write).
