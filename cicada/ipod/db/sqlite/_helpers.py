@@ -12,6 +12,7 @@ __all__ = [
     "CORE_DATA_EPOCH",
     "SQLITE_INT_MASK",
     "unix_to_coredata",
+    "coredata_to_unix",
     "s64",
     "u64",
     "open_db",
@@ -38,6 +39,20 @@ def unix_to_coredata(unix_ts: int) -> int:
     if unix_ts == 0:
         return 0
     return unix_ts - CORE_DATA_EPOCH
+
+
+def coredata_to_unix(coredata_ts: int) -> int:
+    """Convert Core Data timestamp (seconds since 2001-01-01 UTC) to Unix timestamp (1970).
+
+    Args:
+        coredata_ts: Core Data timestamp.
+    Returns:
+        Unix timestamp (seconds since 1970-01-01).
+        Returns 0 if input is 0.
+    """
+    if coredata_ts == 0:
+        return 0
+    return coredata_ts + CORE_DATA_EPOCH
 
 
 def s64(val: int) -> int:

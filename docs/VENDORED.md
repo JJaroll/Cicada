@@ -375,3 +375,19 @@ Tests añadidos en Etapa 2c (25 tests):
 
 **Total suite iPod tras 2c:** 247 tests pasando.
 
+### Paquete 6 — `cicada/ipod/sync/` (código propio de Cicada — Fase 3)
+
+Motor de persistencia local, cálculo de deltas bidireccionales y gestión de playlists. **Estado: implementado y verificado.**
+
+- `state.py` (propio): Capa de persistencia en SQLite (`~/.cicada/ipod.db` / `$CICADA_HOME/ipod.db`) con 4 tablas (`devices`, `track_map`, `playback_state`, `playlists_map`), context manager `_connection()` con cierre garantizado, transacciones explícitas `transaction()` y normalización uint64 (`u64()`).
+- `bidirectional.py` (propio): Lector de contadores desde `Dynamic.itdb` (Nano 6G/7G) y `iTunesCDB`/`iTunesDB` con normalización de épocas (Core Data 2001 y Mac 1904 a Unix 1970). Cálculo de deltas (`delta_play_count`, `delta_skip_count`, `rating_changed`, escala 0-5 estrellas) y protección contra reseteo de contadores.
+- `playlists.py` (propio): Conversión de `LocalPlaylist` a `PlaylistInfo` con IDs de 64 bits y resolución de rutas contra `track_map`. Preservación byte-exacta de smart playlists v1 (`smart_prefs`, `smart_rules`, blobs `mhod50`/`51`/`55`/`100`/`102`).
+- `_helpers.py` (modificado): Añadida función `coredata_to_unix()` para convertir timestamps de Core Data a Unix epoch.
+
+Tests añadidos en Fase 3 (20 tests):
+- `tests/ipod/sync/test_state.py` (7 tests): Inicialización de esquema, CRUD de dispositivos, normalización uint64, estrellas, transacciones con rollback y borrado en cascada.
+- `tests/ipod/sync/test_bidirectional.py` (7 tests): Conversión de épocas, lectura de `Dynamic.itdb`, deltas incrementales, cambios de rating, skips, counter reset y persistencia de baseline.
+- `tests/ipod/sync/test_playlists.py` (6 tests): Resolución de listas estándar, pistas no resueltas, extracción de smart playlists, preparación unificada, persistencia y round-trip end-to-end con `create_plan()` y `apply()`.
+
+**Total suite iPod tras Fase 3:** 280 tests pasando.
+

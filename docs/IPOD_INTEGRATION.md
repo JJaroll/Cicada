@@ -343,17 +343,18 @@ devuelve `True` para el `iTunesCDB` original del dispositivo.
 - [x] `write_guard.py`: bloquea si el fs no es escribible o falta alguna capacidad.
 - [x] Escritura coordinada `iTunesCDB` (`build_itunescdb`) + `.itdb` + `.cbk` (`build_sqlite_databases`).
 - [x] `plan.py` y `apply.py` con backup automático previo, gate de advertencia Music.app y rollback ante error.
-- [ ] UI / API: endpoints FastAPI y dry-run obligatorio antes de aplicar.
+- [x] UI / API: endpoints FastAPI (`api.py`) y comandos CLI (`cli.py`) con dry-run obligatorio antes de aplicar.
 
 **Aceptación**: añades una canción desde Cicada, expulsas, y se reproduce en el iPod con
 metadata correcta.
 
 ### Fase 3 — Playlists y bidireccional
 
-- [ ] Playlists estándar; smart playlists preservadas sin interpretar en v1
-      (conserva los bytes crudos y reescríbelos idénticos).
-- [ ] Lectura de contadores desde `Dynamic.itdb`, delta contra `playback_state`.
-- [ ] Resolución de conflictos en la UI. Nunca silenciosa.
+- [x] Playlists estándar; smart playlists preservadas sin interpretar en v1
+      (conserva los bytes crudos y reescríbelos idénticos vía `playlists.py`).
+- [x] Lectura de contadores desde `Dynamic.itdb` / `iTunesCDB`, delta contra `playback_state` (`bidirectional.py`).
+- [x] Persistencia local en SQLite `~/.cicada/ipod.db` (`state.py`).
+- [ ] Resolución de conflictos interactiva en UI.
 
 ### Fase 4 — Artwork
 ### Fase 5 — Podcasts y audiolibros
