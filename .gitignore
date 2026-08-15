@@ -37,3 +37,5 @@ context.md
 tests/fixtures/*
 !tests/fixtures/README.md
 
+# Graphify
+graphify-out/
