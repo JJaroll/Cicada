@@ -1,16 +1,18 @@
-"""Tests de los endpoints iPod de la API (Fase 1, solo lectura).
+"""Tests de los endpoints iPod de lectura de la UI (scan / tracks / playlists).
 
-Monkeypatchea _candidate_mounts para presentar el fixture como iPod montado.
-Sin dispositivo real. Verifica los 3 estados y el listado.
+Estos endpoints se consolidaron en el router canónico ``cicada.ipod.api`` (antes
+estaban duplicados en ``core/main.py``). Se prueban las funciones del router
+directamente, presentando el fixture como iPod montado. Sin dispositivo real.
 """
-import asyncio
+import shutil
 import sys
 from pathlib import Path
 
 import pytest
+from fastapi import HTTPException
 
+from cicada.ipod import api
 from cicada.ipod.device import write_guard as wg
-from cicada.core import main as app_main
 
 FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "nano7g-iopenpod"
 skip_no_fixture = pytest.mark.skipif(
@@ -28,16 +30,12 @@ def ipod_mount(tmp_path, monkeypatch):
     return m
 
 
-def _run(coro):
-    return asyncio.run(coro)
-
-
 # --------------------------------------------------------------------------- #
 # scan — 3 estados
 # --------------------------------------------------------------------------- #
 @skip_no_fixture
 def test_scan_ready(ipod_mount):
-    r = _run(app_main.scan_ipods())
+    r = api.scan_ipods()
     assert r["state"] == "ready"
     assert len(r["ipods"]) == 1
     ip = r["ipods"][0]
@@ -49,7 +47,7 @@ def test_scan_ready(ipod_mount):
 
 def test_scan_no_device(monkeypatch):
     monkeypatch.setattr(wg, "_candidate_mounts", lambda: [])
-    r = _run(app_main.scan_ipods())
+    r = api.scan_ipods()
     assert r["state"] == "no_device"
     assert r["ipods"] == []
 
@@ -59,27 +57,27 @@ def test_scan_no_ipod_control(tmp_path, monkeypatch):
     vol = tmp_path / "IPOD"
     vol.mkdir()
     monkeypatch.setattr(wg, "_candidate_mounts", lambda: [vol])
-    r = _run(app_main.scan_ipods())
+    r = api.scan_ipods()
     assert r["state"] == "no_ipod_control"
     assert r["ipods"] == []
     assert len(r["volumes_without_control"]) == 1
 
 
 # --------------------------------------------------------------------------- #
-# tracks / playlists
+# tracks / playlists (contrato canónico del router)
 # --------------------------------------------------------------------------- #
 @skip_no_fixture
 def test_tracks(ipod_mount):
-    r = _run(app_main.ipod_tracks())
-    assert r["count"] == 25
-    assert r["tracks"][0]["artist"] == "Lady Gaga"
-    assert r["tracks"][0]["title"] == "LoveDrug (Apple Music Live)"
-    assert r["tracks"][0]["filetype"] == "MP3"
+    r = api.get_ipod_tracks()
+    assert r.tracks_count == 25
+    assert r.tracks[0].artist == "Lady Gaga"
+    assert r.tracks[0].title == "LoveDrug (Apple Music Live)"
+    assert r.tracks[0].filetype == "MP3"
 
 
 @skip_no_fixture
 def test_playlists(ipod_mount):
-    r = _run(app_main.ipod_playlists())
+    r = api.ipod_playlists()
     assert r["count"] == 3
     titles = [p["title"] for p in r["playlists"]]
     assert "iPod" in titles
@@ -88,23 +86,20 @@ def test_playlists(ipod_mount):
     assert master["count"] == 25
 
 
-def test_tracks_sin_ipod_lanza_503(monkeypatch):
-    from fastapi import HTTPException
+def test_tracks_sin_ipod_lanza_error(monkeypatch):
+    # El router revalida el montaje con resolve_mount() -> 404 si no hay iPod.
     monkeypatch.setattr(wg, "_candidate_mounts", lambda: [])
     with pytest.raises(HTTPException) as exc:
-        _run(app_main.ipod_tracks())
-    assert exc.value.status_code == 503
+        api.get_ipod_tracks()
+    assert exc.value.status_code == 404
 
 
 @skip_no_fixture
-def test_lectura_revalida_montaje(ipod_mount, monkeypatch):
-    # Si el iPod se desmonta entre el scan y la lectura -> 503 (revalidación).
-    from fastapi import HTTPException
-    import shutil
-    # discover_ipods encuentra el mount; pero resolve_mount revalida y ya no está.
-    scan = _run(app_main.scan_ipods())
+def test_lectura_revalida_montaje(ipod_mount):
+    # Si el iPod se desmonta entre el scan y la lectura -> error (revalidación).
+    scan = api.scan_ipods()
     assert scan["state"] == "ready"
     shutil.rmtree(ipod_mount)                       # se desmonta
     with pytest.raises(HTTPException) as exc:
-        _run(app_main.ipod_tracks())
-    assert exc.value.status_code == 503
+        api.get_ipod_tracks()
+    assert exc.value.status_code == 404

@@ -101,6 +101,7 @@ class TrackSchema(BaseModel):
     bitrate: Optional[int] = None
     length_ms: Optional[int] = None
     size_bytes: Optional[int] = None
+    filetype: Optional[str] = None
     date_added: Optional[int] = None
     last_modified: Optional[int] = None
     play_count: int = 0
@@ -222,6 +223,7 @@ def _track_dict_to_schema(d: dict) -> TrackSchema:
         bitrate=d.get("bitrate") or d.get("Bitrate"),
         length_ms=d.get("length") or d.get("Length"),
         size_bytes=d.get("size") or d.get("Size"),
+        filetype=d.get("Filetype") or d.get("filetype"),
         date_added=d.get("date_added"),
         last_modified=d.get("last_modified"),
         play_count=d.get("play_count") or 0,
@@ -516,3 +518,67 @@ def eject_device(force: bool = False) -> EjectResponse:
         return EjectResponse(ejected=res.ejected, message=res.message)
     except Exception as exc:
         return EjectResponse(ejected=False, message=str(exc))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Endpoints de UI (lectura ligera) — consolidados desde core/main.py
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _ipod_to_ui(info: DeviceInfo) -> Dict[str, Any]:
+    return {
+        "mount": str(info.mount),
+        "ipod_name": None,
+        "model_family": info.family,
+        "generation": info.generation,
+        "color": info.color,
+        "capacity": info.capacity,
+        "filesystem_type": None,
+        "firewire_guid": info.firewire_guid,
+        "checksum": info.checksum.name if info.checksum else None,
+        "serial": info.serial,
+        "partial": info.partial,
+    }
+
+
+def _revalidate_ipod_mount():
+    result = discover_ipods()
+    if result.state != "ready" or not result.ipods:
+        raise HTTPException(status_code=503, detail="No hay ningún iPod legible montado.")
+    info = result.ipods[0]
+    try:
+        mount = resolve_mount(candidates=[info.mount])
+    except WriteGuardError:
+        raise HTTPException(status_code=503, detail="El iPod se desmontó; vuelve a conectarlo.")
+    return mount, info
+
+
+@router.get("/scan")
+def scan_ipods() -> Dict[str, Any]:
+    """Escanea volúmenes en busca de iPods (contrato ligero de la UI). Solo lectura."""
+    try:
+        result = discover_ipods()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error escaneando iPods: {e}")
+    return {
+        "state": result.state,
+        "ipods": [_ipod_to_ui(i) for i in result.ipods],
+        "volumes_without_control": [str(v) for v in result.volumes_without_control],
+    }
+
+
+@router.get("/playlists")
+def ipod_playlists() -> Dict[str, Any]:
+    """Lista las playlists del iPod montado. Revalida el montaje. Solo lectura."""
+    mount, _info = _revalidate_ipod_mount()
+    cdb = mount / "iPod_Control" / "iTunes" / "iTunesCDB"
+    data = load_ipod_library(str(cdb), mount=str(mount))
+    if data is None:
+        raise HTTPException(status_code=500, detail="No se pudo leer la biblioteca del iPod.")
+    playlists = [{
+        "title": p.get("Title"),
+        "is_master": bool(p.get("master_flag")),
+        "count": len(p.get("items", [])),
+    } for p in data.get("mhlp", [])]
+    return {"playlists": playlists, "count": len(playlists)}
+
+

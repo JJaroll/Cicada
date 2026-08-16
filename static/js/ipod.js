@@ -78,7 +78,7 @@ async function loadIpodLibrary() {
         if (!tRes.ok) throw new Error(tData.detail || t("error_unknown"));
         if (!pRes.ok) throw new Error(pData.detail || t("error_unknown"));
 
-        counts.textContent = (tData.count || 0) + " " + t("ipod_tracks_count") +
+        counts.textContent = (tData.tracks_count || 0) + " " + t("ipod_tracks_count") +
             " · " + (pData.count || 0) + " " + t("ipod_playlists_count");
 
         plsEl.innerHTML = (pData.playlists || []).map(p =>
@@ -103,26 +103,87 @@ async function loadIpodLibrary() {
     }
 }
 
+// Extrae el mensaje de error de una respuesta FastAPI (detail = string u {error,code}).
+function _ipodErr(data) {
+    const d = data && data.detail;
+    if (!d) return t("error_unknown");
+    return (typeof d === "object" ? (d.error || d.code) : d) || t("error_unknown");
+}
+
+async function _postJson(url, body) {
+    const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body || {}),
+    });
+    let data = {};
+    try { data = await res.json(); } catch (_) {}
+    return { res, data };
+}
+
+// Flujo de escritura: /status (write-safe) -> /tracks -> /plan (dry-run) ->
+// gate de consentimiento Music.app -> /apply. Reescribe la base del iPod en el
+// formato de Cicada con las pistas actuales. Backup automático + rollback.
 async function syncIpod() {
+    const btn = document.getElementById("btn-sync-ipod");
     try {
-        const res = await fetch('/api/ipod/sync', { method: 'POST' });
-        let data = {};
-        try { data = await res.json(); } catch (_) {}
-        if (!res.ok) throw new Error(data.detail || t("error_unknown"));
-        alert(data.message || "Sincronización completada.");
+        // 1. Estado del dispositivo: debe ser seguro para escribir.
+        const st = await (await fetch("/api/ipod/status")).json();
+        const dev = (st.devices || [])[0];
+        if (!dev) { alert(t("ipod_write_no_device")); return; }
+        if (!dev.guid_is_write_safe) { alert(t("ipod_write_unsafe")); return; }
+
+        // 2. Pistas actuales (fuente de la reescritura).
+        const tData = await (await fetch("/api/ipod/tracks")).json();
+        const tracks = tData.tracks || [];
+        if (!tracks.length) { alert(t("ipod_write_empty")); return; }
+
+        // 3. Plan dry-run (off-device, sin tocar el iPod todavía).
+        if (btn) btn.disabled = true;
+        const { res: planRes, data: plan } = await _postJson("/api/ipod/plan", { tracks });
+        if (!planRes.ok) throw new Error(_ipodErr(plan));
+
+        // 4. Revisión del dry-run.
+        if (!confirm(t("ipod_write_review").replace("{n}", plan.tracks_count))) return;
+
+        // 5. Gate de consentimiento Music.app (irreversible) en la primera escritura.
+        let consentAck = false;
+        if (plan.consent_needed) {
+            consentAck = confirm(t("ipod_write_consent"));
+            if (!consentAck) return;   // el usuario dice no -> nada se escribe
+        }
+
+        // 6. Apply transaccional (backup -> escribir -> verificar -> rollback si falla).
+        const { res: applyRes, data: result } = await _postJson(
+            "/api/ipod/apply", { plan_id: plan.plan_id, consent_ack: consentAck });
+        if (!applyRes.ok) throw new Error(_ipodErr(result));
+
+        if (result.success) {
+            alert(t("ipod_write_ok").replace("{n}", result.tracks_written));
+            loadIpodLibrary();
+        } else {
+            const restored = result.restored_from_backup ? t("ipod_write_rolled_back") : "";
+            alert(t("ipod_write_failed") + (result.error || "") + restored);
+        }
     } catch (e) {
         alert(t("error_prefix") + e.message);
+    } finally {
+        if (btn) btn.disabled = false;
     }
 }
 
 async function backupIpod() {
+    if (!confirm(t("ipod_backup_confirm"))) return;
+    const btn = document.getElementById("btn-backup-ipod");
     try {
-        const res = await fetch('/api/ipod/backups', { method: 'POST' });
-        let data = {};
-        try { data = await res.json(); } catch (_) {}
-        if (!res.ok) throw new Error(data.detail || t("error_unknown"));
-        alert(data.message || "Backup creado.");
+        if (btn) btn.disabled = true;
+        const { res, data } = await _postJson("/api/ipod/backup", { full: false });
+        if (!res.ok) throw new Error(_ipodErr(data));
+        const mb = data.size_bytes ? (data.size_bytes / 1048576).toFixed(1) + " MB" : "";
+        alert(t("ipod_backup_ok").replace("{path}", data.path || "—").replace("{size}", mb));
     } catch (e) {
         alert(t("error_prefix") + e.message);
+    } finally {
+        if (btn) btn.disabled = false;
     }
 }

@@ -14,7 +14,6 @@ __version__ = "1.1.1"
 __maintainer__ = "JJaroll"
 __status__ = "Production"
 
-import mimetypes
 import sys
 import os
 
@@ -24,50 +23,26 @@ if getattr(sys, 'frozen', False):
     if sys.stderr is None:
         sys.stderr = open(os.devnull, "w")
 
-import json
-import asyncio
-import random
-import re
-import subprocess
-import time
 import threading
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-import httpx
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect, BackgroundTasks, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response, StreamingResponse
+from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
-
-# El módulo iPod se construye por fases (ver docs/IPOD_INTEGRATION.md). Aún no
-# existe en Fase 0, así que el import es perezoso: la app arranca sin él.
-try:
-    from cicada.ipod.device import scanner as ipod_scanner
-except ImportError:
-    ipod_scanner = None
-
-from dotenv import load_dotenv, set_key
-
-from cicada.core.app_paths import get_app_data_dir
-
-APP_DATA_DIR = get_app_data_dir()
-ENV_FILE = APP_DATA_DIR / ".env"
-load_dotenv(ENV_FILE)
-
-from cicada.core.metadata_manager import MetadataManager
-from cicada.core.audio_processor import AudioProcessor
-from cicada.core.download_manager import DownloadManager
-from cicada.core.playlist_manager import PlaylistManager
-from cicada.core import acoustid_fallback
 
 app = FastAPI()
-metadata_manager = MetadataManager()
-audio_processor = AudioProcessor()
-download_manager = DownloadManager()
-playlist_manager = PlaylistManager()
 
 from cicada.ipod.api import router as ipod_router
+from cicada.core.routes.settings import router as settings_router
+from cicada.core.routes.system import router as system_router
+from cicada.core.routes.library import router as library_router
+from cicada.core.routes.spotify import router as spotify_router
+from cicada.core.routes.process import router as process_router
 app.include_router(ipod_router)
+app.include_router(settings_router)
+app.include_router(system_router)
+app.include_router(library_router)
+app.include_router(spotify_router)
+app.include_router(process_router)
 
 STATIC_DIR = (
     Path(sys._MEIPASS)  # type: ignore[attr-defined]
@@ -76,911 +51,63 @@ STATIC_DIR = (
 ) / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
-CONFIG_FILE = APP_DATA_DIR / ".cicada_config.json"
-
-def load_app_config() -> Dict[str, Any]:
-    if not CONFIG_FILE.exists():
-        return {}
-    try:
-        return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-
-def save_app_config(data: Dict[str, Any]) -> None:
-    CONFIG_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
-
-cancel_requested = False
-
-class ProcessRequest(BaseModel):
-    input_dir: str
-    output_dir: str
-
-class SpotifyRequest(BaseModel):
-    url: str
-    output_dir: str
-
-class SpotifyResolveRequest(BaseModel):
-    url: str
-
-class SpotifyTracksDownloadRequest(BaseModel):
-    tracks: List[Dict[str, Any]]
-    output_dir: str
-
-class LibraryMatchRequest(BaseModel):
-    tracks: List[Dict[str, Any]]
-    library_dir: str
-
-class ManualMatchRequest(BaseModel):
-    track: Dict[str, Any]
-    file_path: str
-    library_dir: str
-
-class DownloadSingleTrackRequest(BaseModel):
-    track: Dict[str, Any]
-    output_dir: str
-
-class GeneratePlaylistRequest(BaseModel):
-    playlist_name: str
-    file_paths: List[str]
-    output_dir: str
-
-class LibraryConfigRequest(BaseModel):
-    library_dir: str
-
-class TrackActionRequest(BaseModel):
-    path: str
-
-class TrackInfoUpdateRequest(BaseModel):
-    path: str
-    metadata: Dict[str, Any]
-
-class SettingsRequest(BaseModel):
-    acoustid_api_key: Optional[str] = None
-    spotify_client_id: Optional[str] = None
-    spotify_client_secret: Optional[str] = None
-    plan_c_enabled: Optional[bool] = None
-    library_dir: Optional[str] = None
-    process_input_dir: Optional[str] = None
-    process_output_dir: Optional[str] = None
-    theme: Optional[str] = None
-    color_accent: Optional[str] = None
-
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: list[WebSocket] = []
-
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-
-    def disconnect(self, websocket: WebSocket):
-        if websocket in self.active_connections:
-            self.active_connections.remove(websocket)
-
-    async def broadcast(self, message: str):
-        for connection in list(self.active_connections):
-            try:
-                await connection.send_text(message)
-            except Exception:
-                pass
-
-manager = ConnectionManager()
-
-async def process_library(input_dir: str, output_dir: str):
-    await manager.broadcast(json.dumps({"type": "info", "message": f"Iniciando escaneo en: {input_dir}"}))
-
-    plan_c_enabled = bool(load_app_config().get("plan_c_enabled", False))
-
-    input_path = Path(input_dir)
-    output_path = Path(output_dir)
-
-    if not input_path.exists() or not input_path.is_dir():
-        await manager.broadcast(json.dumps({"type": "error", "message": "Directorio de entrada no válido."}))
-        return
-
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    allowed_exts = {'.mp3', '.m4a', '.mp4', '.aac', '.flac', '.wav', '.aiff', '.aif', '.alac'}
-
-    resolved_output = output_path.resolve()
-    files_to_process = []
-    for f in input_path.rglob("*"):
-        if f.is_file() and f.suffix.lower() in allowed_exts:
-            try:
-                resolved_f = f.resolve()
-                if str(resolved_f).startswith(str(resolved_output) + os.sep) or str(resolved_f) == str(resolved_output):
-                    continue
-            except Exception:
-                pass
-            files_to_process.append(f)
-
-    total_files = len(files_to_process)
-    await manager.broadcast(json.dumps({"type": "info", "message": f"Se encontraron {total_files} archivos."}))
-
-    # --- MEMORIA DE ESTADO ---
-    state_file = output_path / ".cicada_state.json"
-    processed_files = set()
-    if state_file.exists():
-        try:
-            with open(state_file, "r", encoding="utf-8") as f:
-                state_data = json.load(f)
-                processed_files = set(state_data.get("processed", []))
-                if processed_files:
-                    await manager.broadcast(json.dumps({"type": "info", "message": f"Retomando sesión: {len(processed_files)} archivos ya procesados serán saltados."}))
-        except Exception:
-            pass
-
-    report = {
-        "successes": [],
-        "errors": [],
-        "incomplete": []
-    }
-
-    start_time = time.time()
-    session_processed_count = 0
-
-    async def log_callback(msg: str):
-        await manager.broadcast(json.dumps({"type": "detail", "message": msg}))
-
-    for idx, file_path in enumerate(files_to_process):
-        if cancel_requested:
-            await manager.broadcast(json.dumps({"type": "error", "message": "Proceso cancelado por el usuario."}))
-            break
-
-        current = idx + 1
-
-        # Saltar archivos ya procesados con éxito en ejecuciones anteriores
-        if str(file_path) in processed_files:
-            await manager.broadcast(json.dumps({
-                "type": "progress",
-                "current": current,
-                "total": total_files,
-                "file": f"(Saltado) {file_path.name}",
-                "eta": "Retomando sesión..."
-            }))
-            continue
-
-        session_processed_count += 1
-        elapsed = time.time() - start_time
-
-        eta_str = "Calculando ETA..."
-        if session_processed_count > 1:
-            avg_time = elapsed / (session_processed_count - 1)
-            # Considerar los archivos restantes independientemente de los saltados
-            rem_time = avg_time * (total_files - current + 1)
-            m, s = divmod(int(rem_time), 60)
-            eta_str = f"ETA: {m}m {s}s"
-            if m > 60:
-                h, m = divmod(m, 60)
-                eta_str = f"ETA: {h}h {m}m {s}s"
-
-        await manager.broadcast(json.dumps({
-            "type": "progress",
-            "current": current,
-            "total": total_files,
-            "file": file_path.name,
-            "eta": eta_str
-        }))
-
-        res = await metadata_manager.process_file_metadata(str(file_path), logger_callback=log_callback, plan_c_enabled=plan_c_enabled)
-
-        if not res['success']:
-            report['errors'].append({
-                "file": str(file_path),
-                "error": res.get('error', 'Unknown Error')
-            })
-            await asyncio.sleep(2)
-            continue
-
-        metadata = res['metadata']
-        if metadata.get('artwork_url'):
-            await manager.broadcast(json.dumps({"type": "cover", "url": metadata.get('artwork_url')}))
-
-        try:
-            await log_callback("💾 Escribiendo metadatos ID3 / MP4 y reestructurando...")
-            new_path = await audio_processor.apply_metadata_and_move(str(file_path), str(output_path), metadata)
-
-            track_info = {
-                "original_file": str(file_path),
-                "new_file": str(new_path),
-                "title": metadata.get('title'),
-                "artist": metadata.get('artist')
-            }
-
-            if res['status'] == 'incomplete':
-                track_info['missing'] = res['incomplete_fields']
-                report['incomplete'].append(track_info)
-            else:
-                report['successes'].append(track_info)
-
-            processed_files.add(str(file_path))
-            with open(state_file, "w", encoding="utf-8") as f:
-                json.dump({"processed": list(processed_files)}, f, ensure_ascii=False)
-
-        except Exception as e:
-            report['errors'].append({
-                "file": str(file_path),
-                "error": f"Error applying tags / moving: {str(e)}"
-            })
-
-        # --- RETRASO INTENCIONAL ---
-        if current < total_files:
-            await log_callback("⏳ Esperando 3 segundos entre canciones (Programación defensiva)...")
-            await asyncio.sleep(3)
-
-    report_path = output_path / "cicada_report.json"
-    with open(report_path, "w", encoding="utf-8") as f:
-        json.dump(report, f, indent=4, ensure_ascii=False)
-
-    if cancel_requested:
-        await manager.broadcast(json.dumps({"type": "done", "message": "Proceso detenido. (Reporte parcial guardado)", "report_path": str(report_path)}))
-    else:
-        tagged_count = len(report['successes']) + len(report['incomplete'])
-        elapsed_seconds = round(time.time() - start_time)
-        await manager.broadcast(json.dumps({
-            "type": "done",
-            "message": "Proceso completado.",
-            "report_path": str(report_path),
-            "count": tagged_count,
-            "total_files": total_files,
-            "elapsed_seconds": elapsed_seconds
-        }))
-
-async def _download_and_tag_tracks(tracks: List[Dict[str, Any]], output_dir: str):
-    """ Descarga (YouTube Music) e inyecta metadata a una lista ya resuelta de tracks de Spotify. """
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
-
-    total = len(tracks)
-    await manager.broadcast(json.dumps({"type": "info", "message": f"Se van a descargar {total} pista(s)."}))
-
-    for i, track in enumerate(tracks):
-        if cancel_requested:
-            await manager.broadcast(json.dumps({"type": "error", "message": "Proceso cancelado por el usuario."}))
-            break
-
-        await manager.broadcast(json.dumps({
-            "type": "progress",
-            "current": i + 1,
-            "total": total,
-            "file": track['title']
-        }))
-        await manager.broadcast(json.dumps({"type": "cover", "url": track.get('artwork_url', '')}))
-
-        try:
-            search_query = f"ytsearch1:{track['artist']} {track['title']} Topic"
-            file_path = await download_manager.download_audio(search_query, output_dir)
-            await audio_processor.apply_metadata_and_move(file_path, output_dir, track)
-        except Exception as e:
-            await manager.broadcast(json.dumps({
-                "type": "error",
-                "message": f"Error descargando '{track['title']}': {e}"
-            }))
-        finally:
-            if i < total - 1:
-                await asyncio.sleep(random.uniform(4, 9))
-
-    if cancel_requested:
-        await manager.broadcast(json.dumps({"type": "done", "message": "Descarga de Spotify cancelada.", "report_path": ""}))
-    else:
-        await manager.broadcast(json.dumps({"type": "done", "message": "Descarga de Spotify completada.", "report_path": ""}))
-
-async def process_spotify_download(url: str, output_dir: str):
-    await manager.broadcast(json.dumps({"type": "info", "message": f"Resolviendo enlace de Spotify: {url}"}))
-
-    try:
-        tracks = await download_manager.get_spotify_tracks(url)
-    except Exception as e:
-        await manager.broadcast(json.dumps({"type": "error", "message": f"No se pudo leer el enlace de Spotify: {e}"}))
-        return
-
-    await manager.broadcast(json.dumps({"type": "info", "message": f"Se encontraron {len(tracks)} pistas en el enlace de Spotify."}))
-    await _download_and_tag_tracks(tracks, output_dir)
-
-async def process_spotify_selected_tracks(tracks: List[Dict[str, Any]], output_dir: str):
-    await _download_and_tag_tracks(tracks, output_dir)
-
-@app.post("/api/start")
-async def start_processing(request: ProcessRequest, background_tasks: BackgroundTasks):
-    global cancel_requested
-    cancel_requested = False
-    background_tasks.add_task(process_library, request.input_dir, request.output_dir)
-    return {"message": "Procesamiento iniciado en segundo plano"}
-
-@app.post("/api/spotify")
-async def start_spotify_download(request: SpotifyRequest, background_tasks: BackgroundTasks):
-    global cancel_requested
-    cancel_requested = False
-    background_tasks.add_task(process_spotify_download, request.url, request.output_dir)
-    return {"message": "Descarga de Spotify iniciada en segundo plano"}
-
-@app.post("/api/spotify/resolve")
-async def resolve_spotify_url(request: SpotifyResolveRequest):
-    try:
-        tracks = await download_manager.get_spotify_tracks(request.url)
-        return {"tracks": tracks}
-    except ValueError as e:
-        status_code = 401 if "api/auth/login" in str(e) else 400
-        raise HTTPException(status_code=status_code, detail=str(e))
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=502, detail=f"Spotify rechazó la petición: {e}")
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"No se pudo conectar con Spotify: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error inesperado resolviendo el enlace: {e}")
-
-@app.post("/api/spotify/download")
-async def start_spotify_tracks_download(request: SpotifyTracksDownloadRequest, background_tasks: BackgroundTasks):
-    global cancel_requested
-    if not request.tracks:
-        raise HTTPException(status_code=400, detail="No se seleccionó ninguna pista para descargar.")
-    cancel_requested = False
-    background_tasks.add_task(process_spotify_selected_tracks, request.tracks, request.output_dir)
-    return {"message": "Descarga de pistas seleccionadas iniciada en segundo plano"}
-
-@app.get("/api/spotify/playlists")
-async def list_spotify_playlists():
-    try:
-        playlists = await download_manager.get_user_playlists()
-        return {"playlists": playlists}
-    except ValueError as e:
-        raise HTTPException(status_code=401, detail=str(e))
-    except httpx.HTTPStatusError as e:
-        raise HTTPException(status_code=502, detail=f"Spotify rechazó la petición: {e}")
-    except httpx.RequestError as e:
-        raise HTTPException(status_code=502, detail=f"No se pudo conectar con Spotify: {e}")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error inesperado listando playlists: {e}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 # --- IPOD ENDPOINTS ---
-def _ipod_to_ui(info) -> Dict[str, Any]:
-    """DeviceInfo -> dict del contrato que ya espera la UI (ipod.js)."""
-    return {
-        "mount": str(info.mount),
-        "ipod_name": None,                       # el nombre llega con la biblioteca
-        "model_family": info.family,
-        "generation": info.generation,
-        "color": info.color,
-        "capacity": info.capacity,
-        "filesystem_type": None,                 # detección de FS: pendiente (2d)
-        "firewire_guid": info.firewire_guid,
-        "checksum": info.checksum.name if info.checksum else None,
-        "serial": info.serial,
-        "partial": info.partial,
-    }
-
-
-def _revalidate_ipod_mount():
-    """Revalida que hay un iPod montado AHORA y devuelve (mount, DeviceInfo).
-
-    El Nano 7G se desmonta solo: toda lectura vuelve a comprobar el montaje.
-    Lanza HTTPException 503 si no hay iPod legible.
-    """
-    from cicada.ipod.device.device_info import discover_ipods
-    from cicada.ipod.device.write_guard import resolve_mount, WriteGuardError
-    result = discover_ipods()
-    if result.state != "ready" or not result.ipods:
-        raise HTTPException(status_code=503, detail="No hay ningún iPod legible montado.")
-    info = result.ipods[0]
-    try:
-        mount = resolve_mount(candidates=[info.mount])   # revalida el montaje ahora
-    except WriteGuardError:
-        raise HTTPException(status_code=503, detail="El iPod se desmontó; vuelve a conectarlo.")
-    return mount, info
-
-
-@app.get("/api/ipod/scan")
-async def scan_ipods():
-    """Escanea volúmenes en busca de iPods. 3 estados diferenciados. Solo lectura."""
-    from cicada.ipod.device.device_info import discover_ipods
-    try:
-        result = discover_ipods()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error escaneando iPods: {e}")
-    return {
-        "state": result.state,                   # ready | no_ipod_control | no_device
-        "ipods": [_ipod_to_ui(i) for i in result.ipods],
-        "volumes_without_control": [str(v) for v in result.volumes_without_control],
-    }
-
-
-@app.get("/api/ipod/tracks")
-async def ipod_tracks():
-    """Lista los tracks del iPod montado. Revalida el montaje. Solo lectura."""
-    from cicada.ipod.db.parser import load_ipod_library
-    mount, _info = _revalidate_ipod_mount()
-    cdb = mount / "iPod_Control" / "iTunes" / "iTunesCDB"
-    data = await asyncio.to_thread(load_ipod_library, str(cdb), mount=str(mount))
-    if data is None:
-        raise HTTPException(status_code=500, detail="No se pudo leer la biblioteca del iPod.")
-    tracks = [{
-        "title": t.get("Title"),
-        "artist": t.get("Artist"),
-        "album": t.get("Album"),
-        "album_artist": t.get("Album Artist"),
-        "genre": t.get("Genre"),
-        "track_number": t.get("track_number"),
-        "year": t.get("year"),
-        "length_ms": t.get("length"),
-        "filetype": t.get("Filetype"),
-        "play_count": t.get("play_count_1", 0),
-        "rating": t.get("rating", 0),
-    } for t in data.get("mhlt", [])]
-    return {"tracks": tracks, "count": len(tracks)}
-
-
-@app.get("/api/ipod/playlists")
-async def ipod_playlists():
-    """Lista las playlists del iPod montado. Revalida el montaje. Solo lectura."""
-    from cicada.ipod.db.parser import load_ipod_library
-    mount, _info = _revalidate_ipod_mount()
-    cdb = mount / "iPod_Control" / "iTunes" / "iTunesCDB"
-    data = await asyncio.to_thread(load_ipod_library, str(cdb), mount=str(mount))
-    if data is None:
-        raise HTTPException(status_code=500, detail="No se pudo leer la biblioteca del iPod.")
-    playlists = [{
-        "title": p.get("Title"),
-        "is_master": bool(p.get("master_flag")),
-        "count": len(p.get("items", [])),
-    } for p in data.get("mhlp", [])]
-    return {"playlists": playlists, "count": len(playlists)}
-
-@app.post("/api/ipod/sync")
-async def sync_ipod(request: Request):
-    # Neutralizado: el stub previo devolvía éxito falso sin sincronizar nada.
-    # Se reimplementa en Fase 2 sobre device/write_guard. Ninguna escritura al
-    # volumen del iPod hasta que write_guard exista.
-    raise HTTPException(status_code=503, detail="La sincronización con el iPod aún no está disponible en esta versión.")
-
-@app.get("/api/ipod/backups")
-async def list_ipod_backups():
-    # Neutralizado: el stub previo devolvía una lista vacía falsa.
-    # Se reimplementa en Fase 0 sobre device/backup.py (a través de write_guard).
-    raise HTTPException(status_code=503, detail="La gestión de backups del iPod aún no está disponible en esta versión.")
-
-@app.post("/api/ipod/backups")
-async def create_ipod_backup():
-    # Neutralizado: el stub previo respondía "Backup creado" sin crear nada.
-    # Se reimplementa en Fase 0 sobre device/backup.py (a través de write_guard).
-    raise HTTPException(status_code=503, detail="La creación de backups del iPod aún no está disponible en esta versión.")
-
-def _match_tracks_against_library(tracks: List[Dict[str, Any]], library_dir: str) -> List[Dict[str, Any]]:
-    local_index = playlist_manager.index_local_library(library_dir)
-    matches = []
-    for track in tracks:
-        path = playlist_manager.match_track(track, local_index)
-        match = dict(track)
-        match["path"] = path
-        matches.append(match)
-    return matches
-
-@app.post("/api/library/match")
-async def match_library_tracks(request: LibraryMatchRequest):
-    try:
-        matches = await asyncio.to_thread(_match_tracks_against_library, request.tracks, request.library_dir)
-        return {"matches": matches}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error buscando coincidencias en tu biblioteca: {e}")
-
-@app.post("/api/library/manual_match")
-async def manual_match_track(request: ManualMatchRequest):
-    """
-    Asociación manual: el usuario eligió a mano qué archivo local corresponde
-    a un track de Spotify que el fuzzy matching no pudo encontrar solo (por
-    ejemplo, porque Shazam/AcoustID nunca lo identificaron correctamente y
-    quedó con tags genéricos). Re-etiqueta ese archivo con los metadatos
-    reales del track de Spotify y lo reorganiza dentro de la biblioteca,
-    igual que el resto del pipeline de Cicada.
-    """
-    try:
-        new_path = await audio_processor.apply_metadata_and_move(request.file_path, request.library_dir, request.track)
-        return {"path": new_path}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error re-etiquetando el archivo: {e}")
-
-@app.post("/api/spotify/download_single")
-async def download_single_track(request: DownloadSingleTrackRequest):
-    try:
-        search_query = f"ytsearch1:{request.track.get('artist', '')} {request.track.get('title', '')} Topic"
-        file_path = await download_manager.download_audio(search_query, request.output_dir)
-        new_path = await audio_processor.apply_metadata_and_move(file_path, request.output_dir, request.track)
-        return {"path": str(new_path)}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/api/library/show_in_folder")
-async def show_in_folder(request: TrackActionRequest):
-    import platform
-    import subprocess
-    import os
-    path = request.path
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="El archivo no existe.")
-    try:
-        sys_plat = platform.system()
-        if sys_plat == 'Darwin':
-            subprocess.run(['open', '-R', path])
-        elif sys_plat == 'Windows':
-            subprocess.run(['explorer', '/select,', path])
-        else: # Linux
-            subprocess.run(['dbus-send', '--session', '--dest=org.freedesktop.FileManager1', '--type=method_call', '--print-reply', '/org/freedesktop/FileManager1', 'org.freedesktop.FileManager1.ShowItems', f'array:string:"file://{path}"', 'string:""'])
-        return {"message": "Carpeta abierta"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error abriendo la carpeta: {e}")
-
-@app.delete("/api/library/track")
-async def delete_track(request: TrackActionRequest):
-    import os
-    path = request.path
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="El archivo no existe.")
-    try:
-        os.remove(path)
-        return {"message": "Archivo eliminado correctamente"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error eliminando el archivo: {e}")
-
-@app.get("/api/library/track_info")
-async def get_track_info(path: str):
-    import os
-    if not os.path.exists(path):
-        raise HTTPException(status_code=404, detail="El archivo no existe.")
-    try:
-        meta = await asyncio.to_thread(audio_processor.read_full_metadata, path)
-        return meta
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error leyendo metadatos: {e}")
-
-@app.post("/api/library/track_info")
-async def update_track_info(request: TrackInfoUpdateRequest):
-    import os
-    if not os.path.exists(request.path):
-        raise HTTPException(status_code=404, detail="El archivo original no existe.")
-    
-    config = load_app_config()
-    library_dir = config.get("library_dir")
-    if not library_dir:
-        raise HTTPException(status_code=400, detail="El directorio de la biblioteca no está configurado.")
-
-    try:
-        new_path = await audio_processor.apply_metadata_and_move(request.path, library_dir, request.metadata)
-        return {"path": new_path, "message": "Metadatos actualizados"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error actualizando metadatos: {e}")
-
-@app.post("/api/library/generate_playlist")
-async def generate_playlist_file(request: GeneratePlaylistRequest):
-    if not request.file_paths:
-        raise HTTPException(status_code=400, detail="No se especificaron canciones para la playlist.")
-    try:
-        m3u8_path = await asyncio.to_thread(
-            playlist_manager.generate_m3u8, request.playlist_name, request.file_paths, request.output_dir
-        )
-        return {"m3u8_path": m3u8_path}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error generando la playlist: {e}")
-
-@app.get("/api/library/config")
-async def get_library_config():
-    config = load_app_config()
-    return {"library_dir": config.get("library_dir", "")}
-
-@app.post("/api/library/config")
-async def set_library_config(request: LibraryConfigRequest):
-    config = load_app_config()
-    config["library_dir"] = request.library_dir
-    save_app_config(config)
-    return {"library_dir": request.library_dir}
-
-@app.get("/api/settings")
-async def get_settings():
-    config = load_app_config()
-    return {
-        "acoustid_api_key": os.environ.get("ACOUSTID_API_KEY", ""),
-        "spotify_client_id": os.environ.get("SPOTIFY_CLIENT_ID", ""),
-        "spotify_client_secret": os.environ.get("SPOTIFY_CLIENT_SECRET", ""),
-        "plan_c_enabled": bool(config.get("plan_c_enabled", False)),
-        "library_dir": config.get("library_dir", ""),
-        "process_input_dir": config.get("process_input_dir", ""),
-        "process_output_dir": config.get("process_output_dir", ""),
-        "theme": config.get("theme", "grafito"),
-        "color_accent": config.get("color_accent", "azul"),
-    }
-
-@app.post("/api/settings")
-async def update_settings(request: SettingsRequest):
-    if request.acoustid_api_key is not None:
-        os.environ["ACOUSTID_API_KEY"] = request.acoustid_api_key
-        acoustid_fallback.ACOUSTID_API_KEY = request.acoustid_api_key
-        set_key(str(ENV_FILE), "ACOUSTID_API_KEY", request.acoustid_api_key)
-
-    if request.spotify_client_id is not None:
-        os.environ["SPOTIFY_CLIENT_ID"] = request.spotify_client_id
-        set_key(str(ENV_FILE), "SPOTIFY_CLIENT_ID", request.spotify_client_id)
-
-    if request.spotify_client_secret is not None:
-        os.environ["SPOTIFY_CLIENT_SECRET"] = request.spotify_client_secret
-        set_key(str(ENV_FILE), "SPOTIFY_CLIENT_SECRET", request.spotify_client_secret)
-
-    config = load_app_config()
-    if request.plan_c_enabled is not None:
-        config["plan_c_enabled"] = request.plan_c_enabled
-    if request.library_dir is not None:
-        config["library_dir"] = request.library_dir
-    if request.process_input_dir is not None:
-        config["process_input_dir"] = request.process_input_dir
-    if request.process_output_dir is not None:
-        config["process_output_dir"] = request.process_output_dir
-    if request.theme is not None:
-        config["theme"] = request.theme
-    if request.color_accent is not None:
-        config["color_accent"] = request.color_accent
-    save_app_config(config)
-
-    return {"message": "Configuración guardada."}
-
-@app.get("/api/library/browse")
-async def browse_library(library_dir: str):
-    if not library_dir:
-        raise HTTPException(status_code=400, detail="Falta especificar la carpeta de biblioteca.")
-    try:
-        tracks = await asyncio.to_thread(playlist_manager.index_local_library, library_dir)
-        playlists = await asyncio.to_thread(playlist_manager.scan_local_playlists, library_dir)
-        return {"tracks": tracks, "playlists": playlists}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error escaneando la biblioteca: {e}")
-
-def _resolve_path_within_library(raw_path: str) -> Path:
-    library_dir = load_app_config().get("library_dir", "")
-    if not library_dir:
-        raise HTTPException(status_code=400, detail="No hay una biblioteca configurada.")
-
-    base = Path(library_dir).resolve()
-    target = Path(raw_path).resolve()
-    try:
-        target.relative_to(base)
-    except ValueError:
-        raise HTTPException(status_code=403, detail="Ruta fuera de la biblioteca configurada.")
-
-    if not target.is_file():
-        raise HTTPException(status_code=404, detail="Archivo no encontrado.")
-
-    return target
-
-def _extract_embedded_artwork(file_path: Path):
-    try:
-        import mutagen
-        from mutagen.mp4 import MP4
-        from mutagen.flac import FLAC
-
-        audio = mutagen.File(str(file_path))
-        if audio is None:
-            return None, None
-
-        if isinstance(audio, MP4):
-            covers = audio.tags.get("covr") if audio.tags else None
-            if covers:
-                cover = covers[0]
-                mime = "image/png" if cover.imageformat == cover.FORMAT_PNG else "image/jpeg"
-                return bytes(cover), mime
-            return None, None
-
-        if isinstance(audio, FLAC):
-            if audio.pictures:
-                pic = audio.pictures[0]
-                return pic.data, pic.mime
-            return None, None
-
-        # ID3 (mp3, wav, aiff)
-        if audio.tags is not None:
-            for key in list(audio.tags.keys()):
-                if str(key).startswith("APIC"):
-                    apic = audio.tags[key]
-                    return apic.data, apic.mime
-
-        return None, None
-    except Exception:
-        return None, None
-
-@app.get("/api/library/artwork")
-async def get_track_artwork(path: str):
-    target = _resolve_path_within_library(path)
-    image_bytes, mime = await asyncio.to_thread(_extract_embedded_artwork, target)
-    if not image_bytes:
-        raise HTTPException(status_code=404, detail="Este archivo no tiene carátula embebida.")
-    return Response(content=image_bytes, media_type=mime or "image/jpeg")
-
-_RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
-
-def _iter_file_range(file_path: Path, start: int, length: int, chunk_size: int = 65536):
-    with open(file_path, "rb") as f:
-        f.seek(start)
-        remaining = length
-        while remaining > 0:
-            data = f.read(min(chunk_size, remaining))
-            if not data:
-                break
-            remaining -= len(data)
-            yield data
-
-@app.get("/api/library/stream")
-async def stream_track(path: str, request: Request):
-
-    target = _resolve_path_within_library(path)
-    file_size = target.stat().st_size
-    media_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
-
-    range_header = request.headers.get("range")
-    if not range_header:
-        return FileResponse(str(target), media_type=media_type, headers={"Accept-Ranges": "bytes"})
-
-    match = _RANGE_RE.match(range_header)
-    if not match:
-        raise HTTPException(status_code=416, detail="Cabecera Range no válida.")
-
-    start_str, end_str = match.groups()
-    if start_str == "" and end_str != "":
-        suffix_length = int(end_str)
-        start = max(file_size - suffix_length, 0)
-        end = file_size - 1
-    else:
-        start = int(start_str) if start_str else 0
-        end = int(end_str) if end_str else file_size - 1
-        end = min(end, file_size - 1)
-
-    if start > end or start >= file_size:
-        raise HTTPException(status_code=416, detail="Rango fuera de los límites del archivo.")
-
-    content_length = end - start + 1
-    headers = {
-        "Content-Range": f"bytes {start}-{end}/{file_size}",
-        "Accept-Ranges": "bytes",
-        "Content-Length": str(content_length),
-    }
-    return StreamingResponse(
-        _iter_file_range(target, start, content_length),
-        status_code=206,
-        media_type=media_type,
-        headers=headers,
-    )
-
-from urllib.parse import quote
-
-@app.get("/api/auth/login")
-async def spotify_login():
-    try:
-        auth_url = download_manager.get_auth_url()
-        return RedirectResponse(auth_url)
-    except ValueError as e:
-        error_msg = quote(str(e))
-        return RedirectResponse(url=f"/?spotify_auth=error&reason={error_msg}")
-
-@app.get("/api/auth/status")
-async def spotify_auth_status():
-    return {"connected": download_manager.TOKEN_FILE.exists()}
-
-@app.get("/api/auth/callback")
-async def spotify_callback(code: Optional[str] = None, error: Optional[str] = None):
-    if error or not code:
-        return RedirectResponse(url=f"/?spotify_auth=error&reason={error or 'missing_code'}")
-
-    try:
-        await download_manager.process_auth_code(code)
-    except Exception as e:
-        return RedirectResponse(url=f"/?spotify_auth=error&reason={e}")
-
-    return RedirectResponse(url="/?spotify_auth=success")
-
-@app.post("/api/cancel")
-async def cancel_processing():
-    global cancel_requested
-    cancel_requested = True
-    return {"message": "Cancelando..."}
-
-@app.post("/api/debug/simulate_process_done")
-async def debug_simulate_process_done(count: int = 300, elapsed_seconds: int = 3725, total_files: Optional[int] = None):
-    """Solo para pruebas locales: emite el mismo mensaje 'done' que el WS envía al
-    terminar un procesamiento real, para poder verificar en el navegador el aviso de
-    apoyo (>250 canciones) sin tener que procesar una biblioteca real. `total_files`
-    permite simular un lote grande con canciones saltadas (total_files > count)."""
-    if total_files is None:
-        total_files = count
-    await manager.broadcast(json.dumps({
-        "type": "done",
-        "message": "Proceso completado.",
-        "report_path": "",
-        "count": count,
-        "total_files": total_files,
-        "elapsed_seconds": elapsed_seconds
-    }))
-    return {"status": "ok", "count": count, "total_files": total_files, "elapsed_seconds": elapsed_seconds}
-
-@app.post("/api/debug/simulate_update_available")
-async def debug_simulate_update_available(latest_version: str = "9.9.9", url: str = "https://github.com/JJaroll/Cicada/releases/latest"):
-    """Solo para pruebas locales: hace aparecer de inmediato el banner de "nueva versión
-    disponible" en cualquier pestaña abierta de Cicada, sin depender de que exista
-    realmente un release más nuevo en GitHub."""
-    await manager.broadcast(json.dumps({
-        "type": "debug_update_available",
-        "latest_version": latest_version,
-        "url": url
-    }))
-    return {"status": "ok", "latest_version": latest_version, "url": url}
-
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
-    await manager.connect(websocket)
-    try:
-        while True:
-            await websocket.receive_text()
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-
-@app.get("/api/select_folder")
-def select_folder():
-    try:
-        if sys.platform == "darwin":
-            script = 'tell application "System Events" to activate\n tell application "System Events" to return POSIX path of (choose folder)'
-            result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
-            path = result.stdout.strip()
-            return {"path": path} if path else {"error": "Cancelado"}
-        elif sys.platform == "win32":
-            script = "Add-Type -AssemblyName System.windows.forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; if ($f.ShowDialog() -eq 'OK') { Write-Output $f.SelectedPath }"
-            kwargs = {'creationflags': 0x08000000} # Evita que se abra una consola negra
-            result = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, **kwargs)
-            path = result.stdout.strip()
-            return {"path": path} if path else {"error": "Cancelado"}
-        else:
-            return {"error": "Selección nativa no soportada. Copia y pega la ruta."}
-    except Exception as e:
-        return {"error": str(e)}
-
-@app.get("/api/select_file")
-def select_file():
-    try:
-        if sys.platform == "darwin":
-            script = 'tell application "System Events" to activate\n tell application "System Events" to return POSIX path of (choose file)'
-            result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
-            path = result.stdout.strip()
-            return {"path": path} if path else {"error": "Cancelado"}
-        elif sys.platform == "win32":
-            script = "Add-Type -AssemblyName System.windows.forms; $f = New-Object System.Windows.Forms.OpenFileDialog; if ($f.ShowDialog() -eq 'OK') { Write-Output $f.FileName }"
-            kwargs = {'creationflags': 0x08000000}
-            result = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, **kwargs)
-            path = result.stdout.strip()
-            return {"path": path} if path else {"error": "Cancelado"}
-        else:
-            return {"error": "Selección nativa no soportada. Copia y pega la ruta."}
-    except Exception as e:
-        return {"error": str(e)}
-
-GITHUB_REPO = "JJaroll/Cicada"
-
-def _parse_version(v: str):
-    parts = re.findall(r'\d+', v or "")
-    return tuple(int(p) for p in parts) if parts else (0,)
-
-@app.get("/api/check_update")
-async def check_update():
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(
-                f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest",
-                headers={"Accept": "application/vnd.github+json", "User-Agent": "Cicada-App"}
-            )
-            resp.raise_for_status()
-            data = resp.json()
-
-        latest_tag = data.get("tag_name", "")
-        latest_version = latest_tag.lstrip("vV")
-        return {
-            "update_available": _parse_version(latest_version) > _parse_version(__version__),
-            "current_version": __version__,
-            "latest_version": latest_version,
-            "url": data.get("html_url") or f"https://github.com/{GITHUB_REPO}/releases/latest"
-        }
-    except Exception:
-        return {"update_available": False}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 @app.get("/")
 async def get():
@@ -1668,11 +795,11 @@ async def get():
                         <div class="glass-card p-6 flex-1 flex flex-col gap-4 relative">
                             <h2 class="font-label-caps tracking-widest text-[16px] text-main border-b border-theme pb-4">Sincronización</h2>
                             <p class="font-data-sm text-[13px] text-muted mb-4">
-                                Transfiere la biblioteca local de Cicada hacia tu iPod. (La conversión de audio se informará antes de transferir si el iPod no soporta ciertos formatos).
+                                Reescribe la base de datos del iPod con las pistas actuales, en el formato de Cicada. Se hace un backup automático antes de escribir; ante cualquier error se restaura. La primera escritura vuelve el iPod incompatible con Music.app (se pedirá confirmación).
                             </p>
                             <div class="mt-auto flex justify-end">
                                 <button onclick="syncIpod()" id="btn-sync-ipod" class="bg-secondary text-white px-6 py-2 rounded-full font-label-caps text-[12px] hover:scale-105 transition-transform opacity-50 cursor-not-allowed" disabled>
-                                    Sincronizar Biblioteca
+                                    Escribir en el iPod
                                 </button>
                             </div>
                         </div>
