@@ -13,7 +13,6 @@ Invariantes:
 """
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import os
@@ -21,6 +20,8 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
+
+from cicada.ipod.paths import cicada_home, guid_hash
 
 logger = logging.getLogger(__name__)
 
@@ -52,21 +53,13 @@ class ConsentRecord:
     first_write_committed_at: Optional[str] = None
 
 
-def _cicada_home() -> Path:
-    return Path(os.environ.get("CICADA_HOME") or (Path.home() / ".cicada"))
-
-
 def default_consent_dir() -> Path:
     """``~/.cicada/consent`` (o $CICADA_HOME/consent)."""
-    return _cicada_home() / "consent"
+    return cicada_home() / "consent"
 
 
-def _guid_hash(guid: str | bytes) -> str:
-    if isinstance(guid, (bytes, bytearray)):
-        norm = bytes(guid).hex().upper()
-    else:
-        norm = str(guid).strip().upper()
-    return hashlib.sha256(norm.encode("utf-8")).hexdigest()[:16]
+#: Alias retrocompatible — la lógica vive en cicada.ipod.paths.guid_hash.
+_guid_hash = guid_hash
 
 
 def get_consent_path(guid: str | bytes, *, consent_dir: Optional[Path | str] = None) -> Path:

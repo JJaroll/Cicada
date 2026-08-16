@@ -58,6 +58,7 @@ from cicada.ipod.device.backup import (
 from cicada.ipod.device.checksum import ChecksumType
 from cicada.ipod.device.device_info import DeviceInfo
 from cicada.ipod.device.durability import flush_written_file
+from cicada.ipod.paths import cicada_home
 from cicada.ipod.device.write_guard import (
     assert_within_ipod_control,
     assert_writable,
@@ -114,13 +115,9 @@ class ApplyResult:
     tracks_written: int = 0
 
 
-def _cicada_home() -> Path:
-    return Path(os.environ.get("CICADA_HOME") or (Path.home() / ".cicada"))
-
-
 def default_commit_dir() -> Path:
     """``~/.cicada/ipod-commit`` (o $CICADA_HOME/ipod-commit)."""
-    return _cicada_home() / "ipod-commit"
+    return cicada_home() / "ipod-commit"
 
 
 def get_inflight_path(guid: str, *, commit_dir: Optional[Path | str] = None) -> Path:

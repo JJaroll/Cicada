@@ -1371,9 +1371,9 @@ def write_itunesdb(
         # Try to get FireWire ID from parameter, SysInfo, SysInfoExtended, or Windows registry
         if firewire_id is None:
             try:
-                from iopenpod.device import get_firewire_id
+                from ._firewire import read_firewire_id
 
-                firewire_id = get_firewire_id(ipod_path)
+                firewire_id = read_firewire_id(ipod_path)
             except Exception as e:
                 logger.warning("Could not get FireWire ID: %s", e)
 
@@ -1453,9 +1453,9 @@ def write_itunesdb(
         # Requires FireWire ID (same as HASH58)
         if firewire_id is None:
             try:
-                from iopenpod.device import get_firewire_id
+                from ._firewire import read_firewire_id
 
-                firewire_id = get_firewire_id(ipod_path)
+                firewire_id = read_firewire_id(ipod_path)
             except Exception as e:
                 logger.warning("Could not get FireWire ID for HASHAB: %s", e)
 

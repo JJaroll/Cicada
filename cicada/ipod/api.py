@@ -40,7 +40,7 @@ from cicada.ipod.db.coordinator.plan import (
     create_plan,
 )
 from cicada.ipod.db.parser import load_ipod_library
-from cicada.ipod.db.writer.mhit_writer import TrackInfo
+from cicada.ipod.db.models import TrackInfo
 from cicada.ipod.device.backup import (
     BackupError,
     BackupInfo,

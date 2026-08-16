@@ -33,7 +33,7 @@ from cicada.ipod.db.coordinator.consent import (
 )
 from cicada.ipod.db.coordinator.plan import PlanError, create_plan
 from cicada.ipod.db.parser import load_ipod_library
-from cicada.ipod.db.writer.mhit_writer import TrackInfo
+from cicada.ipod.db.models import TrackInfo
 from cicada.ipod.device import backup as backup_mod
 from cicada.ipod.device.backup import BackupError, BackupMode
 from cicada.ipod.device.device_info import read_device_info

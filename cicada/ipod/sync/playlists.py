@@ -23,7 +23,7 @@ from cicada.ipod.db.writer.mhod_spl_writer import (
     SmartPlaylistRule,
     SmartPlaylistRules,
 )
-from cicada.ipod.db.writer.mhyp_writer import PlaylistInfo, PlaylistItemMeta
+from cicada.ipod.db.models import PlaylistInfo, PlaylistItemMeta
 from cicada.ipod.sync.state import PlaylistMapRecord, SyncStateDB
 
 logger = logging.getLogger(__name__)

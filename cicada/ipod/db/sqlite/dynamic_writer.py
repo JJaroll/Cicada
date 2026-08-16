@@ -8,7 +8,7 @@ Reference: libgpod itdb_sqlite.c mk_Dynamic()
 
 import logging
 
-from cicada.ipod.db.writer.mhit_writer import TrackInfo
+from cicada.ipod.db.models import TrackInfo
 
 from ._helpers import open_db, unix_to_coredata
 from ._helpers import s64 as _s64

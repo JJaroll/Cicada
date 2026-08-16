@@ -18,6 +18,7 @@ Usage::
 import logging
 import os
 import struct
+from typing import TypedDict, cast
 
 from cicada.ipod.db.shared.extraction import (
     extract_datasets,
@@ -33,9 +34,24 @@ from .parser import parse_itunesdb
 logger = logging.getLogger(__name__)
 
 
+class IpodLibrary(TypedDict, total=False):
+    """Contrato público de load_ipod_library: datasets del iTunesDB + flags.
+
+    ``total=False``: no todas las claves aparecen siempre (los consumidores usan
+    ``.get(...)``). El dict incluye además, de forma dinámica, los campos de la
+    cabecera MHBD; aquí se declaran solo las claves que consumen otras capas.
+    """
+    mhlt: list[dict]
+    mhlp: list[dict]
+    mhlp_podcast: list[dict]
+    mhla: list[dict]
+    mhlp_smart: list[dict]
+    playcounts_timezone_changed: bool
+
+
 def load_ipod_library(itunesdb_path: str,
                       merge_playcounts: bool = True,
-                      mount: str | None = None) -> dict | None:
+                      mount: str | None = None) -> IpodLibrary | None:
     """Parse an iTunesDB file and return normalised data.
 
     Args:
@@ -112,7 +128,7 @@ def load_ipod_library(itunesdb_path: str,
         if otg:
             data.setdefault("mhlp", []).extend(otg)
 
-        return data
+        return cast(IpodLibrary, data)
     except Exception:
         logger.error("Error parsing iTunesDB", exc_info=True)
         return None

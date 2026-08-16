@@ -33,6 +33,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
+from cicada.ipod.paths import cicada_home
+
 if TYPE_CHECKING:  # pragma: no cover - solo tipos; info.py llega en Etapa 2b
     from cicada.ipod.device.info import DeviceInfo
 
@@ -97,14 +99,10 @@ _CORE_FIELDS: frozenset[str] = frozenset({
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Raíz del caché (off-device) — override por CICADA_HOME para tests
+# Raíz del caché (off-device) — centralizada en cicada.ipod.paths
 # ──────────────────────────────────────────────────────────────────────
-def _cicada_home() -> Path:
-    return Path(os.environ.get("CICADA_HOME") or (Path.home() / ".cicada"))
-
-
 def _sysinfo_cache_root() -> Path:
-    return _cicada_home() / "sysinfo"
+    return cicada_home() / "sysinfo"
 
 
 def _cache_dir_for_guid(guid: str) -> Path:

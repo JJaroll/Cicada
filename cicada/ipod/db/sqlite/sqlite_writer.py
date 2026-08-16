@@ -58,8 +58,7 @@ except ImportError:
 
     class DeviceWriteSafetyError(RuntimeError):  # type: ignore[no-redef]
         """Shim: la vía de escritura directa de iOpenPod no se usa en Cicada."""
-from cicada.ipod.db.writer.mhit_writer import TrackInfo
-from cicada.ipod.db.writer.mhyp_writer import PlaylistInfo
+from cicada.ipod.db.models import PlaylistInfo, TrackInfo
 
 from .cbk_writer import write_locations_cbk
 from .dynamic_writer import write_dynamic_itdb

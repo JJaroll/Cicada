@@ -20,8 +20,7 @@ from cicada.ipod.db.shared.device_time import (
     DeviceTimeContext,
     use_device_time_context,
 )
-from cicada.ipod.db.writer.mhit_writer import TrackInfo
-from cicada.ipod.db.writer.mhyp_writer import PlaylistInfo
+from cicada.ipod.db.models import PlaylistInfo, TrackInfo
 from cicada.ipod.device.capabilities import DeviceCapabilities
 from cicada.ipod.device.checksum import ChecksumType
 

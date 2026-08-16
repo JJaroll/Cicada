@@ -12,8 +12,7 @@ import time
 
 from cicada.ipod.db.shared.album_identity import album_identity_from_track
 from cicada.ipod.db.shared.field_base import strip_article
-from cicada.ipod.db.writer.mhit_writer import TrackInfo
-from cicada.ipod.db.writer.mhyp_writer import PlaylistInfo
+from cicada.ipod.db.models import PlaylistInfo, TrackInfo
 
 from ._helpers import open_db
 from ._helpers import s64 as _s64

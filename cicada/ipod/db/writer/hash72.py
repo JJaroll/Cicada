@@ -354,7 +354,7 @@ def extract_hash_info(ipod_path: str, valid_itdb_data: bytes) -> bool:
 
     # Get UUID from device (or use zeros if not available)
     try:
-        from .hash58 import read_firewire_id
+        from ._firewire import read_firewire_id
         fw_id = read_firewire_id(ipod_path)
         uuid = bytearray(20)
         uuid[:len(fw_id)] = fw_id

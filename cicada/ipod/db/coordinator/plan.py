@@ -30,8 +30,7 @@ from cicada.ipod.db.coordinator.consent import (
 from cicada.ipod.db.shared.device_time import DeviceTimeContext
 from cicada.ipod.db.sqlite.build import ITLP_FILES, build_sqlite_databases
 from cicada.ipod.db.writer.build import build_itunescdb
-from cicada.ipod.db.writer.mhit_writer import TrackInfo
-from cicada.ipod.db.writer.mhyp_writer import PlaylistInfo
+from cicada.ipod.db.models import PlaylistInfo, TrackInfo
 from cicada.ipod.db.writer.verify import verify_hashab
 from cicada.ipod.device.capabilities import DeviceCapabilities, capabilities_for_family_gen
 from cicada.ipod.device.checksum import ChecksumType

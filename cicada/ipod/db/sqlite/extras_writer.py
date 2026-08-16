@@ -8,7 +8,7 @@ Reference: libgpod itdb_sqlite.c mk_Extras()
 
 import logging
 
-from cicada.ipod.db.writer.mhit_writer import TrackInfo
+from cicada.ipod.db.models import TrackInfo
 
 from ._helpers import open_db
 from ._helpers import s64 as _s64

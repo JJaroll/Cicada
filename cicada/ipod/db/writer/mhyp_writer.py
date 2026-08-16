@@ -37,7 +37,6 @@ Cross-referenced against:
 import random
 import struct
 import time
-from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -64,6 +63,7 @@ from .mhod_spl_writer import (
     write_mhod102,
 )
 from .mhod_writer import write_mhod_string
+from ..models import PlaylistInfo, PlaylistItemMeta
 
 
 def _display_text(value: object, default: str) -> str:
@@ -71,73 +71,6 @@ def _display_text(value: object, default: str) -> str:
     return text or default
 
 
-@dataclass
-class PlaylistItemMeta:
-    """Per-item metadata preserved from parsed MHIP entries for round-trip fidelity.
-
-    These fields map directly to MHIP header offsets:
-      +0x10: podcast_group_flag (4B)
-      +0x14: group_id (4B) — unique MHIP identifier (libgpod: podcastgroupid)
-      +0x20: podcast_group_ref (4B) — references another MHIP's group_id
-      +0x2C: track_persistent_id (8B) — track's db_track_id
-      +0x3C: mhip_persistent_id (8B) — per-track persistent ID
-    """
-    podcast_group_flag: int = 0
-    group_id: int = 0
-    podcast_group_ref: int = 0
-    track_persistent_id: int = 0
-    mhip_persistent_id: int = 0
-
-
-@dataclass
-class PlaylistInfo:
-    """Structured input for writing a playlist to iTunesDB.
-
-    Covers regular playlists, smart playlists, and the master playlist.
-    The master playlist is constructed internally by write_master_playlist()
-    and does not need a PlaylistInfo.
-    """
-    name: str
-    track_ids: list[int] = field(default_factory=list)
-
-    # Identity
-    playlist_id: int | None = None   # 64-bit; generated if None
-    master: bool = False                 # Sets type byte at +0x14 to 1.
-    #   Dataset 2: True for the master playlist only (exactly one).
-    #   Dataset 5: sample-dependent category marker; preserve parsed input.
-    #   In both cases this controls: (a) the type byte at +0x14,
-    #   (b) whether library indices are generated (only when tracks
-    #       are also provided), and (c) whether db_id_2/playlist_id
-    #       are written at the extended offsets +0x3C/+0x44 (skipped
-    #       when master=True, matching libgpod behaviour).
-    sortorder: int = 0                   # 0=default, 1=manual, 3=title ...
-    podcast_flag: int = 0                # 0x2A: 0=normal, 1=podcast playlist (u16)
-
-    # Smart playlist fields (both must be set for a smart playlist)
-    smart_prefs: SmartPlaylistPrefs | None = None
-    smart_rules: SmartPlaylistRules | None = None
-
-    # mhsd5Type: browsing category for dataset 5 smart playlists
-    # (per libgpod: 0=None, 2=Movies, 3=TV Shows, 4=Music, 5=Audiobooks, 6=Ringtones, 7=MovieRentals)
-    mhsd5_type: int = 0
-
-    # Exact raw u16 at MHYP +0x52. Observed as 25 (0x0019) on iTunes-created
-    # Phase Music playlists; its precise firmware meaning is not yet proven.
-    phase_game_flag: int = 0
-
-    # Opaque blobs preserved from parsed data for round-trip fidelity
-    raw_mhod100: bytes | None = None   # Playlist prefs (type 100 body)
-    raw_mhod102: bytes | None = None   # Playlist settings (type 102 body)
-    raw_mhod55: bytes | None = None    # Playlist property plist (type 55 body)
-    playlist_description: str | None = None
-
-    # Per-MHIP metadata preserved from parsed data for round-trip fidelity.
-    # When provided, must be the same length as track_ids and in the same order.
-    item_metadata: list[PlaylistItemMeta] | None = None
-
-    @property
-    def is_smart(self) -> bool:
-        return self.smart_prefs is not None and self.smart_rules is not None
 
 
 def generate_playlist_id() -> int:

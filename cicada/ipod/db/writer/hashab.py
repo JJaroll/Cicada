@@ -252,15 +252,7 @@ def write_hashab(itdb_data: bytearray, firewire_id: bytes) -> None:
                 OFFSET_HASHAB, HASHAB_SIZE)
 
 
-def read_firewire_id(ipod_path: str) -> bytes:
-    """Return the FireWire GUID for the connected iPod.
-
-    Reads from the centralised DeviceInfo store.  Raises if not available.
-    """
-    from iopenpod.device import get_firewire_id
-
-    return get_firewire_id(ipod_path)
-
+from ._firewire import read_firewire_id  # noqa: E402  (re-exportado, compat)
 
 if __name__ == "__main__":
     import sys
