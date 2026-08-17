@@ -198,3 +198,111 @@ details.library-group[open] > summary::before {
 .cicada-input::placeholder {
     color: var(--text-muted);
 }
+
+/* --- iPod Redesign Styles --- */
+.ipod-cat-btn {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    font-size: 13px;
+    color: var(--text-muted);
+    background: transparent;
+    transition: all 0.18s ease;
+    cursor: pointer;
+    width: 100%;
+    text-align: left;
+}
+.ipod-cat-btn:hover {
+    background: var(--btn-hover);
+    color: var(--text-main);
+}
+.ipod-cat-btn.active {
+    background: var(--accent-light);
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.ipod-storage-bar {
+    width: 100%;
+    height: 14px;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 7px;
+    overflow: hidden;
+    display: flex;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.storage-seg {
+    height: 100%;
+    transition: width 0.3s ease;
+}
+.storage-seg[style*="width: 0%"] {
+    display: none;
+}
+.storage-seg:not([style*="width: 0%"]) {
+    min-width: 4px;
+}
+.storage-seg-audio { background: #10b981; }
+.storage-seg-video { background: #8b5cf6; }
+.storage-seg-photos { background: #f59e0b; }
+.storage-seg-podcasts { background: #3b82f6; }
+.storage-seg-other { background: #64748b; }
+
+.ipod-media-card {
+    background: var(--card-bg, rgba(255, 255, 255, 0.03));
+    border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+    border-radius: 12px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    position: relative;
+    transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s;
+}
+.ipod-media-card:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+.hover-delete-btn {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(239, 68, 68, 0.9);
+    color: white;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.15s ease, transform 0.15s ease;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    z-index: 10;
+}
+.ipod-media-card:hover .hover-delete-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+.hover-delete-btn:hover {
+    transform: scale(1.1);
+    background: #dc2626;
+}
+
+.filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    background: var(--accent-light);
+    color: var(--accent);
+    border-radius: 20px;
+    font-size: 11px;
+}
+

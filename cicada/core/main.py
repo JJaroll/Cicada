@@ -167,8 +167,7 @@ async def get():
             }
           }
         </script>
-        
-        <link rel="stylesheet" href="/static/css/app.css">
+        <link rel="stylesheet" href="/static/css/app.css?v=2.0.0">
     </head>
     <body class="bg-app text-main font-body-md text-body-md h-screen flex justify-center p-4">
         <div class="app-shell w-full h-full max-w-[1920px] mx-auto flex gap-4">
@@ -759,80 +758,348 @@ async def get():
                 </div>
 
                 <!-- Vista: Sincronizar iPod -->
-                <div id="view-ipod" class="view h-full flex-col gap-4 overflow-hidden hidden">
+                <div id="view-ipod" class="view h-full flex-col gap-4 overflow-hidden">
                     
-                    <!-- Top section: Device Info -->
-                    <div class="glass-card p-6 flex flex-col gap-4">
-                        <div class="flex justify-between items-center border-b border-theme pb-4">
-                            <h2 class="font-label-caps tracking-widest text-[16px] text-main">Dispositivo Conectado</h2>
-                            <button onclick="scanIpod()" class="bg-accent text-white px-4 py-2 rounded-full font-label-caps text-[12px] hover:scale-105 transition-transform flex items-center gap-2">
+                    <!-- Top section: Device Info & Storage Bar & Quick Actions -->
+                    <div class="glass-card p-5 flex flex-col gap-4 flex-shrink-0">
+                        <div class="flex justify-between items-center border-b border-theme pb-3">
+                            <div class="flex items-center gap-2">
+                                <span class="material-symbols-outlined text-accent text-[20px]">devices</span>
+                                <h2 class="font-label-caps tracking-widest text-[14px] text-main">Dispositivo iPod</h2>
+                            </div>
+                            <button onclick="scanIpod()" id="btn-scan-always" class="bg-accent text-white px-4 py-1.5 rounded-full font-label-caps text-[12px] hover:scale-105 transition-transform flex items-center gap-1.5 shadow-sm">
                                 <span class="material-symbols-outlined text-[16px]">search</span>
-                                Escanear
+                                <span data-i18n="ipod_btn_scan">Escanear</span>
                             </button>
                         </div>
-                        
-                        <div id="ipod-info-container" class="flex items-center gap-6 hidden">
-                            <!-- Placeholder for an iPod image or generic icon -->
-                            <div class="w-24 h-32 bg-black/10 dark:bg-white/10 rounded-lg flex items-center justify-center">
-                                <span class="material-symbols-outlined text-[48px] text-muted">mp3</span>
-                            </div>
-                            <div class="flex-1 flex flex-col gap-2">
-                                <h3 id="ipod-name" class="font-label-caps text-[18px] text-main">--</h3>
-                                <p id="ipod-model" class="font-data-sm text-[13px] text-muted">Modelo: --</p>
-                                <p id="ipod-capacity" class="font-data-sm text-[13px] text-muted">Capacidad: --</p>
-                                <p id="ipod-format" class="font-data-sm text-[13px] text-muted">Formato: --</p>
+
+                        <!-- Estado: Sin Dispositivo -->
+                        <div id="ipod-no-device" class="text-center py-6 text-muted font-data-sm text-[13px] flex flex-col items-center gap-3">
+                            <span class="material-symbols-outlined text-[44px] text-muted/40">device_unknown</span>
+                            <p data-i18n="ipod_no_device">No se ha detectado ningún iPod. Asegúrate de que esté conectado y montado.</p>
+                            <button onclick="scanIpod()" class="px-5 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[12px] text-accent transition-colors flex items-center gap-2 mt-1">
+                                <span class="material-symbols-outlined text-[16px]">refresh</span>
+                                <span>Buscar iPod conectado</span>
+                            </button>
+                        </div>
+                        <div id="ipod-no-control" class="text-center py-6 text-[#f59e0b] font-data-sm text-[13px] hidden">
+                            <span class="material-symbols-outlined text-[40px] text-[#f59e0b]/60 mb-2 block">warning</span>
+                            <p data-i18n="ipod_no_control">Se detectó un volumen pero falta la carpeta iPod_Control.</p>
+                            <button onclick="scanIpod()" class="px-5 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[12px] text-[#f59e0b] transition-colors inline-flex items-center gap-2 mt-2">
+                                <span class="material-symbols-outlined text-[16px]">refresh</span>
+                                <span>Reintentar escaneo</span>
+                            </button>
+                        </div>
+
+                        <!-- Info del Dispositivo Conectado -->
+                        <div id="ipod-info-container" class="flex flex-col gap-3 hidden">
+                            <div class="flex items-center gap-5 justify-between">
+                                <!-- Imagen del iPod -->
+                                <div class="w-20 h-24 flex-shrink-0 flex items-center justify-center bg-black/10 dark:bg-white/5 rounded-xl p-1 border border-theme">
+                                    <img id="ipod-device-img" src="/static/ipod_images/iPodGeneric.png" alt="iPod" class="max-h-22 max-w-18 object-contain drop-shadow-md"/>
+                                </div>
+
+                                <!-- Detalles del Dispositivo y Almacenamiento -->
+                                <div class="flex-1 min-w-0 flex flex-col gap-2">
+                                    <div class="flex items-center justify-between gap-2 flex-wrap">
+                                        <div class="flex items-baseline gap-2">
+                                            <h3 id="ipod-name" class="font-headline-sm text-[17px] text-main font-semibold truncate">iPod</h3>
+                                            <span id="ipod-model" class="font-data-sm text-[12px] text-muted truncate">Modelo: --</span>
+                                        </div>
+                                        <div class="flex items-center gap-3 font-data-sm text-[11px] text-muted/70">
+                                            <span id="ipod-capacity">Capacidad: --</span>
+                                            <span class="text-muted/30">|</span>
+                                            <span id="ipod-format">Firma: --</span>
+                                        </div>
+                                    </div>
+
+                                    <!-- Barra de Almacenamiento -->
+                                    <div class="flex flex-col gap-1 mt-0.5">
+                                        <div class="ipod-storage-bar" id="ipod-storage-bar">
+                                            <div id="storage-seg-audio" class="storage-seg storage-seg-audio" style="width: 0%" title="Audio"></div>
+                                            <div id="storage-seg-video" class="storage-seg storage-seg-video" style="width: 0%" title="Video"></div>
+                                            <div id="storage-seg-photos" class="storage-seg storage-seg-photos" style="width: 0%" title="Fotos"></div>
+                                            <div id="storage-seg-podcasts" class="storage-seg storage-seg-podcasts" style="width: 0%" title="Podcasts/Audiolibros"></div>
+                                            <div id="storage-seg-other" class="storage-seg storage-seg-other" style="width: 0%" title="Otro"></div>
+                                        </div>
+                                        <div class="flex items-center justify-between text-[11px] font-data-sm text-muted/70 flex-wrap gap-2">
+                                            <div class="flex items-center gap-3">
+                                                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#10b981]"></span> <span id="storage-legend-audio" data-i18n="ipod_storage_audio">Audio</span></span>
+                                                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#8b5cf6]"></span> <span id="storage-legend-video" data-i18n="ipod_storage_video">Video</span></span>
+                                                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#f59e0b]"></span> <span id="storage-legend-photos" data-i18n="ipod_storage_photos">Fotos</span></span>
+                                                <span class="flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-[#64748b]"></span> <span id="storage-legend-other" data-i18n="ipod_storage_other">Otro</span></span>
+                                            </div>
+                                            <div id="ipod-storage-text" class="font-semibold text-main">-- usados · -- libres</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Botonera de Acciones Rápidas -->
+                                <div class="flex flex-col gap-1.5 flex-shrink-0 pl-2 border-l border-theme">
+                                    <div class="flex gap-1.5">
+                                        <button onclick="scanIpod()" id="btn-scan-ipod" class="p-2 rounded-lg bg-btn hover:bg-btn-hover text-muted hover:text-main font-label-caps text-[11px] transition-colors inline-flex items-center gap-1" data-i18n-title="ipod_btn_scan" title="Escanear">
+                                            <span class="material-symbols-outlined text-[17px]">search</span>
+                                        </button>
+                                        <button onclick="ejectIpod()" id="btn-eject-ipod" class="p-2 rounded-lg bg-btn hover:bg-red-500/20 text-muted hover:text-red-400 font-label-caps text-[11px] transition-colors inline-flex items-center gap-1" data-i18n-title="ipod_btn_eject" title="Eyectar iPod">
+                                            <span class="material-symbols-outlined text-[17px]">eject</span>
+                                        </button>
+                                    </div>
+                                    <button onclick="syncIpod()" id="btn-sync-ipod" class="bg-accent text-white px-3 py-1.5 rounded-lg font-label-caps text-[11px] hover:scale-102 transition-transform flex items-center justify-center gap-1 shadow-sm opacity-50 cursor-not-allowed" disabled>
+                                        <span class="material-symbols-outlined text-[15px]">sync</span>
+                                        <span data-i18n="ipod_btn_sync">Sync</span>
+                                    </button>
+                                    <button onclick="backupIpod()" id="btn-backup-ipod" class="border border-secondary text-secondary px-3 py-1.5 rounded-lg font-label-caps text-[11px] hover:bg-secondary hover:text-white transition-colors flex items-center justify-center gap-1 opacity-50 cursor-not-allowed" disabled>
+                                        <span class="material-symbols-outlined text-[15px]">save</span>
+                                        <span data-i18n="ipod_btn_backup">Backup</span>
+                                    </button>
+                                </div>
                             </div>
                         </div>
-                        <div id="ipod-no-device" class="text-center py-6 text-muted font-data-sm text-[13px]" data-i18n="ipod_no_device">
-                            No se ha detectado ningún iPod. Asegúrate de que esté conectado y montado.
-                        </div>
-                        <div id="ipod-no-control" class="text-center py-6 text-[#f59e0b] font-data-sm text-[13px] hidden" data-i18n="ipod_no_control"></div>
                     </div>
 
-                    <!-- Middle section: Sync & Backup (side by side) -->
-                    <div class="flex gap-4 h-full">
-                        <!-- Sync -->
-                        <div class="glass-card p-6 flex-1 flex flex-col gap-4 relative">
-                            <h2 class="font-label-caps tracking-widest text-[16px] text-main border-b border-theme pb-4">Sincronización</h2>
-                            <p class="font-data-sm text-[13px] text-muted mb-4">
-                                Reescribe la base de datos del iPod con las pistas actuales, en el formato de Cicada. Se hace un backup automático antes de escribir; ante cualquier error se restaura. La primera escritura vuelve el iPod incompatible con Music.app (se pedirá confirmación).
-                            </p>
-                            <div class="mt-auto flex justify-end">
-                                <button onclick="syncIpod()" id="btn-sync-ipod" class="bg-secondary text-white px-6 py-2 rounded-full font-label-caps text-[12px] hover:scale-105 transition-transform opacity-50 cursor-not-allowed" disabled>
-                                    Escribir en el iPod
-                                </button>
-                            </div>
+                    <!-- Main Section: Sub-Sidebar Categories + Content Browser -->
+                    <div id="ipod-main-browser" class="glass-card p-4 flex gap-4 flex-1 overflow-hidden hidden">
+                        <!-- Sub-Sidebar: Categorías -->
+                        <div class="w-44 flex-shrink-0 flex flex-col gap-1 border-r border-theme pr-3">
+                            <span class="font-label-caps text-[10px] text-muted/50 px-3 py-1 uppercase tracking-wider">Biblioteca</span>
+                            <button type="button" class="ipod-cat-btn active" data-cat="songs" onclick="switchIpodCategory('songs')">
+                                <span class="material-symbols-outlined text-[18px]">music_note</span>
+                                <span class="flex-1 truncate" data-i18n="ipod_cat_songs">Canciones</span>
+                                <span id="ipod-count-songs" class="font-data-sm text-[11px] text-muted/60">0</span>
+                            </button>
+                            <button type="button" class="ipod-cat-btn" data-cat="playlists" onclick="switchIpodCategory('playlists')">
+                                <span class="material-symbols-outlined text-[18px]">playlist_play</span>
+                                <span class="flex-1 truncate" data-i18n="ipod_cat_playlists">Playlist</span>
+                                <span id="ipod-count-playlists" class="font-data-sm text-[11px] text-muted/60">0</span>
+                            </button>
+                            <button type="button" class="ipod-cat-btn" data-cat="photos" onclick="switchIpodCategory('photos')">
+                                <span class="material-symbols-outlined text-[18px]">photo_library</span>
+                                <span class="flex-1 truncate" data-i18n="ipod_cat_photos">Fotos</span>
+                                <span id="ipod-count-photos" class="font-data-sm text-[11px] text-muted/60">0</span>
+                            </button>
+                            <button type="button" class="ipod-cat-btn" data-cat="videos" onclick="switchIpodCategory('videos')">
+                                <span class="material-symbols-outlined text-[18px]">movie</span>
+                                <span class="flex-1 truncate" data-i18n="ipod_cat_videos">Videos</span>
+                                <span id="ipod-count-videos" class="font-data-sm text-[11px] text-muted/60">0</span>
+                            </button>
+                            <button type="button" class="ipod-cat-btn" data-cat="podcasts" onclick="switchIpodCategory('podcasts')">
+                                <span class="material-symbols-outlined text-[18px]">podcasts</span>
+                                <span class="flex-1 truncate" data-i18n="ipod_cat_podcasts">Podcast</span>
+                                <span id="ipod-count-podcasts" class="font-data-sm text-[11px] text-muted/60">0</span>
+                            </button>
+                            <button type="button" class="ipod-cat-btn" data-cat="audiobooks" onclick="switchIpodCategory('audiobooks')">
+                                <span class="material-symbols-outlined text-[18px]">menu_book</span>
+                                <span class="flex-1 truncate" data-i18n="ipod_cat_audiobooks">Audiolibros</span>
+                                <span id="ipod-count-audiobooks" class="font-data-sm text-[11px] text-muted/60">0</span>
+                            </button>
                         </div>
 
-                        <!-- Backup -->
-                        <div class="glass-card p-6 flex-1 flex flex-col gap-4 relative">
-                            <h2 class="font-label-caps tracking-widest text-[16px] text-main border-b border-theme pb-4">Respaldos</h2>
-                            <p class="font-data-sm text-[13px] text-muted mb-4">
-                                Crea una copia de seguridad manual de los archivos internos del iPod.
-                            </p>
-                            <div class="mt-auto flex justify-end">
-                                <button onclick="backupIpod()" id="btn-backup-ipod" class="border border-secondary text-secondary px-6 py-2 rounded-full font-label-caps text-[12px] hover:bg-secondary hover:text-white transition-colors opacity-50 cursor-not-allowed" disabled>
-                                    Crear Backup Manual
-                                </button>
+                        <!-- Contenedor Principal de la Categoría -->
+                        <div class="flex-1 flex flex-col gap-3 overflow-hidden min-w-0">
+                            <!-- Toolbar de Búsqueda, Filtros y Switch de Vista -->
+                            <div class="flex items-center justify-between gap-3 pb-2 border-b border-theme flex-shrink-0">
+                                <!-- Búsqueda -->
+                                <div class="flex items-center gap-2 flex-1 max-w-md">
+                                    <div class="relative w-full">
+                                        <span class="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-muted/40 pointer-events-none">search</span>
+                                        <input type="text" id="ipod-search-input" placeholder="Buscar canciones, artistas, álbumes..." data-i18n-placeholder="ipod_search_placeholder" class="cicada-input w-full pl-9 pr-3 py-1.5 text-[13px] rounded-lg" oninput="handleIpodSearch(this.value)"/>
+                                    </div>
+                                </div>
+
+                                <!-- Filtros, Vistas y Agregar -->
+                                <div class="flex items-center gap-2">
+                                    <!-- Botón de Filtros -->
+                                    <button type="button" id="ipod-filter-btn" onclick="toggleIpodFilters()" class="px-3 py-1.5 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors inline-flex items-center gap-1.5 text-muted hover:text-main">
+                                        <span class="material-symbols-outlined text-[16px]">tune</span>
+                                        <span data-i18n="ipod_filter_label">Filtros</span>
+                                        <span id="ipod-active-filters-badge" class="hidden w-2 h-2 rounded-full bg-accent"></span>
+                                    </button>
+
+                                    <!-- Switch de Vista: Lista vs Cuadros -->
+                                    <div class="flex items-center rounded-full bg-btn p-0.5 gap-0.5" id="ipod-viewmode-switch">
+                                        <button type="button" id="ipod-viewmode-list-btn" class="library-view-btn active p-1.5 rounded-full transition-colors inline-flex items-center" onclick="setIpodViewMode('list')" data-i18n-title="ipod_view_list" title="Lista">
+                                            <span class="material-symbols-outlined text-[16px]">view_list</span>
+                                        </button>
+                                        <button type="button" id="ipod-viewmode-grid-btn" class="library-view-btn p-1.5 rounded-full transition-colors inline-flex items-center" onclick="setIpodViewMode('grid')" data-i18n-title="ipod_view_grid" title="Cuadros">
+                                            <span class="material-symbols-outlined text-[16px]">grid_view</span>
+                                        </button>
+                                    </div>
+
+                                    <!-- Botón Agregar (+) -->
+                                    <button type="button" id="ipod-add-btn" onclick="handleIpodAddAction()" class="p-1.5 rounded-lg bg-accent text-white hover:brightness-110 transition-all inline-flex items-center justify-center" data-i18n-title="ipod_add_media" title="Agregar">
+                                        <span class="material-symbols-outlined text-[18px]">add</span>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- Panel Desplegable de Filtros -->
+                            <div id="ipod-filters-panel" class="hidden flex-wrap items-center gap-3 p-3 bg-card/60 rounded-xl border border-theme flex-shrink-0">
+                                <div class="flex items-center gap-1.5">
+                                    <label for="ipod-filter-genre" class="font-label-caps text-[10px] text-muted/60" data-i18n="ipod_filter_genre">Género</label>
+                                    <select id="ipod-filter-genre" onchange="applyIpodFilter('genre', this.value)" class="cicada-input px-2 py-1 text-[12px] rounded-lg">
+                                        <option value="" data-i18n="ipod_filter_all">Todos</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-center gap-1.5">
+                                    <label for="ipod-filter-year" class="font-label-caps text-[10px] text-muted/60" data-i18n="ipod_filter_year">Año</label>
+                                    <select id="ipod-filter-year" onchange="applyIpodFilter('year', this.value)" class="cicada-input px-2 py-1 text-[12px] rounded-lg">
+                                        <option value="" data-i18n="ipod_filter_all">Todos</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-center gap-1.5">
+                                    <label for="ipod-filter-artist" class="font-label-caps text-[10px] text-muted/60" data-i18n="ipod_filter_artist">Artista</label>
+                                    <select id="ipod-filter-artist" onchange="applyIpodFilter('artist', this.value)" class="cicada-input px-2 py-1 text-[12px] rounded-lg">
+                                        <option value="" data-i18n="ipod_filter_all">Todos</option>
+                                    </select>
+                                </div>
+                                <div class="flex items-center gap-1.5">
+                                    <label for="ipod-filter-album" class="font-label-caps text-[10px] text-muted/60" data-i18n="ipod_filter_album">Álbum</label>
+                                    <select id="ipod-filter-album" onchange="applyIpodFilter('album', this.value)" class="cicada-input px-2 py-1 text-[12px] rounded-lg">
+                                        <option value="" data-i18n="ipod_filter_all">Todos</option>
+                                    </select>
+                                </div>
+                                <button type="button" onclick="resetIpodFilters()" class="text-secondary font-label-caps text-[10px] hover:underline ml-auto">Limpiar Filtros</button>
+                            </div>
+
+                            <!-- VISTA 1: CANCIONES (Lista o Cuadros) -->
+                            <div id="ipod-view-songs" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2">
+                                <!-- Modo Lista -->
+                                <div id="ipod-songs-list" class="flex flex-col gap-1"></div>
+                                <!-- Modo Cuadros / Grid -->
+                                <div id="ipod-songs-grid" class="hidden grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 p-1"></div>
+                            </div>
+
+                            <!-- VISTA 2: PLAYLISTS (2 Columnas: Playlists + Canciones) -->
+                            <div id="ipod-view-playlists" class="hidden flex gap-4 flex-1 overflow-hidden">
+                                <!-- Columna Izquierda: Lista de Playlists + Acciones al pie -->
+                                <div class="w-[240px] flex-shrink-0 flex flex-col gap-2 border-r border-theme pr-3 overflow-hidden">
+                                    <h4 class="font-label-caps text-[11px] text-secondary uppercase tracking-wider" data-i18n="ipod_playlists_label">Playlists</h4>
+                                    <div id="ipod-playlists-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
+                                    <!-- Botones de Acción al pie de la lista -->
+                                    <div class="flex flex-col gap-1.5 pt-2 border-t border-theme mt-auto">
+                                        <button type="button" onclick="openCreatePlaylistModal()" class="w-full py-2 bg-accent text-white rounded-lg font-label-caps text-[11px] hover:brightness-110 transition-all flex items-center justify-center gap-1">
+                                            <span class="material-symbols-outlined text-[16px]">add</span>
+                                            <span data-i18n="ipod_create_playlist">+ Crear Playlist</span>
+                                        </button>
+                                        <button type="button" onclick="openImportPlaylistModal()" class="w-full py-1.5 bg-btn hover:bg-btn-hover text-muted hover:text-main rounded-lg font-label-caps text-[11px] transition-colors flex items-center justify-center gap-1">
+                                            <span class="material-symbols-outlined text-[16px]">download</span>
+                                            <span data-i18n="ipod_import_playlist">Importar Playlist</span>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Columna Derecha: Canciones de la Playlist Seleccionada -->
+                                <div class="flex-1 flex flex-col gap-2 overflow-hidden min-w-0">
+                                    <div class="flex items-center justify-between pb-1">
+                                        <h4 id="ipod-playlist-title" class="font-label-caps text-[13px] text-main font-semibold truncate">Todas las Canciones</h4>
+                                        <span id="ipod-playlist-count" class="font-data-sm text-[12px] text-muted/60">0 canciones</span>
+                                    </div>
+                                    <div id="ipod-playlist-tracks-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
+                                </div>
+                            </div>
+
+                            <!-- VISTA 3: FOTOS (Grilla de Cuadros con Hover Delete) -->
+                            <div id="ipod-view-photos" class="hidden flex-1 overflow-y-auto custom-scrollbar">
+                                <div id="ipod-photos-grid" class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 p-1"></div>
+                                <div id="ipod-photos-empty" class="hidden text-center py-12 text-muted font-data-sm text-[13px] flex flex-col items-center gap-2">
+                                    <span class="material-symbols-outlined text-[40px] text-muted/40">photo_library</span>
+                                    <p data-i18n="ipod_no_items">No hay fotos en el iPod.</p>
+                                    <button type="button" onclick="handleIpodAddAction()" class="mt-2 px-4 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] text-accent transition-colors">+ Agregar Fotos</button>
+                                </div>
+                            </div>
+
+                            <!-- VISTA 4: VIDEOS (Grilla de Cuadros con Hover Delete) -->
+                            <div id="ipod-view-videos" class="hidden flex-1 overflow-y-auto custom-scrollbar">
+                                <div id="ipod-videos-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 p-1"></div>
+                                <div id="ipod-videos-empty" class="hidden text-center py-12 text-muted font-data-sm text-[13px] flex flex-col items-center gap-2">
+                                    <span class="material-symbols-outlined text-[40px] text-muted/40">movie</span>
+                                    <p data-i18n="ipod_no_items">No hay videos en el iPod.</p>
+                                    <button type="button" onclick="handleIpodAddAction()" class="mt-2 px-4 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] text-accent transition-colors">+ Agregar Videos</button>
+                                </div>
+                            </div>
+
+                            <!-- VISTA 5: PODCASTS (2 Columnas: Podcasts + Episodios) -->
+                            <div id="ipod-view-podcasts" class="hidden flex gap-4 flex-1 overflow-hidden">
+                                <div class="w-[240px] flex-shrink-0 flex flex-col gap-2 border-r border-theme pr-3 overflow-hidden">
+                                    <h4 class="font-label-caps text-[11px] text-secondary uppercase tracking-wider">Podcasts</h4>
+                                    <div id="ipod-podcasts-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
+                                    <div class="flex flex-col gap-1.5 pt-2 border-t border-theme mt-auto">
+                                        <button type="button" onclick="handleIpodAddAction()" class="w-full py-2 bg-accent text-white rounded-lg font-label-caps text-[11px] hover:brightness-110 transition-all flex items-center justify-center gap-1">
+                                            <span class="material-symbols-outlined text-[16px]">add</span>
+                                            <span>+ Suscribir Podcast</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="flex-1 flex flex-col gap-2 overflow-hidden min-w-0">
+                                    <div class="flex items-center justify-between pb-1">
+                                        <h4 id="ipod-podcast-title" class="font-label-caps text-[13px] text-main font-semibold truncate">Episodios</h4>
+                                        <span id="ipod-podcast-count" class="font-data-sm text-[12px] text-muted/60">0 episodios</span>
+                                    </div>
+                                    <div id="ipod-podcast-episodes-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
+                                </div>
+                            </div>
+
+                            <!-- VISTA 6: AUDIOLIBROS (2 Columnas: Libros + Capítulos) -->
+                            <div id="ipod-view-audiobooks" class="hidden flex gap-4 flex-1 overflow-hidden">
+                                <div class="w-[240px] flex-shrink-0 flex flex-col gap-2 border-r border-theme pr-3 overflow-hidden">
+                                    <h4 class="font-label-caps text-[11px] text-secondary uppercase tracking-wider">Audiolibros</h4>
+                                    <div id="ipod-audiobooks-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
+                                    <div class="flex flex-col gap-1.5 pt-2 border-t border-theme mt-auto">
+                                        <button type="button" onclick="handleIpodAddAction()" class="w-full py-2 bg-accent text-white rounded-lg font-label-caps text-[11px] hover:brightness-110 transition-all flex items-center justify-center gap-1">
+                                            <span class="material-symbols-outlined text-[16px]">add</span>
+                                            <span>+ Agregar Audiolibro</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <div class="flex-1 flex flex-col gap-2 overflow-hidden min-w-0">
+                                    <div class="flex items-center justify-between pb-1">
+                                        <h4 id="ipod-audiobook-title" class="font-label-caps text-[13px] text-main font-semibold truncate">Capítulos</h4>
+                                        <span id="ipod-audiobook-count" class="font-data-sm text-[12px] text-muted/60">0 pistas</span>
+                                    </div>
+                                    <div id="ipod-audiobook-chapters-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
+                                </div>
                             </div>
                         </div>
                     </div>
+                </div>
 
-                    <!-- Biblioteca del dispositivo (Fase 1: lectura) -->
-                    <div id="ipod-library" class="glass-card p-6 flex flex-col gap-4 flex-1 overflow-hidden hidden">
-                        <div class="flex justify-between items-center border-b border-theme pb-4">
-                            <h2 class="font-label-caps tracking-widest text-[16px] text-main" data-i18n="ipod_library_title">Biblioteca del iPod</h2>
-                            <span id="ipod-library-counts" class="font-data-sm text-[13px] text-muted"></span>
+                <!-- Modal Crear Playlist -->
+                <div id="ipod-create-playlist-modal" class="hidden fixed inset-0 z-[100] items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <div class="w-full max-w-md mx-4 p-6 flex flex-col gap-4 rounded-2xl border border-theme bg-card shadow-2xl">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <span class="material-symbols-outlined text-accent text-[22px]">playlist_add</span>
+                                <h3 class="font-label-caps text-[14px] tracking-widest text-main" data-i18n="ipod_create_playlist">Crear Nueva Playlist</h3>
+                            </div>
+                            <button type="button" onclick="closeCreatePlaylistModal()" class="material-symbols-outlined text-muted/60 hover:text-main transition-colors">close</button>
                         </div>
-                        <div class="flex gap-4 flex-1 overflow-hidden">
-                            <div class="w-[220px] flex-shrink-0 flex flex-col gap-2 overflow-y-auto">
-                                <h3 class="font-label-caps text-[12px] text-secondary uppercase" data-i18n="ipod_playlists_label">Playlists</h3>
-                                <div id="ipod-playlists-list" class="flex flex-col gap-1"></div>
+                        <div class="flex flex-col gap-2">
+                            <label for="new_playlist_name" class="font-label-caps text-[11px] text-accent/70">Nombre de la Playlist</label>
+                            <input type="text" id="new_playlist_name" placeholder="Mi Nueva Playlist" class="cicada-input rounded-lg px-3 py-2.5 text-[14px]"/>
+                        </div>
+                        <div class="flex justify-end gap-3 mt-2">
+                            <button type="button" onclick="closeCreatePlaylistModal()" class="px-4 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors" data-i18n="common_cancel">Cancelar</button>
+                            <button type="button" onclick="submitCreatePlaylist()" class="px-5 py-2 rounded-lg bg-accent text-white font-label-caps text-[11px] hover:brightness-110 transition-all" data-i18n="common_save">Crear</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal Importar Playlist -->
+                <div id="ipod-import-playlist-modal" class="hidden fixed inset-0 z-[100] items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <div class="w-full max-w-md mx-4 p-6 flex flex-col gap-4 rounded-2xl border border-theme bg-card shadow-2xl">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <span class="material-symbols-outlined text-accent text-[22px]">download</span>
+                                <h3 class="font-label-caps text-[14px] tracking-widest text-main" data-i18n="ipod_import_playlist">Importar Playlist a iPod</h3>
                             </div>
-                            <div class="flex-1 flex flex-col gap-1 overflow-y-auto">
-                                <h3 class="font-label-caps text-[12px] text-secondary uppercase" data-i18n="ipod_tracks_label">Canciones</h3>
-                                <div id="ipod-tracks-list" class="flex flex-col gap-1"></div>
-                            </div>
+                            <button type="button" onclick="closeImportPlaylistModal()" class="material-symbols-outlined text-muted/60 hover:text-main transition-colors">close</button>
+                        </div>
+                        <p class="font-data-sm text-[12px] text-muted/70">Selecciona una playlist de tu biblioteca local o Spotify para sincronizarla en el iPod.</p>
+                        <div id="ipod-import-playlist-options" class="flex flex-col gap-1.5 max-h-48 overflow-y-auto custom-scrollbar">
+                            <p class="font-data-sm text-[12px] text-muted/40">Cargando playlists disponibles...</p>
+                        </div>
+                        <div class="flex justify-end gap-3 mt-2">
+                            <button type="button" onclick="closeImportPlaylistModal()" class="px-4 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors" data-i18n="common_cancel">Cancelar</button>
                         </div>
                     </div>
                 </div>
@@ -923,14 +1190,14 @@ async def get():
 
         <audio id="library-audio" preload="none"></audio>
 
-        <script src="/static/js/i18n.js"></script>
-        <script src="/static/js/common.js"></script>
-        <script src="/static/js/metadata.js"></script>
-        <script src="/static/js/download.js"></script>
-        <script src="/static/js/playlist.js"></script>
-        <script src="/static/js/library.js"></script>
-        <script src="/static/js/player.js"></script>
-        <script src="/static/js/ipod.js"></script>
+        <script src="/static/js/i18n.js?v=2.0.0"></script>
+        <script src="/static/js/common.js?v=2.0.0"></script>
+        <script src="/static/js/metadata.js?v=2.0.0"></script>
+        <script src="/static/js/download.js?v=2.0.0"></script>
+        <script src="/static/js/playlist.js?v=2.0.0"></script>
+        <script src="/static/js/library.js?v=2.0.0"></script>
+        <script src="/static/js/player.js?v=2.0.0"></script>
+        <script src="/static/js/ipod.js?v=2.0.0"></script>
         <script>
             // Inicialización de la UI
             applyLanguage(currentLang);
@@ -949,7 +1216,10 @@ async def get():
     </body>
     </html>
     """
-    return HTMLResponse(content=html_content)
+    return HTMLResponse(
+        content=html_content,
+        headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"}
+    )
 
 def print_signature():
     signature = """

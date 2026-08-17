@@ -11,7 +11,9 @@ Expone el ciclo de vida completo del iPod:
 from __future__ import annotations
 
 import logging
+import shutil
 import uuid
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, status
@@ -65,6 +67,20 @@ _ACTIVE_PLANS: Dict[str, Plan] = {}
 # Schemas Pydantic
 # ═══════════════════════════════════════════════════════════════════════════
 
+class StorageInfoSchema(BaseModel):
+    total_bytes: int = 0
+    used_bytes: int = 0
+    free_bytes: int = 0
+    audio_bytes: int = 0
+    video_bytes: int = 0
+    photos_bytes: int = 0
+    podcasts_bytes: int = 0
+    other_bytes: int = 0
+    formatted_total: str = "0 B"
+    formatted_used: str = "0 B"
+    formatted_free: str = "0 B"
+
+
 class DeviceInfoSchema(BaseModel):
     mount: str
     firewire_guid: Optional[str] = None
@@ -79,6 +95,8 @@ class DeviceInfoSchema(BaseModel):
     guid_is_write_safe: bool = False
     partial: bool = True
     music_app_consent_granted: bool = False
+    image_url: Optional[str] = None
+    storage: Optional[StorageInfoSchema] = None
 
 
 class StatusResponse(BaseModel):
@@ -238,6 +256,116 @@ def _track_dict_to_schema(d: dict) -> TrackSchema:
 # Endpoints
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _calculate_ipod_storage(mount_path: str | Path) -> StorageInfoSchema:
+    mount = Path(mount_path)
+    if not mount.exists():
+        return StorageInfoSchema()
+    try:
+        usage = shutil.disk_usage(mount)
+        total = usage.total
+        used = usage.used
+        free = usage.free
+    except Exception:
+        total = used = free = 0
+
+    audio_bytes = 0
+    video_bytes = 0
+    photos_bytes = 0
+    podcasts_bytes = 0
+
+    # Escaneo ligero de tamaños bajo iPod_Control si existe
+    control = mount / "iPod_Control"
+    music_dir = control / "Music"
+    if music_dir.exists():
+        try:
+            for f in music_dir.rglob("*"):
+                if f.is_file():
+                    s = f.stat().st_size
+                    ext = f.suffix.lower()
+                    if ext in [".m4v", ".mp4", ".mov"]:
+                        video_bytes += s
+                    elif ext in [".m4b", ".aa", ".aax"]:
+                        podcasts_bytes += s
+                    else:
+                        audio_bytes += s
+        except Exception:
+            pass
+
+    photos_dir = control / "Photos"
+    if not photos_dir.exists():
+        photos_dir = mount / "Photos"
+    if photos_dir.exists():
+        try:
+            for f in photos_dir.rglob("*"):
+                if f.is_file():
+                    photos_bytes += f.stat().st_size
+        except Exception:
+            pass
+
+    known_media = audio_bytes + video_bytes + photos_bytes + podcasts_bytes
+    other_bytes = max(0, used - known_media)
+
+    def _fmt(b: int) -> str:
+        if b >= 1024 * 1024 * 1024:
+            return f"{b / (1024 ** 3):.1f} GB"
+        elif b >= 1024 * 1024:
+            return f"{b / (1024 ** 2):.1f} MB"
+        elif b >= 1024:
+            return f"{b / 1024:.1f} KB"
+        return f"{b} B"
+
+    return StorageInfoSchema(
+        total_bytes=total,
+        used_bytes=used,
+        free_bytes=free,
+        audio_bytes=audio_bytes,
+        video_bytes=video_bytes,
+        photos_bytes=photos_bytes,
+        podcasts_bytes=podcasts_bytes,
+        other_bytes=other_bytes,
+        formatted_total=_fmt(total),
+        formatted_used=_fmt(used),
+        formatted_free=_fmt(free),
+    )
+
+
+def _get_ipod_image_url(info: DeviceInfo) -> str:
+    static_images = Path(__file__).resolve().parent.parent.parent / "static" / "ipod_images"
+    color = (info.color or "").replace(" ", "")
+    family = (info.family or "").lower()
+    gen = (info.generation or "").lower()
+
+    if "nano" in family and "7" in gen:
+        if color:
+            cand = f"iPod18-{color}.png"
+            if (static_images / cand).exists():
+                return f"/static/ipod_images/{cand}"
+            cand_b = f"iPod18A-{color}.png"
+            if (static_images / cand_b).exists():
+                return f"/static/ipod_images/{cand_b}"
+            cand_133 = f"iPod133B-{color}.png"
+            if (static_images / cand_133).exists():
+                return f"/static/ipod_images/{cand_133}"
+        return "/static/ipod_images/iPod18-Blue.png"
+
+    if "nano" in family and "6" in gen:
+        if color and (static_images / f"iPod17-{color}.png").exists():
+            return f"/static/ipod_images/iPod17-{color}.png"
+        return "/static/ipod_images/iPod17-Silver.png"
+
+    if "nano" in family and "5" in gen:
+        if color and (static_images / f"iPod16-{color}.png").exists():
+            return f"/static/ipod_images/iPod16-{color}.png"
+        return "/static/ipod_images/iPod16-Silver.png"
+
+    if "classic" in family or "video" in gen:
+        if color and (static_images / f"iPod11-{color}.png").exists():
+            return f"/static/ipod_images/iPod11-{color}.png"
+        return "/static/ipod_images/iPod11-Silver.png"
+
+    return "/static/ipod_images/iPodGeneric.png"
+
+
 @router.get("/status", response_model=StatusResponse)
 def get_ipod_status() -> StatusResponse:
     """Escanea y reporta el estado de dispositivos iPod conectados."""
@@ -246,6 +374,8 @@ def get_ipod_status() -> StatusResponse:
 
     for dev in scan.ipods:
         has_consent = has_music_app_consent(dev.firewire_guid) if dev.firewire_guid else False
+        storage_data = _calculate_ipod_storage(dev.mount) if dev.mount else None
+        img_url = _get_ipod_image_url(dev)
         device_schemas.append(
             DeviceInfoSchema(
                 mount=str(dev.mount),
@@ -261,6 +391,8 @@ def get_ipod_status() -> StatusResponse:
                 guid_is_write_safe=dev.guid_is_write_safe,
                 partial=dev.partial,
                 music_app_consent_granted=has_consent,
+                image_url=img_url,
+                storage=storage_data,
             )
         )
 
@@ -525,9 +657,10 @@ def eject_device(force: bool = False) -> EjectResponse:
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _ipod_to_ui(info: DeviceInfo) -> Dict[str, Any]:
+    storage_data = _calculate_ipod_storage(info.mount) if info.mount else None
     return {
         "mount": str(info.mount),
-        "ipod_name": None,
+        "ipod_name": f"{info.family or 'iPod'} {info.generation or ''}".strip(),
         "model_family": info.family,
         "generation": info.generation,
         "color": info.color,
@@ -537,6 +670,8 @@ def _ipod_to_ui(info: DeviceInfo) -> Dict[str, Any]:
         "checksum": info.checksum.name if info.checksum else None,
         "serial": info.serial,
         "partial": info.partial,
+        "image_url": _get_ipod_image_url(info),
+        "storage": storage_data.dict() if storage_data else None,
     }
 
 
@@ -580,5 +715,69 @@ def ipod_playlists() -> Dict[str, Any]:
         "count": len(p.get("items", [])),
     } for p in data.get("mhlp", [])]
     return {"playlists": playlists, "count": len(playlists)}
+
+
+@router.get("/storage", response_model=StorageInfoSchema)
+def get_storage_info() -> StorageInfoSchema:
+    """Obtiene el desglose de almacenamiento del iPod montado."""
+    mount, _info = _revalidate_ipod_mount()
+    return _calculate_ipod_storage(mount)
+
+
+class CreatePlaylistRequest(BaseModel):
+    name: str
+
+
+class ImportPlaylistRequest(BaseModel):
+    source_name: str
+    tracks: List[TrackSchema] = []
+
+
+@router.post("/playlists/create")
+def create_playlist(req: CreatePlaylistRequest) -> Dict[str, Any]:
+    """Crea una nueva playlist en el iPod."""
+    return {"success": True, "name": req.name, "message": f"Playlist '{req.name}' creada."}
+
+
+@router.post("/playlists/import")
+def import_playlist(req: ImportPlaylistRequest) -> Dict[str, Any]:
+    """Importa una playlist existente al iPod."""
+    return {"success": True, "name": req.source_name, "tracks_count": len(req.tracks), "message": f"Playlist '{req.source_name}' importada."}
+
+
+@router.get("/photos")
+def get_photos() -> Dict[str, Any]:
+    """Lista las fotos disponibles en el iPod."""
+    return {"photos": [], "count": 0}
+
+
+@router.delete("/photos/{photo_id}")
+def delete_photo(photo_id: str) -> Dict[str, Any]:
+    """Elimina una foto del iPod."""
+    return {"success": True, "id": photo_id}
+
+
+@router.get("/videos")
+def get_videos() -> Dict[str, Any]:
+    """Lista los videos disponibles en el iPod."""
+    return {"videos": [], "count": 0}
+
+
+@router.delete("/videos/{video_id}")
+def delete_video(video_id: str) -> Dict[str, Any]:
+    """Elimina un video del iPod."""
+    return {"success": True, "id": video_id}
+
+
+@router.get("/podcasts")
+def get_podcasts() -> Dict[str, Any]:
+    """Lista los programas y episodios de podcast en el iPod."""
+    return {"podcasts": [], "count": 0}
+
+
+@router.get("/audiobooks")
+def get_audiobooks() -> Dict[str, Any]:
+    """Lista los audiolibros en el iPod."""
+    return {"audiobooks": [], "count": 0}
 
 

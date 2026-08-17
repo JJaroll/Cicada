@@ -120,6 +120,10 @@ function showView(name) {
         progressPanel.classList.remove("hidden");
         progressPanel.classList.add("flex");
     }
+
+    if (name === "ipod" && typeof scanIpod === "function") {
+        scanIpod();
+    }
 }
 
 function setWsStatus(key, color) {
