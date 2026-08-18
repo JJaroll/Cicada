@@ -381,7 +381,9 @@ riesgo, empezando por un único caso real verificable contra hardware:
 - [x] **4a** — Fuente de imagen: reusa el pipeline de carátula ya existente
       (`audio_processor.py` embebe, ahora `cicada/shared/artwork.py` extrae —
       compartido entre `core` y `ipod`, sin segundo sistema de descarga).
-- [ ] **4b** — Codec RGB565_LE + tipos, acotado a Nano 7G.
+- [x] **4b** — Codec RGB565_LE + tipos (`cicada/ipod/db/artwork/`). Acepta
+      cualquier `ArtworkFormat` pero rechaza formatos no-RGB565_LE en vez
+      de adivinar (falla explícito hasta 4f).
 - [ ] **4c** — Escritor binario ArtworkDB + `.ithmb`. Reescritura completa en
       cada sync (sin dedup ni preservación incremental — medido contra una
       biblioteca real de 954 tracks: ~12s de coste total, no compensa la

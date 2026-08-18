@@ -416,9 +416,23 @@ diferida.
   Tests: `tests/shared/test_artwork.py` (5 tests, fixtures reales en
   `tests/fixtures/audio/` generadas con ffmpeg+mutagen: mp3/m4a/flac con y
   sin `APIC`/`covr`/picture).
-- **Etapa 4b — Codec RGB565_LE + tipos.** Pendiente. Acotado a los 4 formatos
-  del Nano 7G (`rgb565.py` simplificado); no se porta `ithmb_codecs.py`
-  completo (RGB565_BE/RGB555/UYVY/JPEG, decode) en esta etapa — ver 4f.
+- **Etapa 4b — Codec RGB565_LE + tipos. Estado: implementado y verificado.**
+  `cicada/ipod/db/artwork/{rgb565,types}.py`. `convert_art_for_format()` acepta
+  cualquier `ArtworkFormat` (no solo Nano 7G) pero **rechaza con
+  `NotImplementedError`** cualquier `pixel_format` distinto de `RGB565_LE`
+  en vez de producir bytes silenciosamente incorrectos — así que activar
+  otros modelos en 4f es extender el codec, no revisar si esta etapa hizo
+  una suposición oculta. `hpad` (padding de alineación de fila, p. ej. el
+  formato 1016 del Nano 7G: 57px visibles con stride de 58) se deriva de
+  `ArtworkFormat.row_bytes`, no de una tabla aparte. No se porta
+  `ithmb_codecs.py` completo (RGB565_BE/RGB555/UYVY/JPEG, decode) en esta
+  etapa — ver 4f. `EncodedFormatPayload` se simplificó frente al
+  `artwork_types.py` original: sin `ExistingFormatRef`/`PassthroughFormatRef`
+  (soportan preservación incremental, descartada en 4c).
+  Tests: `tests/ipod/db/artwork/test_rgb565.py` (30 tests): decode
+  JPEG/PNG/RGBA, resize a los 4 formatos Nano 7G, conversión RGB565 bit-exacta
+  (rojo/verde/azul/blanco/negro puros), padding de stride, tamaños de salida
+  para los 4 formatos, rechazo de formatos no-RGB565_LE (BE/RGB555/YUV).
 - **Etapa 4c — Escritor binario ArtworkDB + `.ithmb`.** Pendiente.
   Decisión tomada tras medir con la biblioteca real del usuario (954 tracks,
   952 con arte, 669 únicas): reescritura completa cada sync (~12s), **sin**
