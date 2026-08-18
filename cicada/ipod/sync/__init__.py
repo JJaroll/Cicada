@@ -10,6 +10,12 @@ from .bidirectional import (
     read_ipod_playback_stats,
     sync_playback_stats,
 )
+from .conflicts import (
+    ConflictScanResult,
+    PendingLocalPush,
+    RatingConflict,
+    scan_for_conflicts,
+)
 from .playlists import (
     LocalPlaylist,
     PreparedPlaylists,
@@ -20,6 +26,7 @@ from .playlists import (
 )
 from .state import (
     DeviceRecord,
+    LocalPlaybackStateRecord,
     PlaybackStateRecord,
     PlaylistMapRecord,
     SyncStateDB,
@@ -28,12 +35,16 @@ from .state import (
 )
 
 __all__ = [
+    "ConflictScanResult",
     "DeviceRecord",
+    "LocalPlaybackStateRecord",
     "LocalPlaylist",
+    "PendingLocalPush",
     "PlaybackDeltaReport",
     "PlaybackStateRecord",
     "PlaylistMapRecord",
     "PreparedPlaylists",
+    "RatingConflict",
     "RawPlaybackStat",
     "SyncStateDB",
     "TrackMapRecord",
@@ -46,5 +57,6 @@ __all__ = [
     "prepare_standard_playlists",
     "read_ipod_playback_stats",
     "record_playlists_in_db",
+    "scan_for_conflicts",
     "sync_playback_stats",
 ]

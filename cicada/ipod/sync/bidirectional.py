@@ -180,9 +180,18 @@ def compute_playback_deltas(
     sync_db: SyncStateDB,
     guid: str,
 ) -> PlaybackDeltaReport:
-    """Calcula los deltas entre el estado actual del iPod y el baseline de SyncStateDB."""
+    """Calcula los deltas entre el estado actual del iPod y el baseline de SyncStateDB.
+
+    El rating es el único campo no fusionable (play_count/skip_count se suman,
+    los timestamps toman ``max()``): si el lado local (``local_playback_state``)
+    también se apartó del baseline, este función **no** commitea el rating del
+    dispositivo — lo deja tal cual para que ``conflicts.scan_for_conflicts``
+    decida. Sin este guard, un conflicto real quedaría resuelto en silencio a
+    favor del dispositivo en cada escaneo automático.
+    """
     ipod_stats = read_ipod_playback_stats(mount)
     known_states = sync_db.get_all_playback_states(guid)
+    local_states = sync_db.get_all_local_playback_states(guid)
 
     report = PlaybackDeltaReport(guid=guid, total_tracks_scanned=len(ipod_stats))
 
@@ -194,9 +203,11 @@ def compute_playback_deltas(
         counter_reset = False
         new_last_played = stat.last_played
         new_date_skipped = stat.date_skipped
+        committed_rating = stat.rating
 
         if known is None:
-            # Pista no registrada previamente
+            # Pista no registrada previamente: sin baseline no hay "cambio desde
+            # el último sync" que evaluar, así que no puede haber conflicto.
             if stat.play_count > 0:
                 delta_play = stat.play_count
             if stat.skip_count > 0:
@@ -218,8 +229,17 @@ def compute_playback_deltas(
                 delta_skip = 0
                 counter_reset = True
 
+            local = local_states.get(dbid)
+            local_diverged = local is not None and local.local_rating != known.known_rating
             if stat.rating != known.known_rating:
-                rating_changed = True
+                if local_diverged:
+                    # Posible conflicto real (ambos lados cambiaron): no tocar
+                    # el baseline aquí, queda pendiente para scan_for_conflicts.
+                    committed_rating = known.known_rating
+                else:
+                    rating_changed = True
+            else:
+                committed_rating = known.known_rating
 
             # Timestamp de reproducción más reciente
             new_last_played = max(stat.last_played, known.known_last_played)
@@ -244,8 +264,8 @@ def compute_playback_deltas(
                 delta_play_count=delta_play,
                 current_play_count=stat.play_count,
                 rating_changed=rating_changed,
-                new_rating=stat.rating,
-                new_stars=max(0, min(5, stat.rating // 20)),
+                new_rating=committed_rating,
+                new_stars=max(0, min(5, committed_rating // 20)),
                 new_last_played=new_last_played,
                 delta_skip_count=delta_skip,
                 current_skip_count=stat.skip_count,

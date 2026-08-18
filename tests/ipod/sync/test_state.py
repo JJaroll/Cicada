@@ -8,6 +8,7 @@ import pytest
 
 from cicada.ipod.sync.state import (
     DeviceRecord,
+    LocalPlaybackStateRecord,
     PlaybackStateRecord,
     PlaylistMapRecord,
     SyncStateDB,
@@ -25,7 +26,7 @@ def sync_db(tmp_path: Path) -> SyncStateDB:
 
 
 def test_init_schema_creates_tables(sync_db: SyncStateDB):
-    """Verifica que se inicializan las 4 tablas e índices requeridos."""
+    """Verifica que se inicializan las 5 tablas e índices requeridos."""
     with sync_db._connection() as conn:
         tables = [
             r[0]
@@ -37,6 +38,7 @@ def test_init_schema_creates_tables(sync_db: SyncStateDB):
         assert "track_map" in tables
         assert "playback_state" in tables
         assert "playlists_map" in tables
+        assert "local_playback_state" in tables
 
 
 def test_device_upsert_and_retrieve(sync_db: SyncStateDB):
@@ -162,6 +164,51 @@ def test_playback_state_bulk_and_mapping(sync_db: SyncStateDB):
     assert mapping[large_id].known_play_count == 10
 
 
+def test_local_playback_state_stars_property(sync_db: SyncStateDB):
+    """Espejo de test_playback_state_stars_property, para local_rating."""
+    sync_db.upsert_device(DeviceRecord(guid=GUID_1))
+
+    ratings = [(101, 0, 0), (102, 20, 1), (103, 60, 3), (104, 80, 4), (105, 100, 5)]
+    records = [
+        LocalPlaybackStateRecord(guid=GUID_1, ipod_dbid=dbid, local_rating=rating)
+        for dbid, rating, _ in ratings
+    ]
+    sync_db.upsert_local_playback_states(records)
+
+    for dbid, rating, expected_stars in ratings:
+        lp = sync_db.get_local_playback_state(GUID_1, dbid)
+        assert lp is not None
+        assert lp.local_rating == rating
+        assert lp.stars == expected_stars
+
+
+def test_local_playback_state_bulk_and_mapping(sync_db: SyncStateDB):
+    """Espejo de test_playback_state_bulk_and_mapping, para local_playback_state."""
+    sync_db.upsert_device(DeviceRecord(guid=GUID_1))
+
+    large_id = 0x8000000000000005
+    recs = [
+        LocalPlaybackStateRecord(guid=GUID_1, ipod_dbid=1, local_rating=40),
+        LocalPlaybackStateRecord(guid=GUID_1, ipod_dbid=large_id, local_rating=100),
+    ]
+    sync_db.upsert_local_playback_states(recs)
+
+    mapping = sync_db.get_all_local_playback_states(GUID_1)
+    assert len(mapping) == 2
+    assert 1 in mapping
+    assert large_id in mapping
+    assert mapping[large_id].local_rating == 100
+
+
+def test_local_playback_state_upsert_actualiza_no_duplica(sync_db: SyncStateDB):
+    sync_db.upsert_device(DeviceRecord(guid=GUID_1))
+    sync_db.upsert_local_playback_state(LocalPlaybackStateRecord(guid=GUID_1, ipod_dbid=1, local_rating=40))
+    sync_db.upsert_local_playback_state(LocalPlaybackStateRecord(guid=GUID_1, ipod_dbid=1, local_rating=100))
+
+    assert sync_db.get_local_playback_state(GUID_1, 1).local_rating == 100
+    assert len(sync_db.get_all_local_playback_states(GUID_1)) == 1
+
+
 def test_atomic_transaction_and_rollback(sync_db: SyncStateDB):
     """Verifica que transaction() revierte en caso de excepción."""
     sync_db.upsert_device(DeviceRecord(guid=GUID_1))
@@ -189,10 +236,12 @@ def test_cascade_delete_on_device_removal(sync_db: SyncStateDB):
     sync_db.upsert_track_map(TrackMapRecord(guid=GUID_1, ipod_dbid=501, local_path="/m/1.mp3"))
     sync_db.upsert_playback_state(PlaybackStateRecord(guid=GUID_1, ipod_dbid=501, known_play_count=2))
     sync_db.upsert_playlist_map(PlaylistMapRecord(guid=GUID_1, playlist_id=701, name="Rock"))
+    sync_db.upsert_local_playback_state(LocalPlaybackStateRecord(guid=GUID_1, ipod_dbid=501, local_rating=60))
 
     assert sync_db.get_track_map(GUID_1, 501) is not None
     assert sync_db.get_playback_state(GUID_1, 501) is not None
     assert len(sync_db.list_playlists_map(GUID_1)) == 1
+    assert sync_db.get_local_playback_state(GUID_1, 501) is not None
 
     # Borrar dispositivo
     with sync_db._connection() as conn:
@@ -203,3 +252,4 @@ def test_cascade_delete_on_device_removal(sync_db: SyncStateDB):
     assert sync_db.get_track_map(GUID_1, 501) is None
     assert sync_db.get_playback_state(GUID_1, 501) is None
     assert len(sync_db.list_playlists_map(GUID_1)) == 0
+    assert sync_db.get_local_playback_state(GUID_1, 501) is None

@@ -81,6 +81,22 @@ class PlaylistMapRecord:
     synced_at: int = 0
 
 
+@dataclass
+class LocalPlaybackStateRecord:
+    """Rating asignado desde Cicada (independiente del dispositivo) — el
+    tercer punto de datos para detectar conflictos de verdad: si diverge
+    tanto del baseline (``playback_state.known_rating``) como del valor
+    actual del iPod, y ambos lados difieren entre sí, es un conflicto."""
+    guid: str
+    ipod_dbid: int  # uint64 normalizado
+    local_rating: int = 0  # 0 a 100 (canónico iPod: 20 por estrella)
+    updated_at: int = 0
+
+    @property
+    def stars(self) -> int:
+        return max(0, min(5, self.local_rating // 20))
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # Repositorio SQLite
 # ═══════════════════════════════════════════════════════════════════════════
@@ -157,6 +173,15 @@ class SyncStateDB:
                     track_count INTEGER DEFAULT 0,
                     synced_at INTEGER NOT NULL,
                     PRIMARY KEY (guid, playlist_id),
+                    FOREIGN KEY (guid) REFERENCES devices(guid) ON DELETE CASCADE
+                );
+
+                CREATE TABLE IF NOT EXISTS local_playback_state (
+                    guid TEXT NOT NULL,
+                    ipod_dbid INTEGER NOT NULL,
+                    local_rating INTEGER DEFAULT 0,
+                    updated_at INTEGER NOT NULL,
+                    PRIMARY KEY (guid, ipod_dbid),
                     FOREIGN KEY (guid) REFERENCES devices(guid) ON DELETE CASCADE
                 );
                 """
@@ -431,6 +456,71 @@ class SyncStateDB:
             known_skip_count=row["known_skip_count"],
             known_date_skipped=row["known_date_skipped"],
             synced_at=row["synced_at"],
+        )
+
+    # ── Local Playback State (rating asignado desde Cicada) ─────────────────
+
+    def upsert_local_playback_state(
+        self, rec: LocalPlaybackStateRecord, conn: Optional[sqlite3.Connection] = None
+    ) -> None:
+        self.upsert_local_playback_states([rec], conn=conn)
+
+    def upsert_local_playback_states(
+        self, records: List[LocalPlaybackStateRecord], conn: Optional[sqlite3.Connection] = None
+    ) -> None:
+        if not records:
+            return
+
+        def _do_work(c: sqlite3.Connection):
+            params = [
+                (r.guid, s64(r.ipod_dbid), r.local_rating, r.updated_at or int(time.time()))
+                for r in records
+            ]
+            c.executemany(
+                """
+                INSERT INTO local_playback_state (guid, ipod_dbid, local_rating, updated_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(guid, ipod_dbid) DO UPDATE SET
+                    local_rating = excluded.local_rating,
+                    updated_at = excluded.updated_at;
+                """,
+                params,
+            )
+            if conn is None:
+                c.commit()
+
+        if conn is not None:
+            _do_work(conn)
+        else:
+            with self._connection() as c:
+                _do_work(c)
+
+    def get_local_playback_state(self, guid: str, ipod_dbid: int) -> Optional[LocalPlaybackStateRecord]:
+        with self._connection() as conn:
+            row = conn.execute(
+                "SELECT * FROM local_playback_state WHERE guid = ? AND ipod_dbid = ?",
+                (guid, s64(ipod_dbid)),
+            ).fetchone()
+            if not row:
+                return None
+            return self._row_to_local_playback_state(row)
+
+    def get_all_local_playback_states(self, guid: str) -> Dict[int, LocalPlaybackStateRecord]:
+        """Devuelve un mapa {ipod_dbid (uint64): LocalPlaybackStateRecord}."""
+        with self._connection() as conn:
+            rows = conn.execute(
+                "SELECT * FROM local_playback_state WHERE guid = ?",
+                (guid,),
+            ).fetchall()
+            return {u64(r["ipod_dbid"]): self._row_to_local_playback_state(r) for r in rows}
+
+    @staticmethod
+    def _row_to_local_playback_state(row: sqlite3.Row) -> LocalPlaybackStateRecord:
+        return LocalPlaybackStateRecord(
+            guid=row["guid"],
+            ipod_dbid=u64(row["ipod_dbid"]),
+            local_rating=row["local_rating"],
+            updated_at=row["updated_at"],
         )
 
     # ── Playlists Map ──────────────────────────────────────────────────────

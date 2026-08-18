@@ -279,6 +279,36 @@ def test_sync_playback_stats_idempotente(mock_ipod_dynamic: Path, tmp_path: Path
     assert report2.has_changes is False
 
 
+def test_compute_deltas_no_commitea_rating_si_local_tambien_diverge(
+    mock_ipod_dynamic: Path, sync_db: SyncStateDB
+):
+    # Regresión: si local_playback_state TAMBIÉN se apartó del baseline (posible
+    # conflicto real), compute_playback_deltas NO debe tratar el cambio del
+    # dispositivo como un simple "solo cambió el device" — eso resolvería el
+    # conflicto en silencio a favor del dispositivo en el próximo commit.
+    from cicada.ipod.sync.state import LocalPlaybackStateRecord
+
+    # Baseline conocido para 101 (antes del escaneo real: rating=50).
+    sync_db.upsert_playback_state(
+        PlaybackStateRecord(guid=GUID, ipod_dbid=101, known_play_count=8,
+                            known_rating=50, known_skip_count=0)
+    )
+    # El usuario calificó la 101 en Cicada (local_rating=20), distinto del
+    # baseline Y del rating actual del dispositivo (80, ver mock_ipod_dynamic).
+    sync_db.upsert_local_playback_state(
+        LocalPlaybackStateRecord(guid=GUID, ipod_dbid=101, local_rating=20)
+    )
+
+    report = compute_playback_deltas(mock_ipod_dynamic, sync_db, GUID)
+    t101 = next(t for t in report.tracks_with_deltas if t.ipod_dbid == 101)
+    assert t101.rating_changed is False       # NO se marca como "cambio simple"
+    assert t101.new_rating == 50              # el baseline NO se mueve al valor del device
+
+    commit_playback_deltas(report, sync_db)
+    # El baseline sigue en 50 tras el commit -> conflicts.py todavía puede verlo.
+    assert sync_db.get_playback_state(GUID, 101).known_rating == 50
+
+
 def test_sync_playback_stats_default_sync_db(mock_ipod_dynamic: Path, tmp_path: Path, monkeypatch):
     # Sin pasar sync_db explícito, debe usar default_sync_db_path() (CICADA_HOME).
     monkeypatch.setenv("CICADA_HOME", str(tmp_path / "cicada_home"))
