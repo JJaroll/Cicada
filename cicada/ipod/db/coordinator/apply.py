@@ -1,23 +1,27 @@
 """Orquestador de aplicación de planes con rollback transaccional — Etapa 2c.
 
 Implementa la instalación atómica de los 7 artefactos de base de datos en el iPod
-mediante 5 fases rigurosas:
+(más ArtworkDB + 4 .ithmb cuando el plan tocó artwork — Fase 4, Etapa 4d, ver
+:data:`Plan.artwork_touched`) mediante 5 fases rigurosas:
 
 - **Fase A (Precondiciones)**: Revalida montaje, permisos de escritura, procedencia
   del GUID, gate de consentimiento, integridad de artefactos en staging y coincidencia
   de la huella pre-estado (:class:`PreStateFingerprint`). Falla -> dispositivo intacto.
-- **Fase B (Backup verificado)**: Crea snapshot `DB_ONLY` con :func:`create_backup` y
-  re-verifica su integridad criptográfica antes de cualquier mutación. Falla -> dispositivo intacto.
-- **Fase C (Stage en device)**: Transfiere los 7 archivos a `<destino>.cicada-new` en el
+- **Fase B (Backup verificado)**: Crea snapshot `DB_ONLY` con :func:`create_backup`
+  (incluye `iPod_Control/Artwork/` solo si `plan.artwork_touched`) y re-verifica su
+  integridad criptográfica antes de cualquier mutación. Falla -> dispositivo intacto.
+- **Fase C (Stage en device)**: Transfiere los archivos a `<destino>.cicada-new` en el
   mismo directorio del iPod y ejecuta fsync sobre cada uno. Todo el I/O pesado ocurre aquí.
   Falla -> se purgan los `.cicada-new`; destinos intactos.
 - **Fase D (Commit por renames)**: Escribe atómicamente el marcador `inflight.json` en
-  almacenamiento local y ejecuta `os.replace` en orden canónico estricto:
-  `Locations.itdb` -> `Locations.itdb.cbk` -> `Library.itdb` -> `Dynamic.itdb` ->
+  almacenamiento local y ejecuta `os.replace` en orden canónico estricto: primero
+  ArtworkDB/.ithmb si aplica (lo que referencian debe existir antes que quien referencia),
+  luego `Locations.itdb` -> `Locations.itdb.cbk` -> `Library.itdb` -> `Dynamic.itdb` ->
   `Extras.itdb` -> `Genius.itdb` -> `iTunesCDB` (el ancla final).
   Falla -> rollback inmediato con :func:`restore_backup`.
-- **Fase E (Verificación post-commit)**: Re-lee el iPod (parser iTunesCDB + sqlite3),
-  valida firma HASHAB, conteo de tracks y consistencia. Falla -> rollback inmediato.
+- **Fase E (Verificación post-commit)**: Re-lee el iPod (parser iTunesCDB + sqlite3 +
+  ArtworkDB si aplica), valida firma HASHAB, conteo de tracks, consistencia e
+  integridad referencial artwork_id_ref -> ArtworkDB. Falla -> rollback inmediato.
   Éxito -> elimina `inflight.json`, marca primera escritura en consentimiento y retorna éxito.
 
 Incluye :func:`recover_inflight_commit` para recuperación cross-sesión si un corte de
@@ -35,6 +39,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
+from cicada.ipod.db.artwork.chunks import read_artworkdb
 from cicada.ipod.db.coordinator.consent import (
     ConsentRequiredError,
     _guid_hash,
@@ -42,6 +47,7 @@ from cicada.ipod.db.coordinator.consent import (
     record_music_app_consent,
 )
 from cicada.ipod.db.coordinator.plan import (
+    ARTWORK_TARGET_RELPATHS,
     DATABASE_TARGET_RELPATHS,
     InconsistentArtifactsError,
     Plan,
@@ -82,7 +88,7 @@ __all__ = [
     "purge_staging_temps",
 ]
 
-_ORDERED_INSTALL_SEQUENCE: tuple[tuple[str, str], ...] = (
+_BASE_INSTALL_SEQUENCE: tuple[tuple[str, str], ...] = (
     ("iTunes Library.itlp/Locations.itdb", "iPod_Control/iTunes/iTunes Library.itlp/Locations.itdb"),
     ("iTunes Library.itlp/Locations.itdb.cbk", "iPod_Control/iTunes/iTunes Library.itlp/Locations.itdb.cbk"),
     ("iTunes Library.itlp/Library.itdb", "iPod_Control/iTunes/iTunes Library.itlp/Library.itdb"),
@@ -91,6 +97,21 @@ _ORDERED_INSTALL_SEQUENCE: tuple[tuple[str, str], ...] = (
     ("iTunes Library.itlp/Genius.itdb", "iPod_Control/iTunes/iTunes Library.itlp/Genius.itdb"),
     ("iTunesCDB", "iPod_Control/iTunes/iTunesCDB"),
 )
+
+#: ArtworkDB + los 4 .ithmb (Fase 4, Etapa 4d) — se instalan ANTES de la
+#: secuencia base para que, cuando iTunesCDB/Library.itdb (que referencian
+#: artwork_id_ref) se vuelvan visibles, el ArtworkDB que referencian ya
+#: exista en disco. Solo se usa cuando plan.artwork_touched.
+_ARTWORK_INSTALL_SEQUENCE: tuple[tuple[str, str], ...] = tuple(
+    (f"Artwork/{rel.rsplit('/', 1)[-1]}", rel) for rel in ARTWORK_TARGET_RELPATHS
+)
+
+
+def _install_sequence(plan: Plan) -> tuple[tuple[str, str], ...]:
+    """Secuencia de instalación para este plan: con Artwork/ solo si la tocó."""
+    if plan.artwork_touched:
+        return _ARTWORK_INSTALL_SEQUENCE + _BASE_INSTALL_SEQUENCE
+    return _BASE_INSTALL_SEQUENCE
 
 
 class ApplyError(Exception):
@@ -131,8 +152,15 @@ def set_inflight_marker(
     mount: Path,
     *,
     commit_dir: Optional[Path | str] = None,
+    include_artwork: bool = False,
 ) -> Path:
-    """Escribe atómicamente el marcador inflight en almacenamiento local."""
+    """Escribe atómicamente el marcador inflight en almacenamiento local.
+
+    :param include_artwork: si el backup referenciado cubrió ``Artwork/`` —
+        se persiste para que una recuperación cross-sesión
+        (:func:`recover_inflight_commit`) pode esa raíz correctamente aunque
+        no haya un ``Plan`` disponible en ese momento.
+    """
     path = get_inflight_path(guid, commit_dir=commit_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -140,6 +168,7 @@ def set_inflight_marker(
         "backup_archive": str(backup_archive.resolve()),
         "mount": str(mount.resolve()),
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "include_artwork": include_artwork,
     }
     tmp_path = path.with_suffix(path.suffix + f".tmp.{os.getpid()}")
     try:
@@ -215,7 +244,9 @@ def recover_inflight_commit(
 
     logger.warning("Detectado commit incompleto para GUID %s. Ejecutando rollback desde %s...", guid, archive_path)
     if archive_path.is_file():
-        restore_backup(archive_path, resolved_mount)
+        # .get con default False: markers de antes de la Etapa 4d no tienen
+        # el campo, y esos commits nunca tocaron Artwork/ de todas formas.
+        restore_backup(archive_path, resolved_mount, include_artwork=marker.get("include_artwork", False))
     purge_staging_temps(resolved_mount)
     clear_inflight_marker(guid, commit_dir=commit_dir)
     return True
@@ -266,10 +297,16 @@ def apply(
         record_music_app_consent(plan.guid, consent_dir=consent_dir)
 
     # A4. Verificación de artefactos en staging
-    for stage_rel, target_rel in _ORDERED_INSTALL_SEQUENCE:
+    sequence = _install_sequence(plan)
+    for stage_rel, target_rel in sequence:
         src = plan.staging_dir / stage_rel
-        if not src.is_file() or src.stat().st_size == 0:
+        if not src.is_file():
             raise InconsistentArtifactsError(f"Falta el artefacto de staging requerido: {src}")
+        # Un .ithmb con 0 bytes es un estado válido (ningún track usó ese
+        # formato este ciclo, ver db/artwork/writer.py) — solo los 7
+        # artefactos de base de datos deben ser siempre no-vacíos.
+        if src.stat().st_size == 0 and not stage_rel.startswith("Artwork/"):
+            raise InconsistentArtifactsError(f"El artefacto de staging está vacío: {src}")
 
     # A5. Comparación con huella del pre-estado
     if not plan.pre_state.matches(resolved_mount):
@@ -287,6 +324,7 @@ def apply(
         mode=BackupMode.DB_ONLY,
         guid=plan.guid,
         backups_dir=backups_dir,
+        include_artwork=plan.artwork_touched,
     )
 
     # ═══════════════════════════════════════════════════════════════════════
@@ -299,7 +337,7 @@ def apply(
     itlp_dir.mkdir(parents=True, exist_ok=True)
 
     try:
-        for stage_rel, target_rel in _ORDERED_INSTALL_SEQUENCE:
+        for stage_rel, target_rel in sequence:
             src = plan.staging_dir / stage_rel
             dest = assert_within_ipod_control(resolved_mount / target_rel, resolved_mount)
             temp_on_device = dest.with_name(dest.name + ".cicada-new")
@@ -324,10 +362,13 @@ def apply(
     # FASE D: COMMIT POR RENAMES (ventana estrecha)
     # ═══════════════════════════════════════════════════════════════════════
     _progress("Aplicando cambios de base de datos", 0.7)
-    set_inflight_marker(plan.guid, backup_path, resolved_mount, commit_dir=commit_dir)
+    set_inflight_marker(
+        plan.guid, backup_path, resolved_mount, commit_dir=commit_dir,
+        include_artwork=plan.artwork_touched,
+    )
 
     try:
-        for stage_rel, target_rel in _ORDERED_INSTALL_SEQUENCE:
+        for stage_rel, target_rel in sequence:
             dest = assert_within_ipod_control(resolved_mount / target_rel, resolved_mount)
             temp_on_device = dest.with_name(dest.name + ".cicada-new")
             os.replace(temp_on_device, dest)
@@ -345,7 +386,7 @@ def apply(
 
     except BaseException as exc:
         logger.exception("Error crítico durante Fase D (Commit). Disparando rollback inmediato: %s", exc)
-        restore_backup(backup_path, resolved_mount)
+        restore_backup(backup_path, resolved_mount, include_artwork=plan.artwork_touched)
         purge_staging_temps(resolved_mount)
         clear_inflight_marker(plan.guid, commit_dir=commit_dir)
         return ApplyResult(
@@ -384,9 +425,30 @@ def apply(
                 raise PostCommitVerifyError(f"PRAGMA integrity_check falló en {fn}: {res}")
             con.close()
 
+        # E4. Releer ArtworkDB y verificar que todo track con mhii_link tiene
+        # una entrada MHII correspondiente — cierra el requisito de que ningún
+        # track quede referenciando un artwork_id_ref inexistente (Etapa 4d).
+        if plan.artwork_touched:
+            artworkdb_target = resolved_mount / "iPod_Control" / "Artwork" / "ArtworkDB"
+            if not artworkdb_target.is_file():
+                raise PostCommitVerifyError("ArtworkDB no está presente tras el commit.")
+            parsed_entries = read_artworkdb(artworkdb_target.read_bytes())
+            if len(parsed_entries) != plan.artwork_tracks_count:
+                raise PostCommitVerifyError(
+                    f"ArtworkDB instalado tiene {len(parsed_entries)} entradas, "
+                    f"se esperaban {plan.artwork_tracks_count}."
+                )
+            parsed_img_ids = {e.img_id for e in parsed_entries}
+            expected_img_ids = {t.mhii_link for t in plan.tracks if t.mhii_link}
+            missing = expected_img_ids - parsed_img_ids
+            if missing:
+                raise PostCommitVerifyError(
+                    f"Tracks referencian artwork_id_ref sin entrada en ArtworkDB: {sorted(missing)}"
+                )
+
     except BaseException as exc:
         logger.exception("Verificación post-commit fallida. Disparando rollback inmediato: %s", exc)
-        restore_backup(backup_path, resolved_mount)
+        restore_backup(backup_path, resolved_mount, include_artwork=plan.artwork_touched)
         purge_staging_temps(resolved_mount)
         clear_inflight_marker(plan.guid, commit_dir=commit_dir)
         return ApplyResult(

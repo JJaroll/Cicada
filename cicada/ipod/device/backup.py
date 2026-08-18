@@ -9,6 +9,12 @@ Dos modos:
 
 - ``db-only`` (por defecto): ``iPod_Control/iTunes/`` y ``iPod_Control/Device/``
   (~4 MB). Es lo que se rota (se conservan los últimos :data:`KEEP_DB_ONLY`).
+  ``include_artwork=True`` añade también ``iPod_Control/Artwork/`` — el
+  coordinador (apply.py, Etapa 4d) solo lo activa cuando el plan que se va a
+  aplicar realmente construyó artwork (``plan.artwork_touched``), porque el
+  payload de píxeles crudo puede pesar ~130 KB/track (decenas o cientos de MB
+  en una biblioteca real) y no se justifica en cada backup rotado si el sync
+  no toca carátulas.
 - ``full``: el árbol completo de ``iPod_Control/``, incluido ``Music/``.
 
 Salida: ``~/.cicada/backups/ipod/<guid>/<guid>_<timestamp>_<modo>.tar.zst``.
@@ -68,6 +74,7 @@ KEEP_DB_ONLY = 20
 _ZSTD_LEVEL = 10
 
 _DEVICE_DIRNAME = "Device"
+_ARTWORK_DIRNAME = "Artwork"
 
 
 class BackupError(Exception):
@@ -126,13 +133,18 @@ def _timestamp(now: Optional[datetime]) -> str:
 # --------------------------------------------------------------------------- #
 # Recorrido del árbol (con fsfilter)
 # --------------------------------------------------------------------------- #
-def _scope_roots(mount: Path, mode: BackupMode) -> list[tuple[Path, str]]:
+def _scope_roots(
+    mount: Path, mode: BackupMode, *, include_artwork: bool = False
+) -> list[tuple[Path, str]]:
     """(ruta_en_disco, arcname) de las raíces que abarca cada modo."""
     control = mount / IPOD_CONTROL_DIRNAME
     if mode is BackupMode.FULL:
         return [(control, IPOD_CONTROL_DIRNAME)]
+    subs = [ITUNES_DIRNAME, _DEVICE_DIRNAME]
+    if include_artwork:
+        subs.append(_ARTWORK_DIRNAME)
     roots = []
-    for sub in (ITUNES_DIRNAME, _DEVICE_DIRNAME):
+    for sub in subs:
         d = control / sub
         if d.is_dir():
             roots.append((d, f"{IPOD_CONTROL_DIRNAME}/{sub}"))
@@ -158,10 +170,12 @@ def _walk_files(root: Path, arcroot: str) -> Iterator[tuple[Path, str]]:
             yield full, f"{arcroot}/{rel}"
 
 
-def _build_manifest(mount: Path, mode: BackupMode) -> dict[str, tuple[int, str]]:
+def _build_manifest(
+    mount: Path, mode: BackupMode, *, include_artwork: bool = False
+) -> dict[str, tuple[int, str]]:
     """{arcname: (size, sha256)} de todos los archivos que irán al backup."""
     manifest: dict[str, tuple[int, str]] = {}
-    for root, arcroot in _scope_roots(mount, mode):
+    for root, arcroot in _scope_roots(mount, mode, include_artwork=include_artwork):
         for full, arcname in _walk_files(root, arcroot):
             h = hashlib.sha256()
             size = 0
@@ -230,6 +244,7 @@ def create_backup(
     guid: Optional[str] = None,
     candidates: Optional[Iterable[os.PathLike | str]] = None,
     timestamp: Optional[datetime] = None,
+    include_artwork: bool = False,
 ) -> Path:
     """Crea un backup ``.tar.zst`` del iPod y devuelve su ruta.
 
@@ -237,6 +252,9 @@ def create_backup(
     :mod:`fsfilter`, verifica integridad y rota los ``db-only`` antiguos.
 
     :param candidates: se pasa a ``resolve_mount`` (inyección en tests).
+    :param include_artwork: en modo ``db-only``, añade ``iPod_Control/Artwork/``
+        al backup. Ver docstring del módulo — úsalo solo cuando el plan que se
+        va a aplicar a continuación realmente toca artwork.
     :raises WriteGuardError: si el iPod no está montado.
     :raises BackupIntegrityError: si el archivo no supera la verificación.
     """
@@ -249,7 +267,7 @@ def create_backup(
     name = f"{guid}_{_timestamp(timestamp)}_{mode.value}.tar.zst"
     archive = guid_dir / name
 
-    manifest = _build_manifest(resolved, mode)
+    manifest = _build_manifest(resolved, mode, include_artwork=include_artwork)
 
     cctx = zstandard.ZstdCompressor(level=_ZSTD_LEVEL)
     tmp = archive.with_suffix(archive.suffix + ".part")
@@ -257,7 +275,7 @@ def create_backup(
         with open(tmp, "wb") as fh:
             with cctx.stream_writer(fh) as zf:
                 with tarfile.open(mode="w|", fileobj=zf) as tar:
-                    for root, arcroot in _scope_roots(resolved, mode):
+                    for root, arcroot in _scope_roots(resolved, mode, include_artwork=include_artwork):
                         tar.add(str(root), arcname=arcroot, filter=_artifact_filter)
         os.replace(tmp, archive)  # publicación atómica
     except BaseException:
@@ -295,6 +313,7 @@ def restore_backup(
     mount: os.PathLike | str,
     *,
     candidates: Optional[Iterable[os.PathLike | str]] = None,
+    include_artwork: bool = False,
 ) -> None:
     """Restaura un ``.tar.zst`` sobre el iPod, dejando el árbol idéntico al backup.
 
@@ -307,6 +326,14 @@ def restore_backup(
        restauradas lo que no esté en el backup (archivos con ``unlink``,
        directorios extra no protegidos con ``safe_rmtree``). **Nunca** hace
        ``rmtree`` de ``iPod_Control/`` ni de directorios protegidos.
+
+    :param include_artwork: debe coincidir con el ``include_artwork`` usado al
+        crear ``archive`` (ver :func:`create_backup`). Necesario para que la
+        raíz ``iPod_Control/Artwork/`` se pode incluso cuando el backup se
+        tomó ANTES de que esa carpeta existiera (primera escritura de
+        artwork): el archivo no tiene ningún miembro ahí, así que sin esto
+        la reconciliación del paso 3 nunca la tocaría y dejaría huérfanos
+        cualquier ArtworkDB/.ithmb que el intento fallido llegó a instalar.
     """
     archive = Path(archive)
     resolved = resolve_mount(candidates=candidates if candidates is not None else [mount])
@@ -328,6 +355,11 @@ def restore_backup(
             continue
         if rel.parts:
             roots.add(control / rel.parts[0])
+
+    if include_artwork:
+        # La raíz se declara aunque el archivo no tenga miembros ahí (backup
+        # tomado con Artwork/ inexistente todavía) — ver docstring arriba.
+        roots.add(control / _ARTWORK_DIRNAME)
 
     # --- Paso 2: extraer (sobrescribiendo) ----------------------------------
     dctx = zstandard.ZstdDecompressor()

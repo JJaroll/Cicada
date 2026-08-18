@@ -471,10 +471,70 @@ diferida.
   a extremo descrita arriba). Prueba en hardware real (que la carátula
   aparezca en pantalla) diferida a la Etapa 4d, cuando esté enganchado con
   `create_plan()`.
-- **Etapa 4d — Enganche con `TrackInfo`/`create_plan()`.** Pendiente.
-  `TrackInfo.mhii_link`/`.artwork_size`/`.artwork_count` y su escritura en
-  `mhit_writer.py` ya existen desde Fase 2 (siempre en 0 hasta ahora) — solo
-  falta poblarlos antes de `create_plan()`.
+- **Etapa 4d — Enganche con `TrackInfo`/`create_plan()`/`apply()`. Estado:
+  implementado y verificado.**
+  `create_plan()` (`cicada/ipod/db/coordinator/plan.py`) construye artwork
+  ANTES de `build_itunescdb()`/`build_sqlite_databases()`: resuelve la
+  fuente de imagen por track (`source_path` si es una pista nueva, si no
+  `mount/location` — el propio audio ya en el iPod, mismo patrón que
+  `_heal_track_lengths` en `coordinator/media.py`), llama a
+  `build_artwork_assets()`, y puebla `mhii_link`/`artwork_size`/`artwork_count`
+  en el propio `TrackInfo` antes de que ambos builders los lean — consistencia
+  por construcción, no por parche posterior. **Todo el subsistema (staging,
+  artefactos, instalación, backup) es condicional**: se activa solo si al
+  menos un track tiene una fuente de imagen resoluble
+  (`Plan.artwork_touched`); si no, no se toca nada de `Artwork/` — evita
+  tanto el coste de un ArtworkDB vacío en cada sync como el falso-positivo
+  de "artefacto vacío" que dispararía la Fase A4 si se instalara siempre un
+  `.ithmb` de 0 bytes.
+  `apply()` extiende `_ORDERED_INSTALL_SEQUENCE` (ahora `_BASE_INSTALL_SEQUENCE`
+  + `_ARTWORK_INSTALL_SEQUENCE` condicional) con los 4 `.ithmb` + `ArtworkDB`
+  **antes** de la secuencia de 7 archivos, para que lo referenciado exista
+  antes que quien lo referencia. `PreStateFingerprint` amplía sus rutas
+  vigiladas a las 5 de Artwork siempre (barato, solo hash — un falso positivo
+  de "plan obsoleto" solo fuerza regenerar el plan, no deja nada
+  inconsistente). Fase E añade una verificación referencial: todo track con
+  `mhii_link` en el iTunesCDB recién commiteado debe tener una entrada MHII
+  correspondiente en el ArtworkDB recién commiteado — no confía en que
+  "staging era consistente" implique "el commit físico lo es".
+
+  **Bug real encontrado construyendo esto** (no solo en el diseño de papel):
+  el backup `DB_ONLY` con `include_artwork=True` de la Fase B, tomado la
+  PRIMERA vez que se escribe artwork, no tiene ningún miembro bajo
+  `Artwork/` (esa carpeta aún no existía en el dispositivo) — así que si el
+  commit fallaba a mitad DESPUÉS de instalar Artwork/ pero ANTES de terminar
+  los 7 archivos base, `restore_backup()` revertía los 7 archivos pero
+  dejaba el ArtworkDB/`.ithmb` recién instalados sin revertir (la
+  reconciliación de `_prune_extras` solo poda raíces derivadas de los
+  nombres de miembro del propio archivo). Fix: `restore_backup()` y
+  `create_backup()` ahora comparten un parámetro explícito
+  `include_artwork` (no inferido del contenido del archivo) — cuando es
+  `True`, `restore_backup()` declara la raíz `Artwork/` aunque el backup no
+  tenga miembros ahí, así la reconciliación la poda igual. Persistido en el
+  marcador `inflight.json` (`set_inflight_marker`) para que
+  `recover_inflight_commit()` (recuperación cross-sesión, sin `Plan`
+  disponible) también lo aplique correctamente.
+
+  **Verificación exigida antes de cerrar esta etapa** (paralela a la de 4c,
+  pero contra la coordinación con Fase 2, no contra el formato binario):
+  se forzó un escenario de dos syncs consecutivos en staging — sync 1 con
+  un track nuevo (`source_path` → carátula real), sync 2 recargando SOLO
+  ese mismo track sin `source_path` (como haría un round-trip real vía
+  `load_ipod_library()`) — y se verificó, releyendo el ArtworkDB
+  REALMENTE instalado tras el sync 2 (no el staging, no lo que el código
+  "dice" que hizo), que el track del sync 1 conserva una entrada MHII
+  válida. Sanity check: se deshabilitó a propósito el fallback a
+  `location` (forzando el bug de regresión original) y se confirmó que
+  este test específico falla con un mensaje claro; se revirtió después.
+  Tests: `tests/ipod/db/coordinator/test_plan.py` (+5: construcción desde
+  `source_path`, fallback a `location`, track sin arte junto a uno con
+  arte, fingerprint cubre Artwork, skip completo sin fuente resoluble) y
+  `test_apply.py` (+6: instalación+verificación E4, backup excluye Artwork
+  cuando no se toca, backup SÍ cubre Artwork en un segundo sync, rollback
+  byte-exacto revierte Artwork tras fallo en Fase D, E4 detecta una
+  referencia colgante forzada, y el test de dos syncs consecutivos
+  descrito arriba). Prueba de fuego en hardware real (Nano 7G): siguiente
+  paso, fuera de esta etapa.
 - **Etapa 4e — API/CLI/UI.** Pendiente.
 - **Etapa 4f — Generalización a otros modelos (diferida, no descartada).**
   Activar `ithmb_codecs.py` completo (RGB565_BE, RGB555, UYVY, JPEG) y las

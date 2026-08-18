@@ -113,8 +113,8 @@ def test_backup_verifica_integridad(ipod, backups_dir):
 def test_backup_integridad_falla_borra_archivo(ipod, backups_dir, monkeypatch):
     # Forzamos un manifiesto que no casa con lo que se escribió -> integridad falla.
     real = bk._build_manifest
-    def manifiesto_mentiroso(mount, mode):
-        m = real(mount, mode)
+    def manifiesto_mentiroso(mount, mode, **kwargs):
+        m = real(mount, mode, **kwargs)
         m["iPod_Control/iTunes/iTunesCDB"] = (999, "deadbeef")
         return m
     monkeypatch.setattr(bk, "_build_manifest", manifiesto_mentiroso)

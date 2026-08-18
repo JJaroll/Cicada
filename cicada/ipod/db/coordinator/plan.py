@@ -23,6 +23,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from cicada.ipod.db.artwork.chunks import ithmb_filename, read_artworkdb
+from cicada.ipod.db.artwork.writer import ArtworkSourceTrack, build_artwork_assets
 from cicada.ipod.db.coordinator.consent import (
     _guid_hash,
     has_music_app_consent,
@@ -32,12 +34,16 @@ from cicada.ipod.db.sqlite.build import ITLP_FILES, build_sqlite_databases
 from cicada.ipod.db.writer.build import build_itunescdb
 from cicada.ipod.db.models import PlaylistInfo, TrackInfo
 from cicada.ipod.db.writer.verify import verify_hashab
+from cicada.ipod.device.artwork_presets import NANO_7G_COVER_ART_FORMATS
 from cicada.ipod.device.capabilities import DeviceCapabilities, capabilities_for_family_gen
 from cicada.ipod.device.checksum import ChecksumType
 from cicada.ipod.device.device_info import DeviceInfo
+from cicada.ipod.device.write_guard import PathOutsideIpodControlError, assert_within_ipod_control
+from cicada.shared.artwork import extract_embedded_artwork
 
 __all__ = [
     "DATABASE_TARGET_RELPATHS",
+    "ARTWORK_TARGET_RELPATHS",
     "PreStateFingerprint",
     "Plan",
     "PlanError",
@@ -56,6 +62,23 @@ DATABASE_TARGET_RELPATHS: tuple[str, ...] = (
     "iPod_Control/iTunes/iTunes Library.itlp/Extras.itdb",
     "iPod_Control/iTunes/iTunes Library.itlp/Genius.itdb",
 )
+
+#: ArtworkDB + los 4 .ithmb del Nano 7G (Fase 4, Etapa 4d). Se instalan solo
+#: cuando el plan realmente construyó artwork (Plan.artwork_touched) — ver
+#: docs/VENDORED.md, Paquete 7.
+ARTWORK_TARGET_RELPATHS: tuple[str, ...] = (
+    "iPod_Control/Artwork/ArtworkDB",
+    *(
+        f"iPod_Control/Artwork/{ithmb_filename(fmt.format_id)}"
+        for fmt in NANO_7G_COVER_ART_FORMATS
+    ),
+)
+
+#: Unión usada solo para PreStateFingerprint (detección de deriva) — se hashea
+#: siempre, independientemente de si este plan concreto toca artwork, porque
+#: es barato (solo lectura+hash, no backup) y una detección de más nunca deja
+#: el dispositivo inconsistente, solo fuerza regenerar el plan.
+_FINGERPRINT_RELPATHS: tuple[str, ...] = DATABASE_TARGET_RELPATHS + ARTWORK_TARGET_RELPATHS
 
 
 class PlanError(Exception):
@@ -91,10 +114,12 @@ class PreStateFingerprint:
 
     @classmethod
     def capture(cls, mount: Path | str) -> PreStateFingerprint:
-        """Captura los hashes y tamaños de los 7 archivos de base de datos en mount."""
+        """Captura los hashes y tamaños de los 7 archivos de base de datos y los
+        5 de Artwork (Etapa 4d) en mount — estos últimos ``None`` si el
+        dispositivo aún no tiene ``iPod_Control/Artwork/``."""
         mount_path = Path(mount)
         fingerprint = {}
-        for rel in DATABASE_TARGET_RELPATHS:
+        for rel in _FINGERPRINT_RELPATHS:
             full = mount_path / rel
             fingerprint[rel] = _hash_file(full)
         return cls(files=fingerprint)
@@ -121,6 +146,9 @@ class Plan:
     capabilities: Optional[DeviceCapabilities] = None
     time_context: Optional[DeviceTimeContext] = None
     artifacts: dict[str, tuple[int, str]] = field(default_factory=dict)
+    artwork_touched: bool = False
+    artwork_tracks_count: int = 0
+    artwork_skipped_count: int = 0
     _temp_dir_handle: Optional[object] = field(default=None, repr=False, compare=False)
 
     @property
@@ -185,6 +213,85 @@ def create_plan(
     else:
         temp_handle = tempfile.TemporaryDirectory(prefix="cicada-plan-")
         staging_dir = Path(temp_handle.name)
+
+    # 4b. Artwork (Fase 4, Etapa 4d) — ANTES de iTunesCDB/sqlite: sus
+    # artwork_id_ref/mhii_link deben salir de este mismo mapeo, no de un
+    # paso posterior que podría desincronizarse. Fuente por track: source_path
+    # (pista recién copiada) o el propio audio ya en el iPod vía `location`
+    # (mismo patrón que _heal_track_lengths en coordinator/media.py). Se
+    # omite el subsistema entero (staging/artifacts/instalación/backup) si
+    # NINGÚN track tiene una fuente resoluble — no hay nada que tocar.
+    mount_path = Path(mount)
+    artwork_sources: list[ArtworkSourceTrack] = []
+    for track in tracks:
+        audio_path: Optional[Path] = None
+        if track.source_path:
+            audio_path = Path(track.source_path)
+        elif track.location:
+            try:
+                candidate = assert_within_ipod_control(
+                    mount_path / track.location.lstrip(":").replace(":", "/"), mount_path
+                )
+            except PathOutsideIpodControlError:
+                candidate = None
+            if candidate is not None and candidate.is_file():
+                audio_path = candidate
+        if audio_path is None or not audio_path.is_file():
+            continue
+        art_bytes, _mime = extract_embedded_artwork(audio_path)
+        if art_bytes:
+            artwork_sources.append(ArtworkSourceTrack(db_track_id=track.db_track_id, art_bytes=art_bytes))
+
+    artwork_touched = len(artwork_sources) > 0
+    artwork_tracks_count = 0
+    artwork_skipped_count = 0
+    artwork_artifacts: dict[str, tuple[int, str]] = {}
+
+    if artwork_touched:
+        artwork_result = build_artwork_assets(artwork_sources)
+        artwork_tracks_count = len(artwork_result.track_artwork)
+        artwork_skipped_count = len(artwork_result.skipped_track_ids)
+
+        for track in tracks:
+            hit = artwork_result.track_artwork.get(track.db_track_id)
+            if hit is not None:
+                track.mhii_link = hit.img_id
+                track.artwork_size = hit.src_img_size
+                track.artwork_count = 1
+            else:
+                track.mhii_link = 0
+                track.artwork_size = 0
+                track.artwork_count = 0
+
+        artwork_dir = staging_dir / "Artwork"
+        artwork_dir.mkdir(parents=True, exist_ok=True)
+        artworkdb_path = artwork_dir / "ArtworkDB"
+        artworkdb_path.write_bytes(artwork_result.artworkdb)
+        for filename, content in artwork_result.ithmb_files.items():
+            (artwork_dir / filename).write_bytes(content)
+
+        # Verificación interna: el ArtworkDB de staging debe reparsear con
+        # exactamente las entradas que el escritor dice haber producido —
+        # mismo tipo de autochequeo que ya se hace con verify_hashab/sqlite.
+        parsed_entries = read_artworkdb(artworkdb_path.read_bytes())
+        if len(parsed_entries) != artwork_tracks_count:
+            raise InconsistentArtifactsError(
+                f"ArtworkDB en staging tiene {len(parsed_entries)} entradas, "
+                f"se esperaban {artwork_tracks_count}."
+            )
+        for filename in artwork_result.ithmb_files:
+            if not (artwork_dir / filename).is_file():
+                raise InconsistentArtifactsError(
+                    f"Falta el .ithmb {filename} en el staging de Artwork/."
+                )
+
+        artworkdb_info = _hash_file(artworkdb_path)
+        assert artworkdb_info is not None
+        artwork_artifacts["iPod_Control/Artwork/ArtworkDB"] = artworkdb_info
+        for filename in artwork_result.ithmb_files:
+            info = _hash_file(artwork_dir / filename)
+            assert info is not None
+            artwork_artifacts[f"iPod_Control/Artwork/{filename}"] = info
 
     # 5. Generación de artefactos en staging
     cdb_path = staging_dir / "iTunesCDB"
@@ -251,6 +358,8 @@ def create_plan(
         assert info is not None
         artifacts[f"iPod_Control/iTunes/iTunes Library.itlp/{fn}"] = info
 
+    artifacts.update(artwork_artifacts)
+
     dt = timestamp or datetime.now(timezone.utc)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -269,5 +378,8 @@ def create_plan(
         capabilities=caps,
         time_context=time_context,
         artifacts=artifacts,
+        artwork_touched=artwork_touched,
+        artwork_tracks_count=artwork_tracks_count,
+        artwork_skipped_count=artwork_skipped_count,
         _temp_dir_handle=temp_handle,
     )

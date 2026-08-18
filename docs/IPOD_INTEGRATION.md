@@ -393,8 +393,17 @@ riesgo, empezando por un único caso real verificable contra hardware:
       internos), offsets exactos sin solape entre tracks, song_id/img_id
       correctos — ver detalle y sanity check (bug inyectado a propósito y
       detectado) en `docs/VENDORED.md`, Paquete 7.
-- [ ] **4d** — Enganche con `TrackInfo.mhii_link`/`.artwork_size`/`.artwork_count`
-      (campos ya escritos por `mhit_writer.py` desde Fase 2, siempre en 0 hasta ahora).
+- [x] **4d** — Coordinación con Fase 2: artwork se construye dentro de
+      `create_plan()` antes de iTunesCDB/sqlite (consistencia por
+      construcción), todo condicional a `Plan.artwork_touched` (staging,
+      instalación, backup — nunca toca `Artwork/` si ningún track tiene
+      fuente de imagen resoluble), `apply()` extiende su secuencia de
+      instalación e incluye una verificación referencial post-commit
+      (Fase E). Bug real encontrado y corregido: el backup de la primera
+      escritura de artwork no cubría esa carpeta para rollback (no existía
+      aún al tomarlo) — ver detalle en `docs/VENDORED.md`, Paquete 7.
+      Verificado con un escenario forzado de dos syncs consecutivos
+      (regresión de artwork_id_ref cerrada, con sanity check de mutación).
 - [ ] **4e** — API/CLI/UI.
 - [ ] **4f** — Generalización: activar los demás formatos de píxel y modelos
       que `artwork_presets.py` ya tiene tabulados (`ARTWORK_FORMATS_BY_ID`
