@@ -13,6 +13,7 @@ compile_intel.sh
 __pycache__/
 *.py[cod]
 *$py.class
+*.egg-info/
 *.so
 
 # IDEs

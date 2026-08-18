@@ -13,7 +13,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if argv and argv[0] == "ipod":
         from cicada.ipod.cli import main as ipod_main
         return ipod_main(argv[1:])
-    print("uso: python -m cicada ipod <backup|restore|list-backups> ...", file=sys.stderr)
+    print("uso: cicada ipod <backup|restore|list-backups> ...", file=sys.stderr)
     return 2
 
 

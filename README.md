@@ -129,6 +129,32 @@ python run.py
 
 Esto abrirá la aplicación en tu navegador web en la dirección `http://127.0.0.1:8000`.
 
+### CLI del iPod (`cicada ipod`)
+
+Para gestionar el iPod desde la terminal (backups, restauración, expulsión segura,
+etc.) sin pasar por la app web, instala Cicada en modo editable una vez:
+
+```bash
+pip install -e .
+```
+
+Esto agrega el ejecutable `cicada` al `PATH` de tu entorno virtual, disponible
+desde cualquier directorio mientras el venv esté activo:
+
+```bash
+cicada ipod status              # identidad y estado del iPod montado
+cicada ipod backup              # snapshot de seguridad (--full para incluir Music/)
+cicada ipod restore <archivo>   # restaura un backup
+cicada ipod list-backups        # lista los backups existentes
+cicada ipod consent             # consulta/otorga el consentimiento de Music.app
+cicada ipod eject               # expulsa el iPod de forma segura
+```
+
+Usa `cicada ipod --help` o `cicada ipod <subcomando> --help` para ver todas las
+opciones. (La instalación es editable a propósito: los archivos estáticos de la
+app se resuelven en runtime relativos al checkout del repositorio, no se
+empaquetan — por eso no se recomienda una instalación no-editable.)
+
 ---
 
 ## 📁 Estructura del Proyecto
