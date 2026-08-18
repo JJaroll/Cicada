@@ -108,6 +108,63 @@ def test_set_ipod_playlist_agrega_y_reordena(tmp_path, monkeypatch):
     assert ordered_titles == ["B", "Added", "A"]   # orden y pista nueva persistidos
 
 
+def test_push_ratings_to_ipod_actualiza_una_pista(ipod_with_db):
+    from cicada.ipod.db.coordinator.media import push_ratings_to_ipod
+    mount, dev = ipod_with_db
+
+    res = push_ratings_to_ipod(mount, {100: 60}, device_info=dev, consent_ack=True)
+    assert res.success is True
+
+    lib = load_ipod_library(str(mount / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mount))
+    track = next(t for t in lib["mhlt"] if t.get("db_track_id") == 100)
+    assert track.get("rating") == 60
+    # La playlist existente se preservó (no es lo que estamos tocando aquí).
+    assert any(p.get("Title") == "Mi Playlist" for p in lib["mhlp"])
+
+
+def test_push_ratings_to_ipod_batch_multiples_pistas(tmp_path, monkeypatch):
+    from cicada.ipod.db.coordinator.media import push_ratings_to_ipod
+    mount, dev = _build_ipod(
+        tmp_path, monkeypatch,
+        [TrackInfo(title="A", location=":iPod_Control:Music:F00:A.mp3", db_track_id=100, rating=20),
+         TrackInfo(title="B", location=":iPod_Control:Music:F00:B.mp3", db_track_id=200, rating=40)],
+        [],
+    )
+    res = push_ratings_to_ipod(mount, {100: 80, 200: 100}, device_info=dev, consent_ack=True)
+    assert res.success is True
+
+    lib = load_ipod_library(str(mount / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mount))
+    ratings = {t.get("db_track_id"): t.get("rating") for t in lib["mhlt"]}
+    assert ratings[100] == 80
+    assert ratings[200] == 100
+
+
+def test_push_ratings_to_ipod_dbid_inexistente_falla(ipod_with_db):
+    from cicada.ipod.db.coordinator.media import push_ratings_to_ipod
+    mount, dev = ipod_with_db
+    with pytest.raises(ValueError):
+        push_ratings_to_ipod(mount, {999999: 80}, device_info=dev, consent_ack=True)
+
+
+def test_push_ratings_to_ipod_ignora_dbid_ausente_si_hay_otro_valido(ipod_with_db):
+    from cicada.ipod.db.coordinator.media import push_ratings_to_ipod
+    mount, dev = ipod_with_db
+    # 100 existe, 999999 no -> no debe fallar, solo aplica lo que existe.
+    res = push_ratings_to_ipod(mount, {100: 60, 999999: 80}, device_info=dev, consent_ack=True)
+    assert res.success is True
+    lib = load_ipod_library(str(mount / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mount))
+    track = next(t for t in lib["mhlt"] if t.get("db_track_id") == 100)
+    assert track.get("rating") == 60
+
+
+def test_push_ratings_to_ipod_consent_requerido(ipod_with_db):
+    from cicada.ipod.db.coordinator.media import push_ratings_to_ipod
+    from cicada.ipod.db.coordinator.consent import ConsentRequiredError
+    mount, dev = ipod_with_db
+    with pytest.raises(ConsentRequiredError):
+        push_ratings_to_ipod(mount, {100: 60}, device_info=dev, consent_ack=False)
+
+
 def test_remove_track_from_ipod_borra_pista_audio_y_referencias(tmp_path, monkeypatch):
     from cicada.ipod.db.coordinator.media import remove_track_from_ipod
     mount, dev = _build_ipod(

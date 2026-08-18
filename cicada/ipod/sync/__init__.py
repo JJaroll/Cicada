@@ -14,6 +14,7 @@ from .conflicts import (
     ConflictScanResult,
     PendingLocalPush,
     RatingConflict,
+    resolve_conflicts,
     scan_for_conflicts,
 )
 from .playlists import (
@@ -57,6 +58,7 @@ __all__ = [
     "prepare_standard_playlists",
     "read_ipod_playback_stats",
     "record_playlists_in_db",
+    "resolve_conflicts",
     "scan_for_conflicts",
     "sync_playback_stats",
 ]

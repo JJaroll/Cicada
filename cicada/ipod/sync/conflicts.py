@@ -1,21 +1,24 @@
-"""Detección de conflictos de rating — Fase 3 (resolución de conflictos).
+"""Detección y resolución de conflictos de rating — Fase 3.
 
 Diff de tres vías (local / dispositivo / baseline) para el único campo
 sincronizable que no se puede fusionar automáticamente: el rating. Los
 contadores (play_count/skip_count) se suman y los timestamps toman ``max()``
 en bidirectional.py — no son conflictivos y no pasan por aquí.
 
-Política: nunca resolver un conflicto real en silencio. Este módulo solo
-clasifica y reporta; no escribe nada (ni en SQLite local ni en el iPod).
+Política: nunca resolver un conflicto real en silencio. ``scan_for_conflicts``
+solo clasifica (no escribe nada); ``resolve_conflicts`` requiere que el
+llamador indique explícitamente qué lado gana — nunca decide por su cuenta.
 """
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
+from cicada.ipod.db.coordinator.apply import ApplyResult
 from cicada.ipod.sync.bidirectional import read_ipod_playback_stats
-from cicada.ipod.sync.state import SyncStateDB
+from cicada.ipod.sync.state import LocalPlaybackStateRecord, PlaybackStateRecord, SyncStateDB
 
 
 @dataclass
@@ -94,3 +97,61 @@ def scan_for_conflicts(mount: Path | str, sync_db: SyncStateDB, guid: str) -> Co
             ))
 
     return result
+
+
+def resolve_conflicts(
+    mount: Path | str,
+    sync_db: SyncStateDB,
+    conflicts: List[RatingConflict],
+    resolution: str,
+    *,
+    device_info,
+    consent_ack: bool = False,
+) -> ApplyResult:
+    """Aplica ``resolution`` ("local" | "device") a uno o más conflictos ya
+    detectados, en un solo lote. "local": escribe los ratings locales al
+    iPod (un único ``apply()``, no uno por pista) y luego alinea ambas
+    tablas locales al valor ganador. "device": no escribe nada en el iPod
+    (ya tiene ese valor) — solo alinea las tablas locales. En ambos casos,
+    ``playback_state`` y ``local_playback_state`` quedan consistentes entre
+    sí al terminar (mismo valor de rating en las dos), para que el próximo
+    escaneo no vuelva a marcar el mismo conflicto.
+    """
+    if resolution not in ("local", "device"):
+        raise ValueError(f"resolution inválida: {resolution!r} (debe ser 'local' o 'device')")
+    if not conflicts:
+        return ApplyResult(success=True, tracks_written=0)
+
+    guid = conflicts[0].guid
+    winning: Dict[int, int] = {}
+    result: Optional[ApplyResult] = None
+
+    if resolution == "local":
+        from cicada.ipod.db.coordinator.media import push_ratings_to_ipod
+        ratings = {c.ipod_dbid: c.local_rating for c in conflicts}
+        result = push_ratings_to_ipod(mount, ratings, device_info=device_info, consent_ack=consent_ack)
+        if not result.success:
+            return result
+        winning = ratings
+    else:
+        winning = {c.ipod_dbid: c.device_rating for c in conflicts}
+
+    now = int(time.time())
+    with sync_db.transaction() as conn:
+        for c in conflicts:
+            known = sync_db.get_playback_state(guid, c.ipod_dbid)
+            rating = winning[c.ipod_dbid]
+            sync_db.upsert_playback_state(PlaybackStateRecord(
+                guid=guid, ipod_dbid=c.ipod_dbid,
+                known_play_count=known.known_play_count if known else 0,
+                known_rating=rating,
+                known_last_played=known.known_last_played if known else 0,
+                known_skip_count=known.known_skip_count if known else 0,
+                known_date_skipped=known.known_date_skipped if known else 0,
+                synced_at=now,
+            ), conn=conn)
+            sync_db.upsert_local_playback_state(LocalPlaybackStateRecord(
+                guid=guid, ipod_dbid=c.ipod_dbid, local_rating=rating, updated_at=now,
+            ), conn=conn)
+
+    return result if result is not None else ApplyResult(success=True, tracks_written=len(conflicts))

@@ -31,6 +31,7 @@ __all__ = [
     "set_ipod_playlist",
     "remove_track_from_ipod",
     "preserve_existing_playlists",
+    "push_ratings_to_ipod",
 ]
 
 _MUSIC_BUCKETS = 50            # F00..F49, como iTunes
@@ -434,6 +435,53 @@ def remove_track_from_ipod(mount, db_track_id, *, device_info, consent_ack=False
         except Exception:
             logger.warning("No se pudo borrar el audio %r tras eliminar la pista %d.", relpath, db_track_id)
     return result
+
+
+def push_ratings_to_ipod(mount, ratings: dict, *, device_info, consent_ack=False):
+    """Escribe rating(s) en el iPod para los dbids dados — reescritura completa
+    de la base (como toda escritura en este módulo), preservando playlists.
+    ``ratings``: ``{db_track_id: rating_0_a_100}``. dbids que no existen en el
+    iPod se ignoran (pudo borrarse la pista entre el escaneo y la resolución);
+    si NINGUNO existe, no tiene sentido escribir — se lanza ``ValueError``.
+    Usado tanto por la resolución individual de un conflicto ("local gana")
+    como por el push silencioso de cambios solo-locales (ambos casos son la
+    misma operación: hacer que el dispositivo refleje el rating local)."""
+    from cicada.ipod.db.coordinator.apply import apply
+    from cicada.ipod.db.coordinator.consent import ConsentRequiredError
+    from cicada.ipod.db.coordinator.plan import create_plan
+    from cicada.ipod.db.parser import load_ipod_library
+    from cicada.ipod.db.writer._track_conversion import track_dict_to_info
+
+    mount = Path(mount)
+    ratings = {int(k): int(v) for k, v in ratings.items()}
+    cdb = mount / "iPod_Control" / "iTunes" / "iTunesCDB"
+    lib = load_ipod_library(str(cdb), mount=str(mount)) if cdb.is_file() else None
+    if not lib:
+        raise ValueError("No se pudo leer la biblioteca del iPod.")
+
+    found = {t.get("db_track_id") for t in lib.get("mhlt", [])} & ratings.keys()
+    if not found:
+        raise ValueError("Ninguna de las pistas indicadas existe en el iPod.")
+
+    tracks = []
+    for t in lib.get("mhlt", []):
+        ti = track_dict_to_info(t)
+        if ti.db_track_id in ratings:
+            ti.rating = ratings[ti.db_track_id]
+        tracks.append(ti)
+    _heal_track_lengths(mount, tracks)
+
+    regular, smart = preserve_existing_playlists(mount, lib)
+
+    plan = create_plan(
+        mount, tracks, device_info=device_info,
+        playlists=regular or None, smart_playlists=smart or None,
+    )
+    if plan.consent_needed and not consent_ack:
+        raise ConsentRequiredError(
+            "Se requiere aceptar la advertencia de Music.app antes de escribir."
+        )
+    return apply(plan, mount=mount, device_info=device_info, consent_ack=consent_ack)
 
 
 def preserve_existing_playlists(mount, lib=None):

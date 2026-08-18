@@ -307,6 +307,154 @@ async def test_api_sync_playback_dry_run_no_persiste(async_client: httpx.AsyncCl
 
 
 @pytest.mark.asyncio
+async def test_api_track_rate(async_client: httpx.AsyncClient, mock_ipod_with_rating: Path):
+    resp = await async_client.post("/api/ipod/track/rate", json={"db_track_id": "777", "rating": 40})
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+
+    from cicada.ipod.sync.state import SyncStateDB, default_sync_db_path
+    db = SyncStateDB(default_sync_db_path())
+    local = db.get_local_playback_state(GUID_STR, 777)
+    assert local is not None
+    assert local.local_rating == 40
+
+
+@pytest.mark.asyncio
+async def test_api_track_rate_fuera_de_rango(async_client: httpx.AsyncClient, mock_ipod_with_rating: Path):
+    resp = await async_client.post("/api/ipod/track/rate", json={"db_track_id": "777", "rating": 150})
+    assert resp.status_code == 400
+
+
+async def _seed_conflict(async_client: httpx.AsyncClient, dbid: int, known: int, local: int):
+    """Establece baseline=known y local_rating=local para dbid (el device
+    ya tiene su rating real leído del Dynamic.itdb del fixture)."""
+    from cicada.ipod.sync.state import (
+        DeviceRecord,
+        LocalPlaybackStateRecord,
+        PlaybackStateRecord,
+        SyncStateDB,
+        default_sync_db_path,
+    )
+    db = SyncStateDB(default_sync_db_path())
+    db.upsert_device(DeviceRecord(guid=GUID_STR))
+    db.upsert_playback_state(PlaybackStateRecord(guid=GUID_STR, ipod_dbid=dbid, known_rating=known))
+    db.upsert_local_playback_state(LocalPlaybackStateRecord(guid=GUID_STR, ipod_dbid=dbid, local_rating=local))
+
+
+@pytest.mark.asyncio
+async def test_api_conflicts_vacio_sin_local_playback_state(
+    async_client: httpx.AsyncClient, mock_ipod_with_rating: Path
+):
+    resp = await async_client.get("/api/ipod/conflicts")
+    assert resp.status_code == 200
+    assert resp.json() == {"conflicts": [], "count": 0}
+
+
+@pytest.mark.asyncio
+async def test_api_conflicts_lista_conflicto_real_con_titulo(
+    async_client: httpx.AsyncClient, mock_ipod_with_rating: Path
+):
+    # mock_ipod_with_rating: dbid=777, device rating=80 (real, leído del Dynamic.itdb).
+    await _seed_conflict(async_client, 777, known=50, local=20)
+
+    resp = await async_client.get("/api/ipod/conflicts")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] == 1
+    c = data["conflicts"][0]
+    assert c["ipod_dbid"] == "777"
+    assert c["title"] == "Rated Track"
+    assert c["known_rating"] == 50
+    assert c["local_rating"] == 20
+    assert c["device_rating"] == 80
+
+
+@pytest.mark.asyncio
+async def test_api_conflicts_resolve_local_gana(async_client: httpx.AsyncClient, mock_ipod_with_rating: Path):
+    await _seed_conflict(async_client, 777, known=50, local=20)
+
+    resp = await async_client.post("/api/ipod/conflicts/resolve", json={
+        "ipod_dbid": "777", "resolution": "local", "consent_ack": True,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+
+    # El conflicto ya no aparece (baseline y local quedaron alineados).
+    resp2 = await async_client.get("/api/ipod/conflicts")
+    assert resp2.json()["count"] == 0
+
+    resp_tracks = await async_client.get("/api/ipod/tracks")
+    track = next(t for t in resp_tracks.json()["tracks"] if t["db_track_id"] == "777")
+    assert track["rating"] == 20   # el iPod ahora tiene el valor LOCAL
+
+
+@pytest.mark.asyncio
+async def test_api_conflicts_resolve_device_gana_sin_consent(
+    async_client: httpx.AsyncClient, mock_ipod_with_rating: Path
+):
+    await _seed_conflict(async_client, 777, known=50, local=20)
+
+    # resolution="device" no escribe en el iPod -> no debería requerir consent_ack.
+    resp = await async_client.post("/api/ipod/conflicts/resolve", json={
+        "ipod_dbid": "777", "resolution": "device", "consent_ack": False,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+
+    resp_tracks = await async_client.get("/api/ipod/tracks")
+    track = next(t for t in resp_tracks.json()["tracks"] if t["db_track_id"] == "777")
+    assert track["rating"] == 80   # el iPod no cambió
+
+
+@pytest.mark.asyncio
+async def test_api_conflicts_resolve_sin_conflicto_404(
+    async_client: httpx.AsyncClient, mock_ipod_with_rating: Path
+):
+    resp = await async_client.post("/api/ipod/conflicts/resolve", json={
+        "ipod_dbid": "777", "resolution": "local", "consent_ack": True,
+    })
+    assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_api_conflicts_resolve_resolution_invalida(
+    async_client: httpx.AsyncClient, mock_ipod_with_rating: Path
+):
+    resp = await async_client.post("/api/ipod/conflicts/resolve", json={
+        "ipod_dbid": "777", "resolution": "coinflip", "consent_ack": True,
+    })
+    assert resp.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_api_conflicts_resolve_all_aplica_a_todos(
+    async_client: httpx.AsyncClient, mock_ipod_with_rating: Path
+):
+    await _seed_conflict(async_client, 777, known=50, local=20)
+
+    resp = await async_client.post("/api/ipod/conflicts/resolve-all", json={
+        "resolution": "local", "consent_ack": True,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+
+    resp2 = await async_client.get("/api/ipod/conflicts")
+    assert resp2.json()["count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_api_conflicts_resolve_all_sin_conflictos_no_hace_nada(
+    async_client: httpx.AsyncClient, mock_ipod_with_rating: Path
+):
+    resp = await async_client.post("/api/ipod/conflicts/resolve-all", json={
+        "resolution": "local", "consent_ack": True,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+    assert resp.json()["tracks_written"] == 0
+
+
+@pytest.mark.asyncio
 async def test_api_apply_stale_plan_409(async_client: httpx.AsyncClient, mock_ipod: Path):
     tracks = [
         {

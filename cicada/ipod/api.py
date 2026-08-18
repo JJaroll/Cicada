@@ -63,6 +63,8 @@ from cicada.ipod.device.device_info import DeviceInfo, discover_ipods, read_devi
 from cicada.ipod.device.eject import eject_ipod
 from cicada.ipod.device.write_guard import MountNotFoundError, WriteGuardError, resolve_mount
 from cicada.ipod.sync.bidirectional import sync_playback_stats
+from cicada.ipod.sync.conflicts import resolve_conflicts, scan_for_conflicts
+from cicada.ipod.sync.state import DeviceRecord, LocalPlaybackStateRecord, SyncStateDB
 
 logger = logging.getLogger(__name__)
 
@@ -1124,7 +1126,6 @@ def sync_playback(dry_run: bool = False) -> PlaybackSyncResponse:
         if dry_run:
             # Puro SELECT: no requiere el device pre-registrado, así que un
             # dry-run no escribe nada en ~/.cicada/ipod.db.
-            from cicada.ipod.sync.state import SyncStateDB
             from cicada.ipod.sync.bidirectional import compute_playback_deltas
             report = compute_playback_deltas(mount, SyncStateDB(), dev.firewire_guid)
         else:
@@ -1137,6 +1138,197 @@ def sync_playback(dry_run: bool = False) -> PlaybackSyncResponse:
             total_delta_skips=report.total_delta_skips,
             ratings_updated_count=report.ratings_updated_count,
         )
+    except MountNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"}) from exc
+    except WriteGuardError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"}) from exc
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Resolución de conflictos de rating — Fase 3
+# ═══════════════════════════════════════════════════════════════════════════
+
+class TrackRateRequest(BaseModel):
+    db_track_id: str
+    rating: int  # 0 a 100 (20 por estrella)
+
+
+@router.post("/track/rate", response_model=ApplyResponse)
+def rate_track_locally(req: TrackRateRequest) -> ApplyResponse:
+    """Asigna un rating desde Cicada, independiente del iPod (local_playback_state).
+    Solo escribe SQLite local — nunca el iPod, no requiere consentimiento. Es el
+    'lado local' que hace posible detectar conflictos de verdad más adelante."""
+    if not (0 <= req.rating <= 100):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": "rating debe estar entre 0 y 100.", "code": "INVALID_REQUEST"})
+    try:
+        mount = resolve_mount()
+        dev = read_device_info(mount)
+        if not dev.firewire_guid:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                detail={"error": "No se pudo identificar el GUID del iPod.", "code": "NO_GUID"})
+        sync_db = SyncStateDB()
+        # FK de local_playback_state -> devices: puede ser la primera escritura
+        # local para este iPod (antes de cualquier /sync/playback).
+        sync_db.upsert_device(DeviceRecord(
+            guid=dev.firewire_guid, family_id=dev.family_id,
+            model_num=dev.model_number, serial=dev.serial,
+            name=f"{dev.family or ''} {dev.generation or ''}".strip() or None,
+        ))
+        sync_db.upsert_local_playback_state(LocalPlaybackStateRecord(
+            guid=dev.firewire_guid, ipod_dbid=int(req.db_track_id), local_rating=req.rating,
+        ))
+        return ApplyResponse(success=True, tracks_written=1)
+    except MountNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"}) from exc
+    except WriteGuardError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"}) from exc
+
+
+class RatingConflictSchema(BaseModel):
+    ipod_dbid: str
+    title: Optional[str] = None
+    artist: Optional[str] = None
+    known_rating: int
+    local_rating: int
+    device_rating: int
+
+
+class ConflictsListResponse(BaseModel):
+    conflicts: List[RatingConflictSchema] = []
+    count: int = 0
+
+
+def _conflict_track_titles(mount: Path) -> Dict[int, tuple]:
+    """{dbid: (title, artist)} para enriquecer la lista de conflictos."""
+    cdb = mount / "iPod_Control" / "iTunes" / "iTunesCDB"
+    if not cdb.is_file():
+        return {}
+    lib = load_ipod_library(str(cdb), mount=str(mount))
+    if not lib:
+        return {}
+    return {
+        t.get("db_track_id"): (t.get("Title"), t.get("Artist"))
+        for t in lib.get("mhlt", []) if t.get("db_track_id") is not None
+    }
+
+
+def _scan_conflicts(mount: Path, dev: DeviceInfo) -> tuple:
+    """(sync_db, guid, conflicts): helper compartido por los 3 endpoints de conflictos."""
+    if not dev.firewire_guid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": "No se pudo identificar el GUID del iPod.", "code": "NO_GUID"})
+    sync_db = SyncStateDB()
+    result = scan_for_conflicts(mount, sync_db, dev.firewire_guid)
+    return sync_db, dev.firewire_guid, result.conflicts
+
+
+@router.get("/conflicts", response_model=ConflictsListResponse)
+def list_conflicts() -> ConflictsListResponse:
+    """Escanea conflictos de rating pendientes (local vs. dispositivo vs.
+    baseline). Solo lectura — nunca resuelve nada aquí."""
+    try:
+        mount = resolve_mount()
+        dev = read_device_info(mount)
+        _sync_db, _guid, conflicts = _scan_conflicts(mount, dev)
+        titles = _conflict_track_titles(mount) if conflicts else {}
+        schemas = [
+            RatingConflictSchema(
+                ipod_dbid=str(c.ipod_dbid),
+                title=(titles.get(c.ipod_dbid) or (None, None))[0],
+                artist=(titles.get(c.ipod_dbid) or (None, None))[1],
+                known_rating=c.known_rating, local_rating=c.local_rating,
+                device_rating=c.device_rating,
+            )
+            for c in conflicts
+        ]
+        return ConflictsListResponse(conflicts=schemas, count=len(schemas))
+    except MountNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"}) from exc
+    except WriteGuardError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"}) from exc
+
+
+class ConflictResolveRequest(BaseModel):
+    ipod_dbid: str
+    resolution: str  # "local" | "device"
+    consent_ack: bool = False
+
+
+@router.post("/conflicts/resolve", response_model=ApplyResponse)
+def resolve_one_conflict(req: ConflictResolveRequest) -> ApplyResponse:
+    """Resuelve UN conflicto pendiente. 'local' escribe el rating local al
+    iPod (requiere consentimiento si es la primera escritura); 'device' solo
+    alinea las tablas locales al valor que el iPod ya tiene."""
+    if req.resolution not in ("local", "device"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": "resolution debe ser 'local' o 'device'.", "code": "INVALID_REQUEST"})
+    try:
+        mount = resolve_mount()
+        dev = read_device_info(mount)
+        sync_db, _guid, conflicts = _scan_conflicts(mount, dev)
+        target_dbid = int(req.ipod_dbid)
+        matching = [c for c in conflicts if c.ipod_dbid == target_dbid]
+        if not matching:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                                detail={"error": f"No hay conflicto pendiente para la pista {target_dbid}.",
+                                        "code": "CONFLICT_NOT_FOUND"})
+        res = resolve_conflicts(mount, sync_db, matching, req.resolution,
+                                device_info=dev, consent_ack=req.consent_ack)
+        return ApplyResponse(
+            success=res.success,
+            backup_path=str(res.backup_path) if res.backup_path else None,
+            restored_from_backup=res.restored_from_backup,
+            first_write_committed=res.first_write_committed,
+            tracks_written=res.tracks_written,
+            error=res.error,
+        )
+    except ConsentRequiredError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail={"error": str(exc), "code": "CONSENT_REQUIRED"}) from exc
+    except MountNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"}) from exc
+    except WriteGuardError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"}) from exc
+
+
+class ConflictResolveAllRequest(BaseModel):
+    resolution: str  # "local" | "device"
+    consent_ack: bool = False
+
+
+@router.post("/conflicts/resolve-all", response_model=ApplyResponse)
+def resolve_all_conflicts(req: ConflictResolveAllRequest) -> ApplyResponse:
+    """Aplica la MISMA política a todos los conflictos pendientes, en una
+    sola escritura por lote si resolution='local' (no una por pista)."""
+    if req.resolution not in ("local", "device"):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": "resolution debe ser 'local' o 'device'.", "code": "INVALID_REQUEST"})
+    try:
+        mount = resolve_mount()
+        dev = read_device_info(mount)
+        sync_db, _guid, conflicts = _scan_conflicts(mount, dev)
+        res = resolve_conflicts(mount, sync_db, conflicts, req.resolution,
+                                device_info=dev, consent_ack=req.consent_ack)
+        return ApplyResponse(
+            success=res.success,
+            backup_path=str(res.backup_path) if res.backup_path else None,
+            restored_from_backup=res.restored_from_backup,
+            first_write_committed=res.first_write_committed,
+            tracks_written=res.tracks_written,
+            error=res.error,
+        )
+    except ConsentRequiredError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail={"error": str(exc), "code": "CONSENT_REQUIRED"}) from exc
     except MountNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"}) from exc
