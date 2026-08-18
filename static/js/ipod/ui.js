@@ -1,4 +1,8 @@
-// static/js/ipod.js — Lógica de interfaz y control del iPod en Cicada
+// static/js/ipod/ui.js — Eventos, orquestación y estado de la sección iPod:
+// ipodState, cambio de categoría/vista, carrito de sincronización, menú
+// contextual, drag-drop de playlists, modales, filtros y las acciones de
+// escanear/reparar/expulsar/respaldar. Consume static/js/ipod/api.js (red) y
+// static/js/ipod/render.js (plantillas); ambos deben cargar antes que este.
 
 let ipodState = {
     connected: false,
