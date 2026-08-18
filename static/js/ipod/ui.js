@@ -90,6 +90,11 @@ async function scanIpod() {
 
             await loadIpodLibrary();
             switchIpodCategory(ipodState.currentCategory || "songs");
+
+            // Actualiza la línea base de reproducciones (rating/play_count/etc.)
+            // en segundo plano: solo lee el dispositivo y escribe SQLite local,
+            // nunca el iPod — si falla, no debe romper el escaneo visible.
+            ipodSyncPlayback().catch(e => console.error("Error sincronizando playback state:", e));
         } else if (data.state === "no_ipod_control") {
             ipodState.connected = false;
             if (container) container.classList.add("hidden");

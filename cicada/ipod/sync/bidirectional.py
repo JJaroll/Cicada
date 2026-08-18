@@ -16,7 +16,7 @@ from typing import Dict, List, Optional
 from cicada.ipod.db.parser import load_ipod_library
 from cicada.ipod.db.shared.device_time import read_device_time_context
 from cicada.ipod.db.sqlite._helpers import coredata_to_unix, u64
-from cicada.ipod.sync.state import PlaybackStateRecord, SyncStateDB
+from cicada.ipod.sync.state import DeviceRecord, PlaybackStateRecord, SyncStateDB
 
 logger = logging.getLogger(__name__)
 
@@ -105,16 +105,16 @@ def _read_stats_from_dynamic_itdb(db_path: Path) -> Dict[int, RawPlaybackStat]:
     try:
         cur = conn.execute(
             """
-            SELECT pid, play_count_user, play_count_recent, rating,
+            SELECT item_pid, play_count_user, play_count_recent, user_rating,
                    date_played, skip_count_user, skip_count_recent, date_skipped
             FROM item_stats;
             """
         )
         for row in cur:
-            dbid = u64(row["pid"])
+            dbid = u64(row["item_pid"])
             total_plays = int(row["play_count_user"] or 0) + int(row["play_count_recent"] or 0)
             total_skips = int(row["skip_count_user"] or 0) + int(row["skip_count_recent"] or 0)
-            rating = int(row["rating"] or 0)
+            rating = int(row["user_rating"] or 0)
 
             # Conversión de época Cocoa (2001) a Unix (1970)
             raw_played = row["date_played"] or 0
@@ -287,3 +287,26 @@ def commit_playback_deltas(
 
     with sync_db.transaction() as conn:
         sync_db.upsert_playback_states(new_records, conn=conn)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Orquestación — punto de entrada único para API/CLI
+# ═══════════════════════════════════════════════════════════════════════════
+
+def sync_playback_stats(mount, device_info, sync_db: Optional[SyncStateDB] = None) -> PlaybackDeltaReport:
+    """Escanea + confirma en un solo paso: registra el dispositivo (si hace
+    falta, por la FK de ``playback_state``), calcula los deltas y los
+    persiste como nueva línea base. Punto de entrada único para que API y CLI
+    no dupliquen la secuencia ``upsert_device -> compute -> commit``.
+    """
+    db = sync_db or SyncStateDB()
+    db.upsert_device(DeviceRecord(
+        guid=device_info.firewire_guid,
+        family_id=device_info.family_id,
+        model_num=device_info.model_number,
+        serial=device_info.serial,
+        name=f"{device_info.family or ''} {device_info.generation or ''}".strip() or None,
+    ))
+    report = compute_playback_deltas(mount, db, device_info.firewire_guid)
+    commit_playback_deltas(report, db)
+    return report

@@ -11,6 +11,7 @@ Uso::
     python -m cicada ipod restore <archivo.tar.zst>
     python -m cicada ipod list-backups
     python -m cicada ipod eject [--force]
+    python -m cicada ipod sync-playback [--dry-run]
 
 Todas las operaciones sobre el disco pasan por :mod:`cicada.ipod.device.write_guard`,
 :mod:`cicada.ipod.db.coordinator.plan` y :mod:`cicada.ipod.db.coordinator.apply`.
@@ -119,6 +120,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     p_eject = sub.add_parser("eject", help="Expulsa el iPod de forma segura")
     p_eject.add_argument("--force", action="store_true", help="Fuerza la expulsión aunque un proceso la rechace")
+
+    p_syncpb = sub.add_parser(
+        "sync-playback",
+        help="Escanea contadores/rating del iPod y actualiza la línea base local (~/.cicada/ipod.db)",
+    )
+    p_syncpb.add_argument("--dry-run", action="store_true", help="Solo muestra el informe, no persiste la línea base")
 
     return parser
 
@@ -296,6 +303,33 @@ def _cmd_list(_args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_sync_playback(args: argparse.Namespace) -> int:
+    from cicada.ipod.sync.bidirectional import compute_playback_deltas, sync_playback_stats
+    from cicada.ipod.sync.state import SyncStateDB
+
+    mount = resolve_mount()
+    dev = read_device_info(mount)
+    if not dev.firewire_guid:
+        print("No se pudo identificar el GUID del iPod.", file=sys.stderr)
+        return 1
+
+    if args.dry_run:
+        # Puro SELECT (get_all_playback_states/get_track_map): no requiere
+        # el device pre-registrado, así que un dry-run no escribe nada.
+        report = compute_playback_deltas(mount, SyncStateDB(), dev.firewire_guid)
+    else:
+        report = sync_playback_stats(mount, dev)
+
+    print(f"Pistas escaneadas : {report.total_tracks_scanned}")
+    print(f"Pistas con cambios: {len(report.tracks_with_deltas)}")
+    print(f"Reproducciones +  : {report.total_delta_plays}")
+    print(f"Saltos +          : {report.total_delta_skips}")
+    print(f"Ratings cambiados : {report.ratings_updated_count}")
+    if args.dry_run:
+        print("(dry-run: línea base NO actualizada)")
+    return 0
+
+
 _HANDLERS = {
     "status": _cmd_status,
     "identify": _cmd_status,
@@ -309,6 +343,7 @@ _HANDLERS = {
     "list-backups": _cmd_list,
     "clean-foreign": _cmd_clean_foreign,
     "eject": _cmd_eject,
+    "sync-playback": _cmd_sync_playback,
 }
 
 

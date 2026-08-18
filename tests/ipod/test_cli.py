@@ -178,6 +178,29 @@ def test_cli_eject_bloqueador_sin_nombre_amigable_no_repite(
     assert "PID 333  Música (AMPDevicesAgent)" in out
 
 
+def test_cli_sync_playback(mock_cli_ipod: Path, capsys: pytest.CaptureFixture):
+    code = main(["sync-playback"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Pistas escaneadas :" in out
+    assert "1" in out   # mock_cli_ipod tiene 1 pista
+
+    from cicada.ipod.sync.state import SyncStateDB, default_sync_db_path
+    db = SyncStateDB(default_sync_db_path())
+    assert db.get_device(GUID_STR) is not None   # se auto-registró
+
+
+def test_cli_sync_playback_dry_run_no_persiste(mock_cli_ipod: Path, capsys: pytest.CaptureFixture):
+    code = main(["sync-playback", "--dry-run"])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "dry-run" in out
+
+    from cicada.ipod.sync.state import SyncStateDB, default_sync_db_path
+    db = SyncStateDB(default_sync_db_path())
+    assert db.get_playback_state(GUID_STR, 100) is None   # no persistió línea base
+
+
 def test_cli_backup_and_restore(mock_cli_ipod: Path, tmp_path: Path, capsys: pytest.CaptureFixture):
     # backup
     assert main(["backup"]) == 0

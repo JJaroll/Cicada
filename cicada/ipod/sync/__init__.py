@@ -8,6 +8,7 @@ from .bidirectional import (
     commit_playback_deltas,
     compute_playback_deltas,
     read_ipod_playback_stats,
+    sync_playback_stats,
 )
 from .playlists import (
     LocalPlaylist,
@@ -45,4 +46,5 @@ __all__ = [
     "prepare_standard_playlists",
     "read_ipod_playback_stats",
     "record_playlists_in_db",
+    "sync_playback_stats",
 ]

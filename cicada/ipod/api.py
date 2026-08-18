@@ -62,6 +62,7 @@ from cicada.ipod.device.backup import (
 from cicada.ipod.device.device_info import DeviceInfo, discover_ipods, read_device_info
 from cicada.ipod.device.eject import eject_ipod
 from cicada.ipod.device.write_guard import MountNotFoundError, WriteGuardError, resolve_mount
+from cicada.ipod.sync.bidirectional import sync_playback_stats
 
 logger = logging.getLogger(__name__)
 
@@ -1087,6 +1088,55 @@ def remove_track(req: TrackRemoveRequest) -> ApplyResponse:
     except UnsafeDeviceError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail={"error": str(exc), "code": "UNSAFE_DEVICE"}) from exc
+    except MountNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"}) from exc
+    except WriteGuardError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"}) from exc
+
+
+class PlaybackSyncResponse(BaseModel):
+    guid: str
+    total_tracks_scanned: int
+    tracks_changed: int
+    total_delta_plays: int
+    total_delta_skips: int
+    ratings_updated_count: int
+
+
+@router.post("/sync/playback", response_model=PlaybackSyncResponse)
+def sync_playback(dry_run: bool = False) -> PlaybackSyncResponse:
+    """Escanea los contadores de reproducción/rating del iPod y actualiza la
+    línea base local (~/.cicada/ipod.db). Solo lee el dispositivo y escribe en
+    SQLite local — nunca escribe en el iPod, no requiere consentimiento.
+
+    ``dry_run=true`` calcula el informe sin persistir la nueva línea base
+    (útil para previsualizar antes de confirmar)."""
+    try:
+        mount = resolve_mount()
+        dev = read_device_info(mount)
+        if not dev.firewire_guid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail={"error": "No se pudo identificar el GUID del iPod.", "code": "NO_GUID"},
+            )
+        if dry_run:
+            # Puro SELECT: no requiere el device pre-registrado, así que un
+            # dry-run no escribe nada en ~/.cicada/ipod.db.
+            from cicada.ipod.sync.state import SyncStateDB
+            from cicada.ipod.sync.bidirectional import compute_playback_deltas
+            report = compute_playback_deltas(mount, SyncStateDB(), dev.firewire_guid)
+        else:
+            report = sync_playback_stats(mount, dev)
+        return PlaybackSyncResponse(
+            guid=report.guid,
+            total_tracks_scanned=report.total_tracks_scanned,
+            tracks_changed=len(report.tracks_with_deltas),
+            total_delta_plays=report.total_delta_plays,
+            total_delta_skips=report.total_delta_skips,
+            ratings_updated_count=report.ratings_updated_count,
+        )
     except MountNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"}) from exc

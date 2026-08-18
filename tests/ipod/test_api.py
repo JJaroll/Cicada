@@ -241,6 +241,71 @@ async def test_api_track_remove(async_client: httpx.AsyncClient, mock_ipod_with_
     assert pl["tracks"] == []   # ya no referencia la pista borrada
 
 
+@pytest.fixture
+def mock_ipod_with_rating(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    mount = tmp_path / "ipod_mount"
+    device_dir = mount / "iPod_Control" / "Device"
+    device_dir.mkdir(parents=True, exist_ok=True)
+    (device_dir / "SysInfoExtended").write_bytes(plistlib.dumps({
+        "FireWireGUID": GUID_STR, "FamilyID": 18,
+        "SerialNumber": "C17X1234F19R", "ModelNumStr": "MD481",
+    }))
+    itunes_dir = mount / "iPod_Control" / "iTunes"
+    itlp_dir = itunes_dir / "iTunes Library.itlp"
+    itlp_dir.mkdir(parents=True, exist_ok=True)
+
+    caps = capabilities_for_family_gen("iPod Nano", "7th Gen")
+    dev = DeviceInfo(
+        mount=mount, firewire_guid=GUID_STR, family="iPod Nano",
+        generation="7th Gen", family_id=18, checksum=ChecksumType.HASHAB,
+        guid_provenance="disk", capabilities=caps,
+    )
+    init_tracks = [
+        TrackInfo(title="Rated Track", location=":iPod_Control:Music:F00:R.mp3",
+                 db_track_id=777, rating=80, play_count=5),
+    ]
+    init_plan = create_plan(mount, init_tracks, device_info=dev)
+    (itunes_dir / "iTunesCDB").write_bytes((init_plan.staging_dir / "iTunesCDB").read_bytes())
+    for fn in ("Library.itdb", "Locations.itdb", "Locations.itdb.cbk", "Dynamic.itdb", "Extras.itdb", "Genius.itdb"):
+        (itlp_dir / fn).write_bytes((init_plan.staging_dir / "iTunes Library.itlp" / fn).read_bytes())
+
+    monkeypatch.setattr("cicada.ipod.device.write_guard._candidate_mounts", lambda: [mount])
+    monkeypatch.setenv("CICADA_HOME", str(tmp_path / "cicada_home"))
+    return mount
+
+
+@pytest.mark.asyncio
+async def test_api_sync_playback(async_client: httpx.AsyncClient, mock_ipod_with_rating: Path):
+    resp = await async_client.post("/api/ipod/sync/playback")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["guid"] == GUID_STR
+    assert data["total_tracks_scanned"] == 1
+    assert data["tracks_changed"] == 1
+    assert data["ratings_updated_count"] == 1
+
+    from cicada.ipod.sync.state import SyncStateDB, default_sync_db_path
+    db = SyncStateDB(default_sync_db_path())
+    state = db.get_playback_state(GUID_STR, 777)
+    assert state is not None
+    assert state.known_rating == 80
+
+    # Segunda llamada: ya no hay cambios pendientes (línea base al día).
+    resp2 = await async_client.post("/api/ipod/sync/playback")
+    assert resp2.json()["tracks_changed"] == 0
+
+
+@pytest.mark.asyncio
+async def test_api_sync_playback_dry_run_no_persiste(async_client: httpx.AsyncClient, mock_ipod_with_rating: Path):
+    resp = await async_client.post("/api/ipod/sync/playback", params={"dry_run": True})
+    assert resp.status_code == 200
+    assert resp.json()["ratings_updated_count"] == 1
+
+    from cicada.ipod.sync.state import SyncStateDB, default_sync_db_path
+    db = SyncStateDB(default_sync_db_path())
+    assert db.get_playback_state(GUID_STR, 777) is None   # no persistió
+
+
 @pytest.mark.asyncio
 async def test_api_apply_stale_plan_409(async_client: httpx.AsyncClient, mock_ipod: Path):
     tracks = [

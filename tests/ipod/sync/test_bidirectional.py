@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -14,6 +15,7 @@ from cicada.ipod.sync.bidirectional import (
     commit_playback_deltas,
     compute_playback_deltas,
     read_ipod_playback_stats,
+    sync_playback_stats,
 )
 from cicada.ipod.sync.state import (
     DeviceRecord,
@@ -36,10 +38,10 @@ def mock_ipod_dynamic(tmp_path: Path) -> Path:
     conn.executescript(
         """
         CREATE TABLE item_stats (
-            pid INTEGER PRIMARY KEY,
+            item_pid INTEGER PRIMARY KEY,
             play_count_user INTEGER,
             play_count_recent INTEGER,
-            rating INTEGER,
+            user_rating INTEGER,
             date_played INTEGER,
             skip_count_user INTEGER,
             skip_count_recent INTEGER,
@@ -52,7 +54,7 @@ def mock_ipod_dynamic(tmp_path: Path) -> Path:
     # Track 3: pid=103, plays=0, rating=100 (5 estrellas), skips=1+2=3, skipped=500s Cocoa
     conn.execute(
         """
-        INSERT INTO item_stats (pid, play_count_user, play_count_recent, rating, date_played, skip_count_user, skip_count_recent, date_skipped)
+        INSERT INTO item_stats (item_pid, play_count_user, play_count_recent, user_rating, date_played, skip_count_user, skip_count_recent, date_skipped)
         VALUES
             (101, 5, 3, 80, 1000, 0, 0, 0),
             (102, 2, 0, 0, 0, 0, 0, 0),
@@ -240,3 +242,105 @@ def test_commit_playback_deltas_idempotent(mock_ipod_dynamic: Path, sync_db: Syn
     assert len(report2.tracks_with_deltas) == 0
     assert report2.total_delta_plays == 0
     assert report2.total_delta_skips == 0
+
+
+# --------------------------------------------------------------------------- #
+# sync_playback_stats — punto de entrada único (API/CLI)
+# --------------------------------------------------------------------------- #
+def _fake_device_info(guid=GUID):
+    return SimpleNamespace(
+        firewire_guid=guid, family_id=18, model_number="MD481",
+        serial="C17X1234F19R", family="iPod Nano", generation="7th Gen",
+    )
+
+
+def test_sync_playback_stats_registra_device_automaticamente(mock_ipod_dynamic: Path, tmp_path: Path):
+    # SyncStateDB SIN el device pre-registrado (a diferencia del fixture `sync_db`):
+    # antes de este wiring, nada en la app llamaba upsert_device -> la FK de
+    # playback_state habría rechazado el commit.
+    db = SyncStateDB(tmp_path / "ipod_sin_device.db")
+    assert db.get_device(GUID) is None
+
+    report = sync_playback_stats(mock_ipod_dynamic, _fake_device_info(), sync_db=db)
+
+    assert report.has_changes is True
+    assert db.get_device(GUID) is not None
+    assert db.get_device(GUID).model_num == "MD481"
+    # La línea base quedó persistida (no solo calculada en memoria).
+    assert db.get_playback_state(GUID, 103) is not None
+
+
+def test_sync_playback_stats_idempotente(mock_ipod_dynamic: Path, tmp_path: Path):
+    db = SyncStateDB(tmp_path / "ipod.db")
+    report1 = sync_playback_stats(mock_ipod_dynamic, _fake_device_info(), sync_db=db)
+    assert report1.has_changes is True
+
+    report2 = sync_playback_stats(mock_ipod_dynamic, _fake_device_info(), sync_db=db)
+    assert report2.has_changes is False
+
+
+def test_sync_playback_stats_default_sync_db(mock_ipod_dynamic: Path, tmp_path: Path, monkeypatch):
+    # Sin pasar sync_db explícito, debe usar default_sync_db_path() (CICADA_HOME).
+    monkeypatch.setenv("CICADA_HOME", str(tmp_path / "cicada_home"))
+    report = sync_playback_stats(mock_ipod_dynamic, _fake_device_info())
+    assert report.has_changes is True
+    assert (tmp_path / "cicada_home" / "ipod.db").is_file()
+
+
+# --------------------------------------------------------------------------- #
+# Regresión: leer un Dynamic.itdb escrito por el ESCRITOR REAL de Cicada
+# (dynamic_writer.py), no por un schema de test hecho a mano. Esto habría
+# detectado el desfasaje item_pid/user_rating vs. pid/rating que tenía
+# _read_stats_from_dynamic_itdb — cualquier Nano 6G/7G escrito por el propio
+# Cicada rompía la lectura de deltas con "no such column: pid".
+# --------------------------------------------------------------------------- #
+@pytest.fixture
+def real_nano7g_device(tmp_path: Path):
+    wasmtime = pytest.importorskip("wasmtime", reason="wasmtime no instalado")
+    import plistlib
+
+    from cicada.ipod.db.coordinator.plan import create_plan
+    from cicada.ipod.db.models import TrackInfo
+    from cicada.ipod.device.capabilities import capabilities_for_family_gen
+    from cicada.ipod.device.checksum import ChecksumType
+    from cicada.ipod.device.device_info import DeviceInfo
+
+    mount = tmp_path / "ipod_mount"
+    device_dir = mount / "iPod_Control" / "Device"
+    device_dir.mkdir(parents=True)
+    (device_dir / "SysInfoExtended").write_bytes(plistlib.dumps({
+        "FireWireGUID": GUID, "FamilyID": 18,
+        "SerialNumber": "C17X1234F19R", "ModelNumStr": "MD481",
+    }))
+    itunes_dir = mount / "iPod_Control" / "iTunes"
+    itlp = itunes_dir / "iTunes Library.itlp"
+    itlp.mkdir(parents=True)
+
+    caps = capabilities_for_family_gen("iPod Nano", "7th Gen")
+    dev = DeviceInfo(mount=mount, firewire_guid=GUID, family="iPod Nano",
+                     generation="7th Gen", family_id=18, checksum=ChecksumType.HASHAB,
+                     guid_provenance="disk", capabilities=caps)
+    tracks = [TrackInfo(title="Track Real", location=":iPod_Control:Music:F00:R.mp3",
+                        db_track_id=555, rating=80, play_count=5)]
+    plan = create_plan(mount, tracks, device_info=dev)
+
+    (itunes_dir / "iTunesCDB").write_bytes((plan.staging_dir / "iTunesCDB").read_bytes())
+    for fn in ("Library.itdb", "Locations.itdb", "Locations.itdb.cbk",
+               "Dynamic.itdb", "Extras.itdb", "Genius.itdb"):
+        (itlp / fn).write_bytes((plan.staging_dir / "iTunes Library.itlp" / fn).read_bytes())
+    return mount
+
+
+def test_read_stats_contra_escritor_real_nano7g(real_nano7g_device: Path):
+    stats = read_ipod_playback_stats(real_nano7g_device)
+    assert 555 in stats
+    assert stats[555].rating == 80
+    assert stats[555].play_count == 5
+
+
+def test_sync_playback_stats_contra_escritor_real_nano7g(real_nano7g_device: Path, tmp_path: Path):
+    db = SyncStateDB(tmp_path / "ipod.db")
+    report = sync_playback_stats(real_nano7g_device, _fake_device_info(), sync_db=db)
+    assert report.has_changes is True
+    assert report.ratings_updated_count == 1
+    assert db.get_playback_state(GUID, 555).known_rating == 80

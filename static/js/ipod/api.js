@@ -54,3 +54,4 @@ async function ipodEject(payload) { return _ipodPost("/api/ipod/eject", payload)
 async function ipodPlanCreate(payload) { return _ipodPost("/api/ipod/plan", payload); }
 async function ipodApplyPlan(payload) { return _ipodPost("/api/ipod/apply", payload); }
 async function ipodBackupNow(payload) { return _ipodPost("/api/ipod/backup", payload); }
+async function ipodSyncPlayback() { return _ipodPost("/api/ipod/sync/playback", {}); }
