@@ -330,8 +330,9 @@ restauras, y el iPod vuelve a su estado anterior. Verificado en el dispositivo r
 - [x] `sysinfo.py` con cascada: plist XML → plist binario → SCSI/pyusb (y IOKit en macOS) → `SysInfo` plano.
 - [x] Parseo de `iTunesCDB` y de `Library.itdb`.
 - [x] Verificación del hash contra el `iTunesCDB` existente.
-- [ ] Endpoints `GET /ipod/device`, `/ipod/tracks`, `/ipod/playlists`.
-- [ ] UI: biblioteca del iPod en la sección existente.
+- [x] Endpoints de lectura: `GET /api/ipod/{status,scan,tracks,playlists,storage}` (`api.py`).
+- [x] UI: sección iPod con info del dispositivo (imagen por modelo/color, capacidad),
+      desglose de almacenamiento y biblioteca (canciones + playlists).
 
 **Aceptación**: Cicada lista tus canciones y playlists reales, y `verify_hashab()`
 devuelve `True` para el `iTunesCDB` original del dispositivo.
@@ -344,9 +345,13 @@ devuelve `True` para el `iTunesCDB` original del dispositivo.
 - [x] Escritura coordinada `iTunesCDB` (`build_itunescdb`) + `.itdb` + `.cbk` (`build_sqlite_databases`).
 - [x] `plan.py` y `apply.py` con backup automático previo, gate de advertencia Music.app y rollback ante error.
 - [x] UI / API: endpoints FastAPI (`api.py`) y comandos CLI (`cli.py`) con dry-run obligatorio antes de aplicar.
+- [x] UI: botón "Escribir en el iPod" cableado al flujo plan → dry-run → consentimiento Music.app → apply
+      (reescribe la base con las pistas actuales; no hay copia de audio — la base asume audios ya presentes).
+- [ ] **Aceptación en hardware pendiente**: el código de escritura aún NO se ha validado contra el Nano 7G real.
 
 **Aceptación**: añades una canción desde Cicada, expulsas, y se reproduce en el iPod con
-metadata correcta.
+metadata correcta. Verificar además el round-trip de fechas (reproducir una canción antes de
+escribir para capturar la zona horaria real del dispositivo).
 
 ### Fase 3 — Playlists y bidireccional
 
@@ -359,6 +364,11 @@ metadata correcta.
 ### Fase 4 — Artwork
 ### Fase 5 — Podcasts y audiolibros
 ### Fase 6 — Fotos y video
+
+> La UI ya expone las categorías de estas fases, pero los endpoints son **honestos**: la
+> lectura (`/photos`, `/videos`, `/podcasts`, `/audiobooks`) devuelve lista vacía, y las
+> operaciones de escritura/borrado (incluido `POST /playlists/{create,import}`) responden
+> `501 Not Implemented`. Contrato futuro documentado en `ui-ipod.md`.
 
 ---
 

@@ -2,6 +2,16 @@
 
 Todos los cambios notables de este proyecto se documentarán en este archivo.
 
+## [No publicado]
+### Agregado
+- **Soporte para iPod (Nano 7G):** nueva sección para detectar el dispositivo y leer su biblioteca (canciones y playlists), con información del modelo (imagen oficial por color, capacidad) y desglose de almacenamiento en tiempo real.
+- **iPod — escritura segura:** botón "Escribir en el iPod" que reescribe la base de datos en el formato de Cicada mediante un flujo transaccional: plan *dry-run* fuera del dispositivo, **backup automático** previo, y **rollback** ante cualquier error. La primera escritura pide confirmación explícita (advertencia irreversible de incompatibilidad con Music.app).
+- **iPod — respaldos y expulsión:** creación y restauración de backups `.tar.zst`, y expulsión segura del volumen.
+- **iPod — sincronización de reproducciones:** lectura y persistencia local de contadores de reproducción (base para sincronización bidireccional).
+
+### Nota
+- Algunas funciones del iPod aún no están disponibles y responden "no implementado" (sin efecto en el dispositivo): crear/importar playlists y la gestión de fotos, videos, podcasts y audiolibros. Están planificadas para próximas fases.
+
 ## [1.1.2] - 2026-08-07
 ### Agregado
 - **Playlists:** Nuevo botón de descarga individual (en tiempo real) para pistas no encontradas en la biblioteca local durante la replicación, inyectando metadatos de Spotify y organizando el archivo automáticamente.

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import shutil
+import time
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -43,6 +44,13 @@ from cicada.ipod.db.coordinator.plan import (
 )
 from cicada.ipod.db.parser import load_ipod_library
 from cicada.ipod.db.models import TrackInfo
+from cicada.ipod.db.coordinator.media import (
+    preserve_existing_playlists,
+    remove_track_from_ipod,
+    set_ipod_playlist,
+    sync_media_to_ipod,
+    update_ipod_playlist,
+)
 from cicada.ipod.device.backup import (
     BackupError,
     BackupInfo,
@@ -126,7 +134,8 @@ class TrackSchema(BaseModel):
     rating: int = 0
     last_played: int = 0
     location: str
-    db_track_id: Optional[int] = None
+    # str: dbid de 64 bits — como Number de JS pierde precisión casi siempre.
+    db_track_id: Optional[str] = None
 
 
 class TracksResponse(BaseModel):
@@ -222,7 +231,7 @@ def _track_schema_to_info(s: TrackSchema) -> TrackInfo:
         rating=s.rating,
         last_played=s.last_played,
         location=s.location,
-        db_track_id=s.db_track_id or 0,
+        db_track_id=int(s.db_track_id) if s.db_track_id else 0,
     )
 
 
@@ -248,7 +257,7 @@ def _track_dict_to_schema(d: dict) -> TrackSchema:
         rating=d.get("rating") or 0,
         last_played=d.get("last_played") or 0,
         location=d.get("Location") or d.get("location") or "",
-        db_track_id=d.get("db_track_id") or d.get("dbid"),
+        db_track_id=str(d.get("db_track_id") or d.get("dbid") or "") or None,
     )
 
 
@@ -256,7 +265,23 @@ def _track_dict_to_schema(d: dict) -> TrackSchema:
 # Endpoints
 # ═══════════════════════════════════════════════════════════════════════════
 
+_STORAGE_CACHE: Dict[str, tuple[float, StorageInfoSchema]] = {}
+_STORAGE_TTL_SECONDS = 60.0
+
+
 def _calculate_ipod_storage(mount_path: str | Path) -> StorageInfoSchema:
+    """Desglose de storage con caché de TTL corto: evita recorrer el FS del iPod
+    en cada /status o /scan (el desglose cambia poco entre escrituras)."""
+    key = str(mount_path)
+    cached = _STORAGE_CACHE.get(key)
+    if cached is not None and (time.monotonic() - cached[0]) < _STORAGE_TTL_SECONDS:
+        return cached[1]
+    result = _compute_ipod_storage(mount_path)
+    _STORAGE_CACHE[key] = (time.monotonic(), result)
+    return result
+
+
+def _compute_ipod_storage(mount_path: str | Path) -> StorageInfoSchema:
     mount = Path(mount_path)
     if not mount.exists():
         return StorageInfoSchema()
@@ -449,11 +474,16 @@ def create_ipod_plan(req: PlanRequest) -> PlanResponse:
         mount = resolve_mount()
         dev = read_device_info(mount)
         track_infos = [_track_schema_to_info(t) for t in req.tracks]
+        # Preserva las playlists existentes: sin esto, create_plan solo escribe la
+        # master y cualquier playlist de usuario desaparece en cada plan/apply.
+        regular, smart = preserve_existing_playlists(mount)
         plan = create_plan(
             mount,
             track_infos,
             device_info=dev,
             master_playlist_name=req.master_playlist_name,
+            playlists=regular or None,
+            smart_playlists=smart or None,
         )
     except UnsafeDeviceError as exc:
         raise HTTPException(
@@ -503,7 +533,9 @@ def apply_ipod_plan(req: ApplyRequest) -> ApplyResponse:
             plan = _ACTIVE_PLANS.pop(req.plan_id)
         elif req.tracks is not None:
             track_infos = [_track_schema_to_info(t) for t in req.tracks]
-            plan = create_plan(mount, track_infos, device_info=dev)
+            regular, smart = preserve_existing_playlists(mount)
+            plan = create_plan(mount, track_infos, device_info=dev,
+                               playlists=regular or None, smart_playlists=smart or None)
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
@@ -703,17 +735,44 @@ def scan_ipods() -> Dict[str, Any]:
 
 @router.get("/playlists")
 def ipod_playlists() -> Dict[str, Any]:
-    """Lista las playlists del iPod montado. Revalida el montaje. Solo lectura."""
+    """Lista las playlists del iPod con sus pistas reales (dbid + metadata),
+    resolviendo los items contra la lista de pistas. Solo lectura."""
     mount, _info = _revalidate_ipod_mount()
     cdb = mount / "iPod_Control" / "iTunes" / "iTunesCDB"
     data = load_ipod_library(str(cdb), mount=str(mount))
     if data is None:
         raise HTTPException(status_code=500, detail="No se pudo leer la biblioteca del iPod.")
-    playlists = [{
-        "title": p.get("Title"),
-        "is_master": bool(p.get("master_flag")),
-        "count": len(p.get("items", [])),
-    } for p in data.get("mhlp", [])]
+
+    # Los items de playlist referencian por track_id (índice), no por dbid.
+    tracks_by_id = {}
+    for tr in data.get("mhlt", []):
+        tid = tr.get("track_id")
+        if tid is not None:
+            tracks_by_id[tid] = tr
+
+    playlists = []
+    for p in data.get("mhlp", []):
+        items = []
+        for it in p.get("items", []):
+            tr = tracks_by_id.get(it.get("track_id"))
+            if tr is not None:
+                dbid = tr.get("db_track_id")
+                items.append({
+                    # str: los dbid de 64 bits pierden precisión casi siempre como
+                    # Number de JS (>2^53); se transportan como string.
+                    "db_track_id": str(dbid) if dbid is not None else None,
+                    "title": tr.get("Title"),
+                    "artist": tr.get("Artist"),
+                    "album": tr.get("Album"),
+                    "length_ms": tr.get("length"),
+                    "filetype": tr.get("Filetype"),
+                })
+        playlists.append({
+            "title": p.get("Title"),
+            "is_master": bool(p.get("master_flag")),
+            "count": len(p.get("items", [])),
+            "tracks": items,
+        })
     return {"playlists": playlists, "count": len(playlists)}
 
 
@@ -735,38 +794,50 @@ class ImportPlaylistRequest(BaseModel):
 
 @router.post("/playlists/create")
 def create_playlist(req: CreatePlaylistRequest) -> Dict[str, Any]:
-    """Crea una nueva playlist en el iPod."""
-    return {"success": True, "name": req.name, "message": f"Playlist '{req.name}' creada."}
+    """Crear una playlist en el iPod. Aún no implementado (irá por plan/apply)."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail={"error": "La creación de playlists en el iPod aún no está disponible.", "code": "NOT_IMPLEMENTED"},
+    )
 
 
 @router.post("/playlists/import")
 def import_playlist(req: ImportPlaylistRequest) -> Dict[str, Any]:
-    """Importa una playlist existente al iPod."""
-    return {"success": True, "name": req.source_name, "tracks_count": len(req.tracks), "message": f"Playlist '{req.source_name}' importada."}
+    """Importar una playlist al iPod. Aún no implementado (irá por plan/apply)."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail={"error": "La importación de playlists al iPod aún no está disponible.", "code": "NOT_IMPLEMENTED"},
+    )
 
 
 @router.get("/photos")
 def get_photos() -> Dict[str, Any]:
-    """Lista las fotos disponibles en el iPod."""
+    """Lista las fotos del iPod. Fase 6 (fotos/video) no implementada: lista vacía."""
     return {"photos": [], "count": 0}
 
 
 @router.delete("/photos/{photo_id}")
 def delete_photo(photo_id: str) -> Dict[str, Any]:
-    """Elimina una foto del iPod."""
-    return {"success": True, "id": photo_id}
+    """Eliminar una foto del iPod. Fase 6 no implementada."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail={"error": "La gestión de fotos del iPod aún no está disponible.", "code": "NOT_IMPLEMENTED"},
+    )
 
 
 @router.get("/videos")
 def get_videos() -> Dict[str, Any]:
-    """Lista los videos disponibles en el iPod."""
+    """Lista los videos del iPod. Fase 6 (fotos/video) no implementada: lista vacía."""
     return {"videos": [], "count": 0}
 
 
 @router.delete("/videos/{video_id}")
 def delete_video(video_id: str) -> Dict[str, Any]:
-    """Elimina un video del iPod."""
-    return {"success": True, "id": video_id}
+    """Eliminar un video del iPod. Fase 6 no implementada."""
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail={"error": "La gestión de videos del iPod aún no está disponible.", "code": "NOT_IMPLEMENTED"},
+    )
 
 
 @router.get("/podcasts")
@@ -781,3 +852,244 @@ def get_audiobooks() -> Dict[str, Any]:
     return {"audiobooks": [], "count": 0}
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# Copia real de audio al iPod (pipeline): copia MP3 locales + reescribe la base
+# ═══════════════════════════════════════════════════════════════════════════
+
+class MediaTrackInput(BaseModel):
+    source_path: str
+    title: str
+    artist: Optional[str] = None
+    album: Optional[str] = None
+    album_artist: Optional[str] = None
+    genre: Optional[str] = None
+    year: Optional[int] = None
+    track_number: Optional[int] = None
+    length_ms: Optional[int] = None
+    filetype: Optional[str] = None
+
+
+class MediaPlaylistInput(BaseModel):
+    name: str
+    source_paths: List[str] = []
+
+
+class MediaSyncRequest(BaseModel):
+    tracks: List[MediaTrackInput]
+    consent_ack: bool = False
+    keep_existing: bool = True
+    playlists: List[MediaPlaylistInput] = []
+
+
+@router.post("/media/sync", response_model=ApplyResponse)
+def sync_media(req: MediaSyncRequest) -> ApplyResponse:
+    """Copia los audios locales indicados al iPod (``iPod_Control/Music/``) y
+    reescribe la base (existentes + nuevos) de forma transaccional, con backup y
+    rollback. Es el 'enviar al iPod' real (a diferencia de plan/apply, que asume
+    los audios ya presentes)."""
+    if not req.tracks:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "No se indicaron pistas.", "code": "INVALID_REQUEST"},
+        )
+    try:
+        mount = resolve_mount()
+        dev = read_device_info(mount)
+
+        new_tracks: List[TrackInfo] = []
+        for t in req.tracks:
+            src = Path(t.source_path)
+            if not src.is_file():
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail={"error": f"Archivo no encontrado: {t.source_path}", "code": "SOURCE_NOT_FOUND"},
+                )
+            ti = TrackInfo(
+                title=t.title or src.stem,
+                location="",
+                artist=t.artist,
+                album=t.album,
+                album_artist=t.album_artist,
+                genre=t.genre,
+                year=t.year or 0,
+                track_number=t.track_number or 0,
+                length=t.length_ms or 0,
+                filetype=(t.filetype or src.suffix.lstrip(".")).lower(),
+            )
+            ti.source_path = str(src)
+            new_tracks.append(ti)
+
+        res = sync_media_to_ipod(
+            mount, new_tracks, device_info=dev,
+            consent_ack=req.consent_ack, keep_existing=req.keep_existing,
+            playlists=[{"name": p.name, "source_paths": p.source_paths} for p in req.playlists],
+        )
+        return ApplyResponse(
+            success=res.success,
+            backup_path=str(res.backup_path) if res.backup_path else None,
+            restored_from_backup=res.restored_from_backup,
+            first_write_committed=res.first_write_committed,
+            tracks_written=res.tracks_written,
+            error=res.error,
+        )
+    except ConsentRequiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": str(exc), "code": "CONSENT_REQUIRED"},
+        ) from exc
+    except UnsafeDeviceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": str(exc), "code": "UNSAFE_DEVICE"},
+        ) from exc
+    except MountNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"},
+        ) from exc
+    except WriteGuardError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"},
+        ) from exc
+
+
+class PlaylistReorderRequest(BaseModel):
+    playlist_name: str
+    # str: los dbid son enteros de 64 bits; como Number de JS/JSON pierden precisión
+    # casi siempre (>99.9% de los valores, al exceder 2^53). Python los parsea con
+    # int() sin pérdida.
+    track_dbids: List[str]
+    consent_ack: bool = False
+
+
+@router.post("/playlist/reorder", response_model=ApplyResponse)
+def reorder_playlist(req: PlaylistReorderRequest) -> ApplyResponse:
+    """Reescribe una playlist existente con un nuevo orden de pistas (dbids),
+    preservando el resto. Puro DB (sin copia de audio), transaccional."""
+    try:
+        mount = resolve_mount()
+        dev = read_device_info(mount)
+        res = update_ipod_playlist(
+            mount, req.playlist_name, req.track_dbids,
+            device_info=dev, consent_ack=req.consent_ack,
+        )
+        return ApplyResponse(
+            success=res.success,
+            backup_path=str(res.backup_path) if res.backup_path else None,
+            restored_from_backup=res.restored_from_backup,
+            first_write_committed=res.first_write_committed,
+            tracks_written=res.tracks_written,
+            error=res.error,
+        )
+    except ConsentRequiredError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail={"error": str(exc), "code": "CONSENT_REQUIRED"}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "INVALID_REQUEST"}) from exc
+    except UnsafeDeviceError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "UNSAFE_DEVICE"}) from exc
+    except MountNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"}) from exc
+    except WriteGuardError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"}) from exc
+
+
+class PlaylistSetItem(BaseModel):
+    # str: dbid de 64 bits — como Number de JS pierde precisión casi siempre.
+    db_track_id: Optional[str] = None   # pista ya en el iPod
+    source_path: Optional[str] = None   # o pista nueva de la biblioteca
+    title: Optional[str] = None
+    artist: Optional[str] = None
+    album: Optional[str] = None
+    filetype: Optional[str] = None
+
+
+class PlaylistSetRequest(BaseModel):
+    playlist_name: str
+    items: List[PlaylistSetItem]
+    consent_ack: bool = False
+
+
+@router.post("/playlist/set", response_model=ApplyResponse)
+def set_playlist(req: PlaylistSetRequest) -> ApplyResponse:
+    """Reescribe (o crea) una playlist con el contenido ordenado ``items`` (mezcla
+    de pistas ya en el iPod y nuevas de la biblioteca, que se copian). Preserva el
+    resto. Generaliza reordenar + agregar. Transaccional."""
+    try:
+        mount = resolve_mount()
+        dev = read_device_info(mount)
+        items = [i.dict(exclude_none=True) for i in req.items]
+        res = set_ipod_playlist(
+            mount, req.playlist_name, items,
+            device_info=dev, consent_ack=req.consent_ack,
+        )
+        return ApplyResponse(
+            success=res.success,
+            backup_path=str(res.backup_path) if res.backup_path else None,
+            restored_from_backup=res.restored_from_backup,
+            first_write_committed=res.first_write_committed,
+            tracks_written=res.tracks_written,
+            error=res.error,
+        )
+    except ConsentRequiredError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail={"error": str(exc), "code": "CONSENT_REQUIRED"}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "INVALID_REQUEST"}) from exc
+    except UnsafeDeviceError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "UNSAFE_DEVICE"}) from exc
+    except MountNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"}) from exc
+    except WriteGuardError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"}) from exc
+
+
+
+class TrackRemoveRequest(BaseModel):
+    # str: dbid de 64 bits — como Number de JS pierde precisión casi siempre.
+    db_track_id: str
+    consent_ack: bool = False
+
+
+@router.post("/track/remove", response_model=ApplyResponse)
+def remove_track(req: TrackRemoveRequest) -> ApplyResponse:
+    """Elimina una pista del iPod (base + audio), quitándola también de cualquier
+    playlist que la referenciaba. Preserva el resto. Transaccional."""
+    try:
+        mount = resolve_mount()
+        dev = read_device_info(mount)
+        res = remove_track_from_ipod(
+            mount, req.db_track_id, device_info=dev, consent_ack=req.consent_ack,
+        )
+        return ApplyResponse(
+            success=res.success,
+            backup_path=str(res.backup_path) if res.backup_path else None,
+            restored_from_backup=res.restored_from_backup,
+            first_write_committed=res.first_write_committed,
+            tracks_written=res.tracks_written,
+            error=res.error,
+        )
+    except ConsentRequiredError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail={"error": str(exc), "code": "CONSENT_REQUIRED"}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "INVALID_REQUEST"}) from exc
+    except UnsafeDeviceError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "UNSAFE_DEVICE"}) from exc
+    except MountNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"}) from exc
+    except WriteGuardError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"}) from exc

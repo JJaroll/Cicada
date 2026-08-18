@@ -29,6 +29,26 @@ Este documento define la arquitectura técnica, catálogo de endpoints REST, con
 
 ---
 
+## 1.1 Estado de implementación (a 2026-08-16)
+
+Este documento describe el **diseño objetivo**. El estado real del backend hoy:
+
+| Endpoint | Estado |
+|---|---|
+| `GET /status`, `GET /scan` | ✅ Real — incluyen `image_url` + `storage` |
+| `GET /storage` | ✅ Real — con caché de 60 s (no recorre el FS en cada llamada) |
+| `GET /tracks`, `GET /playlists` | ✅ Real — lectura de la base |
+| `POST /plan`, `POST /apply` | ✅ Real — coordinador transaccional (dry-run, backup, rollback) |
+| `POST /backup`, `POST /restore`, `POST /eject` | ✅ Real |
+| `GET/POST/DELETE /consent/{guid}` | ✅ Real |
+| `POST /playlists/create`, `POST /playlists/import` | 🔴 **501 Not Implemented** — se harán vía `plan`/`apply` |
+| `DELETE /photos/{id}`, `DELETE /videos/{id}` | 🔴 **501 Not Implemented** — Fase 6 |
+| `GET /photos`, `/videos`, `/podcasts`, `/audiobooks` | 🟡 Placeholder — devuelven lista vacía (Fases 5/6) |
+
+**Regla de honestidad:** ningún endpoint devuelve éxito falso. Lo no implementado responde **`501`** con `{"detail": {"code": "NOT_IMPLEMENTED"}}`; los placeholders de lectura devuelven `[]`. Los ejemplos de respuesta de más abajo para esos endpoints son el **contrato futuro**, no lo que responden hoy.
+
+---
+
 ## 2. Catálogo Detallado de Endpoints REST
 
 ### 2.1 Dispositivo, Estado y Almacenamiento

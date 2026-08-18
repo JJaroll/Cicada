@@ -167,7 +167,7 @@ async def get():
             }
           }
         </script>
-        <link rel="stylesheet" href="/static/css/app.css?v=2.0.0">
+        <link rel="stylesheet" href="/static/css/app.css?v=2.1.0">
     </head>
     <body class="bg-app text-main font-body-md text-body-md h-screen flex justify-center p-4">
         <div class="app-shell w-full h-full max-w-[1920px] mx-auto flex gap-4">
@@ -409,6 +409,20 @@ async def get():
                 <span data-i18n="ctx_delete_track">Eliminar de biblioteca</span>
             </div>
         </div>
+
+        <!-- Context Menu de canciones del iPod -->
+        <div id="ipod-context-menu">
+            <div class="context-menu-item has-submenu" onmouseenter="showIpodPlaylistSubmenu(event)">
+                <span class="material-symbols-outlined text-[18px]">playlist_add</span>
+                <span data-i18n="ctx_ipod_add_to_playlist">Agregar a Playlist</span>
+                <span class="material-symbols-outlined text-[16px] submenu-arrow">chevron_right</span>
+            </div>
+            <div class="context-menu-item danger" onclick="contextRemoveFromIpod()">
+                <span class="material-symbols-outlined text-[18px]">delete</span>
+                <span data-i18n="ctx_ipod_remove">Eliminar del iPod</span>
+            </div>
+        </div>
+        <div id="ipod-playlist-submenu"></div>
 
         <!-- Modal de Obtener Información -->
         <div id="track-info-modal" class="hidden fixed inset-0 z-[100] items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -704,6 +718,9 @@ async def get():
                             <button type="button" id="generateM3u8Btn" onclick="generatePlaylistM3u8()" class="px-4 py-2 bg-gray-600 text-white rounded-lg font-label-caps text-[12px] hover:brightness-110 transition-all inline-flex items-center gap-1.5">
                                 <span class="material-symbols-outlined text-[18px]">save</span> <span data-i18n="playlists_generate_btn">Generar Playlist</span>
                             </button>
+                            <button type="button" id="send-playlist-ipod-btn" onclick="sendPlaylistToIpod()" class="hidden px-4 py-2 bg-secondary text-white rounded-lg font-label-caps text-[12px] hover:brightness-110 transition-all items-center gap-1.5">
+                                <span class="material-symbols-outlined text-[18px]">add_to_queue</span> <span data-i18n="playlists_send_to_ipod">Enviar a iPod</span>
+                            </button>
                         </div>
                     </div>
                 </div>
@@ -746,6 +763,13 @@ async def get():
                                     <span class="material-symbols-outlined text-[16px]">grid_view</span>
                                 </button>
                             </div>
+
+                            <!-- Agregar a iPod (solo con iPod conectado) -->
+                            <button type="button" id="library-add-ipod-btn" onclick="onLibraryIpodButton()" class="hidden items-center gap-1 px-3 py-1 rounded-full bg-secondary/15 text-secondary font-label-caps text-[11px] hover:bg-secondary/25 transition-colors">
+                                <span class="material-symbols-outlined text-[15px]">add_to_queue</span>
+                                <span id="library-add-ipod-label" data-i18n="library_add_to_ipod">Agregar a iPod</span>
+                            </button>
+                            <button type="button" id="library-select-cancel-btn" onclick="exitLibrarySelectMode()" class="hidden items-center px-3 py-1 rounded-full bg-btn text-muted font-label-caps text-[11px] hover:bg-btn-hover transition-colors" data-i18n="common_cancel">Cancelar</button>
 
                             <span class="ml-auto font-data-sm text-[12px] text-muted/40" id="library-track-count"></span>
                         </div>
@@ -844,9 +868,9 @@ async def get():
                                             <span class="material-symbols-outlined text-[17px]">eject</span>
                                         </button>
                                     </div>
-                                    <button onclick="syncIpod()" id="btn-sync-ipod" class="bg-accent text-white px-3 py-1.5 rounded-lg font-label-caps text-[11px] hover:scale-102 transition-transform flex items-center justify-center gap-1 shadow-sm opacity-50 cursor-not-allowed" disabled>
-                                        <span class="material-symbols-outlined text-[15px]">sync</span>
-                                        <span data-i18n="ipod_btn_sync">Sync</span>
+                                    <button onclick="syncIpod()" id="btn-sync-ipod" data-i18n-title="ipod_btn_sync_title" title="Reescribe la base de datos del iPod (preservando sus playlists). No agrega música nueva." class="bg-accent text-white px-3 py-1.5 rounded-lg font-label-caps text-[11px] hover:scale-102 transition-transform flex items-center justify-center gap-1 shadow-sm opacity-50 cursor-not-allowed" disabled>
+                                        <span class="material-symbols-outlined text-[15px]">build</span>
+                                        <span data-i18n="ipod_btn_sync">Reparar</span>
                                     </button>
                                     <button onclick="backupIpod()" id="btn-backup-ipod" class="border border-secondary text-secondary px-3 py-1.5 rounded-lg font-label-caps text-[11px] hover:bg-secondary hover:text-white transition-colors flex items-center justify-center gap-1 opacity-50 cursor-not-allowed" disabled>
                                         <span class="material-symbols-outlined text-[15px]">save</span>
@@ -891,6 +915,13 @@ async def get():
                                 <span class="material-symbols-outlined text-[18px]">menu_book</span>
                                 <span class="flex-1 truncate" data-i18n="ipod_cat_audiobooks">Audiolibros</span>
                                 <span id="ipod-count-audiobooks" class="font-data-sm text-[11px] text-muted/60">0</span>
+                            </button>
+                            <!-- Separador + carrito de sincronización (pendientes de inyectar) -->
+                            <div class="border-t border-theme my-2"></div>
+                            <button type="button" class="ipod-cat-btn" data-cat="sync" onclick="switchIpodCategory('sync')">
+                                <span class="material-symbols-outlined text-[18px]">sync</span>
+                                <span class="flex-1 truncate" data-i18n="ipod_cat_sync">Sincronizar con Cicada</span>
+                                <span id="ipod-count-sync" class="font-data-sm text-[11px] text-secondary font-bold">0</span>
                             </button>
                         </div>
 
@@ -990,9 +1021,19 @@ async def get():
 
                                 <!-- Columna Derecha: Canciones de la Playlist Seleccionada -->
                                 <div class="flex-1 flex flex-col gap-2 overflow-hidden min-w-0">
-                                    <div class="flex items-center justify-between pb-1">
+                                    <div class="flex items-center justify-between pb-1 gap-2">
                                         <h4 id="ipod-playlist-title" class="font-label-caps text-[13px] text-main font-semibold truncate">Todas las Canciones</h4>
-                                        <span id="ipod-playlist-count" class="font-data-sm text-[12px] text-muted/60">0 canciones</span>
+                                        <div class="flex items-center gap-2 flex-shrink-0">
+                                            <button type="button" id="ipod-playlist-add-btn" onclick="openIpodPlaylistAddPicker()" class="hidden items-center gap-1 px-3 py-1 rounded-full bg-btn hover:bg-btn-hover text-main font-label-caps text-[11px] transition-all">
+                                                <span class="material-symbols-outlined text-[14px]">add</span>
+                                                <span data-i18n="ipod_playlist_add_songs">Agregar</span>
+                                            </button>
+                                            <button type="button" id="ipod-playlist-save-order-btn" onclick="saveIpodPlaylistOrder()" class="hidden items-center gap-1 px-3 py-1 rounded-full bg-secondary text-white font-label-caps text-[11px] hover:brightness-110 transition-all">
+                                                <span class="material-symbols-outlined text-[14px]">save</span>
+                                                <span data-i18n="ipod_playlist_save_order">Guardar cambios</span>
+                                            </button>
+                                            <span id="ipod-playlist-count" class="font-data-sm text-[12px] text-muted/60">0 canciones</span>
+                                        </div>
                                     </div>
                                     <div id="ipod-playlist-tracks-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
                                 </div>
@@ -1059,6 +1100,21 @@ async def get():
                                     <div id="ipod-audiobook-chapters-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
                                 </div>
                             </div>
+
+                            <!-- VISTA 7: SINCRONIZAR CON CICADA (elementos pendientes de inyectar) -->
+                            <div id="ipod-view-sync" class="hidden flex-1 flex flex-col gap-3 overflow-hidden">
+                                <div class="flex items-center justify-between pb-2 border-b border-theme">
+                                    <div class="flex flex-col min-w-0">
+                                        <h4 class="font-label-caps text-[13px] text-main font-semibold" data-i18n="ipod_sync_pending_title">Pendientes de sincronizar</h4>
+                                        <span class="font-data-sm text-[12px] text-muted/60" data-i18n="ipod_sync_pending_hint">Elementos seleccionados que aún no se han enviado al iPod.</span>
+                                    </div>
+                                    <button type="button" id="ipod-sync-now-btn" onclick="syncBasketToIpod()" class="flex-shrink-0 px-5 py-2 bg-secondary text-white rounded-full font-label-caps text-[12px] hover:brightness-110 transition-all flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                                        <span class="material-symbols-outlined text-[16px]">sync</span>
+                                        <span id="ipod-sync-now-label" data-i18n="ipod_sync_now">Sincronizar</span>
+                                    </button>
+                                </div>
+                                <div id="ipod-sync-basket-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1100,6 +1156,24 @@ async def get():
                         </div>
                         <div class="flex justify-end gap-3 mt-2">
                             <button type="button" onclick="closeImportPlaylistModal()" class="px-4 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors" data-i18n="common_cancel">Cancelar</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Modal Agregar canciones de la biblioteca a una playlist del iPod -->
+                <div id="ipod-playlist-add-modal" class="hidden fixed inset-0 z-[100] items-center justify-center bg-black/60 backdrop-blur-sm">
+                    <div class="w-full max-w-lg mx-4 p-6 flex flex-col gap-4 rounded-2xl border border-theme bg-card shadow-2xl max-h-[80vh]">
+                        <div class="flex items-center justify-between">
+                            <div class="flex items-center gap-2">
+                                <span class="material-symbols-outlined text-accent text-[22px]">library_add</span>
+                                <h3 class="font-label-caps text-[14px] tracking-widest text-main" data-i18n="ipod_playlist_add_songs">Agregar canciones</h3>
+                            </div>
+                            <button type="button" onclick="closeIpodPlaylistAddModal()" class="material-symbols-outlined text-muted/60 hover:text-main transition-colors">close</button>
+                        </div>
+                        <input type="text" id="ipod-playlist-add-search" oninput="renderIpodAddPickerList(this.value)" data-i18n-placeholder="ipod_playlist_add_search" placeholder="Buscar en la biblioteca..." class="cicada-input rounded-lg px-3 py-2.5 text-[14px]"/>
+                        <div id="ipod-playlist-add-list" class="flex flex-col gap-1 overflow-y-auto custom-scrollbar min-h-[10rem]"></div>
+                        <div class="flex justify-end gap-3 mt-1">
+                            <button type="button" onclick="closeIpodPlaylistAddModal()" class="px-4 py-2 rounded-lg bg-accent text-white font-label-caps text-[11px] hover:brightness-110 transition-all" data-i18n="common_done">Listo</button>
                         </div>
                     </div>
                 </div>
@@ -1190,14 +1264,15 @@ async def get():
 
         <audio id="library-audio" preload="none"></audio>
 
-        <script src="/static/js/i18n.js?v=2.0.0"></script>
-        <script src="/static/js/common.js?v=2.0.0"></script>
-        <script src="/static/js/metadata.js?v=2.0.0"></script>
-        <script src="/static/js/download.js?v=2.0.0"></script>
-        <script src="/static/js/playlist.js?v=2.0.0"></script>
-        <script src="/static/js/library.js?v=2.0.0"></script>
-        <script src="/static/js/player.js?v=2.0.0"></script>
-        <script src="/static/js/ipod.js?v=2.0.0"></script>
+        <script src="/static/js/i18n.js?v=2.1.0"></script>
+        <script src="/static/js/common.js?v=2.1.0"></script>
+        <script src="/static/js/metadata.js?v=2.1.0"></script>
+        <script src="/static/js/download.js?v=2.1.0"></script>
+        <script src="/static/js/playlist.js?v=2.1.0"></script>
+        <script src="/static/js/library.js?v=2.1.0"></script>
+        <script src="/static/js/player.js?v=2.1.0"></script>
+        <script src="/static/js/ipod/api.js?v=2.1.0"></script>
+        <script src="/static/js/ipod.js?v=2.1.0"></script>
         <script>
             // Inicialización de la UI
             applyLanguage(currentLang);

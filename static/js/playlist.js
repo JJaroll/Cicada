@@ -229,6 +229,42 @@ function updateReplicateSummary() {
     let includedCount = replicateMatches.filter(function(m) { return m.included && m.path; }).length;
     document.getElementById("replicate-match-summary").textContent = t("playlists_summary", {matched: matchedCount, total: replicateMatches.length, included: includedCount});
     document.getElementById("generateM3u8Btn").disabled = includedCount === 0;
+    updatePlaylistIpodButton();
+}
+
+// --- Enviar a iPod (playlist -> carrito de sincronización) ---
+function updatePlaylistIpodButton() {
+    const btn = document.getElementById("send-playlist-ipod-btn");
+    if (!btn) return;
+    const connected = (typeof ipodState !== "undefined") && ipodState.connected;
+    const hasIncluded = replicateMatches.some(function(m) { return m.path && m.included; });
+    const show = connected && hasIncluded;
+    btn.classList.toggle("hidden", !show);
+    btn.classList.toggle("inline-flex", show);
+}
+
+function sendPlaylistToIpod() {
+    const items = replicateMatches
+        .filter(function(m) { return m.path && m.included; })
+        .map(function(m) {
+            return {
+                source_path: m.path,
+                title: m.title || "",
+                artist: m.artist || null,
+                album: m.album || null,
+                filetype: (String(m.path).split(".").pop() || "").toLowerCase(),
+            };
+        });
+    if (!items.length) { alert(t("playlists_ipod_none")); return; }
+    const name = (typeof currentPlaylistName !== "undefined" && currentPlaylistName)
+        ? currentPlaylistName : t("default_playlist_name");
+    let added = 0;
+    if (typeof addPlaylistToSyncBasket === "function") {
+        added = addPlaylistToSyncBasket(name, items);
+    } else if (typeof addToSyncBasket === "function") {
+        added = addToSyncBasket(items);
+    }
+    alert(t("playlists_sent_to_ipod").replace("{n}", added).replace("{name}", name));
 }
 
 async function manualMatchTrack(index) {

@@ -107,7 +107,9 @@ function showView(name) {
     let playerPanel = document.getElementById("player-panel");
     if (name === "playlists") {
         processModule.style.display = "none";
-    } else if (name === "library") {
+    } else if (name === "library" || name === "ipod") {
+        // En iPod, el módulo derecho es el reproductor (compartido con Biblioteca):
+        // al reproducir una canción del iPod, este panel la refleja.
         processModule.style.display = "flex";
         progressPanel.classList.add("hidden");
         progressPanel.classList.remove("flex");

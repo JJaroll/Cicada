@@ -20,7 +20,9 @@ let ipodState = {
     },
     selectedPlaylistIndex: 0,
     selectedPodcastIndex: 0,
-    selectedAudiobookIndex: 0
+    selectedAudiobookIndex: 0,
+    syncBasket: [],           // pistas locales pendientes de enviar al iPod (por source_path)
+    syncBasketPlaylists: []   // playlists pendientes de crear: {name, source_paths}
 };
 
 function _setIpodButtons(enabled) {
@@ -62,8 +64,7 @@ async function scanIpod() {
     const mainBrowser = document.getElementById("ipod-main-browser");
 
     try {
-        const res = await fetch('/api/ipod/scan');
-        const data = await res.json();
+        const { data } = await ipodFetchScan();
 
         if (data.state === "ready" && data.ipods && data.ipods.length > 0) {
             const ipod = data.ipods[0];
@@ -121,6 +122,8 @@ async function scanIpod() {
             if (noDevice) noDevice.classList.remove("hidden");
             _setIpodButtons(false);
         }
+        if (typeof updateLibraryIpodButton === "function") updateLibraryIpodButton();
+        if (typeof updatePlaylistIpodButton === "function") updatePlaylistIpodButton();
     } catch (e) {
         console.error("Error escaneando iPod:", e);
         alert(t("ipod_scan_error"));
@@ -192,55 +195,20 @@ function renderIpodStorage(storage) {
 async function loadIpodLibrary() {
     try {
         const [tRes, pRes, phRes, vRes, podRes, abRes] = await Promise.allSettled([
-            fetch('/api/ipod/tracks'),
-            fetch('/api/ipod/playlists'),
-            fetch('/api/ipod/photos'),
-            fetch('/api/ipod/videos'),
-            fetch('/api/ipod/podcasts'),
-            fetch('/api/ipod/audiobooks')
+            ipodFetchTracks(),
+            ipodFetchPlaylists(),
+            ipodFetchPhotos(),
+            ipodFetchVideos(),
+            ipodFetchPodcasts(),
+            ipodFetchAudiobooks()
         ]);
 
-        if (tRes.status === "fulfilled" && tRes.value.ok) {
-            const data = await tRes.value.json();
-            ipodState.tracks = data.tracks || [];
-        } else {
-            ipodState.tracks = [];
-        }
-
-        if (pRes.status === "fulfilled" && pRes.value.ok) {
-            const data = await pRes.value.json();
-            ipodState.playlists = data.playlists || [];
-        } else {
-            ipodState.playlists = [];
-        }
-
-        if (phRes.status === "fulfilled" && phRes.value.ok) {
-            const data = await phRes.value.json();
-            ipodState.photos = data.photos || [];
-        } else {
-            ipodState.photos = [];
-        }
-
-        if (vRes.status === "fulfilled" && vRes.value.ok) {
-            const data = await vRes.value.json();
-            ipodState.videos = data.videos || [];
-        } else {
-            ipodState.videos = [];
-        }
-
-        if (podRes.status === "fulfilled" && podRes.value.ok) {
-            const data = await podRes.value.json();
-            ipodState.podcasts = data.podcasts || [];
-        } else {
-            ipodState.podcasts = [];
-        }
-
-        if (abRes.status === "fulfilled" && abRes.value.ok) {
-            const data = await abRes.value.json();
-            ipodState.audiobooks = data.audiobooks || [];
-        } else {
-            ipodState.audiobooks = [];
-        }
+        ipodState.tracks = (tRes.status === "fulfilled" && tRes.value.res.ok) ? (tRes.value.data.tracks || []) : [];
+        ipodState.playlists = (pRes.status === "fulfilled" && pRes.value.res.ok) ? (pRes.value.data.playlists || []) : [];
+        ipodState.photos = (phRes.status === "fulfilled" && phRes.value.res.ok) ? (phRes.value.data.photos || []) : [];
+        ipodState.videos = (vRes.status === "fulfilled" && vRes.value.res.ok) ? (vRes.value.data.videos || []) : [];
+        ipodState.podcasts = (podRes.status === "fulfilled" && podRes.value.res.ok) ? (podRes.value.data.podcasts || []) : [];
+        ipodState.audiobooks = (abRes.status === "fulfilled" && abRes.value.res.ok) ? (abRes.value.data.audiobooks || []) : [];
 
         // Actualizar contadores
         updateIpodCategoryCounts();
@@ -316,7 +284,8 @@ function switchIpodCategory(category) {
         "ipod-view-photos",
         "ipod-view-videos",
         "ipod-view-podcasts",
-        "ipod-view-audiobooks"
+        "ipod-view-audiobooks",
+        "ipod-view-sync"
     ];
     containers.forEach(id => {
         const el = document.getElementById(id);
@@ -360,6 +329,159 @@ function renderCurrentIpodCategory() {
         case "audiobooks":
             renderIpodAudiobooks();
             break;
+        case "sync":
+            renderIpodSyncBasket();
+            break;
+    }
+}
+
+// --- CARRITO DE SINCRONIZACIÓN (pendientes de enviar al iPod) ---
+// Cada item: {source_path, title, artist, album, filetype, length_ms}
+function addToSyncBasket(items) {
+    const have = new Set(ipodState.syncBasket.map(i => i.source_path));
+    let added = 0;
+    for (const it of (items || [])) {
+        if (it && it.source_path && !have.has(it.source_path)) {
+            ipodState.syncBasket.push(it);
+            have.add(it.source_path);
+            added++;
+        }
+    }
+    updateSyncBasketBadge();
+    if (ipodState.currentCategory === "sync") renderIpodSyncBasket();
+    return added;
+}
+
+function removeFromSyncBasket(sourcePath) {
+    ipodState.syncBasket = ipodState.syncBasket.filter(i => i.source_path !== sourcePath);
+    // Mantiene syncBasketPlaylists en sincronía: si una pista sale del carrito, también
+    // sale de cualquier playlist pendiente que la referenciaba (si no, la playlist podía
+    // terminar refiriendo solo paths que ya no se envían, y el backend la descartaba entera).
+    ipodState.syncBasketPlaylists = ipodState.syncBasketPlaylists
+        .map(p => ({ ...p, source_paths: p.source_paths.filter(sp => sp !== sourcePath) }))
+        .filter(p => p.source_paths.length > 0);
+    updateSyncBasketBadge();
+    renderIpodSyncBasket();
+}
+
+// Registra una playlist pendiente (nombre + tracks) y mete sus pistas al carrito.
+function addPlaylistToSyncBasket(name, items) {
+    addToSyncBasket(items);
+    const paths = (items || []).map(i => i && i.source_path).filter(Boolean);
+    if (!paths.length) return 0;
+    ipodState.syncBasketPlaylists = ipodState.syncBasketPlaylists.filter(p => p.name !== name);
+    ipodState.syncBasketPlaylists.push({ name: name, source_paths: paths });
+    updateSyncBasketBadge();
+    if (ipodState.currentCategory === "sync") renderIpodSyncBasket();
+    return paths.length;
+}
+
+function removeSyncBasketPlaylist(name) {
+    ipodState.syncBasketPlaylists = ipodState.syncBasketPlaylists.filter(p => p.name !== name);
+    updateSyncBasketBadge();
+    renderIpodSyncBasket();
+}
+
+function updateSyncBasketBadge() {
+    const badge = document.getElementById("ipod-count-sync");
+    if (badge) badge.textContent = ipodState.syncBasket.length;
+}
+
+function renderIpodSyncBasket() {
+    const list = document.getElementById("ipod-sync-basket-list");
+    const btn = document.getElementById("ipod-sync-now-btn");
+    const label = document.getElementById("ipod-sync-now-label");
+    const basket = ipodState.syncBasket;
+    const playlists = ipodState.syncBasketPlaylists;
+    updateSyncBasketBadge();
+    if (btn) btn.disabled = basket.length === 0 && playlists.length === 0;
+    if (label) label.textContent = basket.length
+        ? t("ipod_sync_now") + " (" + basket.length + ")"
+        : t("ipod_sync_now");
+    if (!list) return;
+    if (!basket.length && !playlists.length) {
+        list.innerHTML = '<p class="font-data-sm text-[13px] text-muted/60 text-center py-8" data-i18n="ipod_sync_empty">'
+            + t("ipod_sync_empty") + '</p>';
+        return;
+    }
+    let plHtml = "";
+    if (playlists.length) {
+        plHtml = '<div class="flex flex-col gap-1 pb-2 mb-1 border-b border-theme">' +
+            '<span class="font-label-caps text-[11px] text-muted/50 uppercase px-1">' + t("ipod_sync_playlists") + '</span>' +
+            playlists.map(p =>
+                '<div class="flex items-center gap-3 px-2 py-1.5 rounded-lg bg-btn">' +
+                '<span class="material-symbols-outlined text-[18px] text-secondary flex-shrink-0">playlist_play</span>' +
+                '<div class="flex-1 min-w-0">' +
+                '<div class="font-data-sm text-[13px] text-main truncate">' + _escapeHtmlIpod(p.name) + '</div>' +
+                '<div class="font-data-sm text-[12px] text-muted/60">' + p.source_paths.length + ' ' + t("ipod_tracks_count") + '</div></div>' +
+                '<button type="button" onclick="removeSyncBasketPlaylist(' + JSON.stringify(p.name).replace(/"/g, "&quot;") + ')" ' +
+                'class="flex-shrink-0 text-muted/50 hover:text-[#f43f5e] transition-colors" title="' + t("ipod_sync_remove") + '">' +
+                '<span class="material-symbols-outlined text-[18px]">close</span></button></div>'
+            ).join("") + '</div>';
+    }
+    list.innerHTML = plHtml + basket.map(it =>
+        '<div class="flex items-center gap-3 px-2 py-1.5 rounded-lg bg-btn">' +
+        '<span class="material-symbols-outlined text-[18px] text-secondary flex-shrink-0">music_note</span>' +
+        '<div class="flex-1 min-w-0">' +
+        '<div class="font-data-sm text-[13px] text-main truncate">' + _escapeHtmlIpod(it.title || "—") + '</div>' +
+        '<div class="font-data-sm text-[12px] text-muted/60 truncate">' +
+        _escapeHtmlIpod(it.artist || "") + (it.album ? " — " + _escapeHtmlIpod(it.album) : "") + '</div></div>' +
+        '<button type="button" onclick="removeFromSyncBasket(' + JSON.stringify(it.source_path).replace(/"/g, "&quot;") + ')" ' +
+        'class="flex-shrink-0 text-muted/50 hover:text-[#f43f5e] transition-colors" title="' + t("ipod_sync_remove") + '">' +
+        '<span class="material-symbols-outlined text-[18px]">close</span></button></div>'
+    ).join("");
+}
+
+// Envía el carrito al iPod vía el pipeline real (/media/sync), con gate de consentimiento.
+async function syncBasketToIpod() {
+    const basket = ipodState.syncBasket;
+    if (!basket.length) return;
+    const btn = document.getElementById("ipod-sync-now-btn");
+    try {
+        const { data: st } = await ipodFetchStatus();
+        const dev = (st.devices || [])[0];
+        if (!dev) { alert(t("ipod_write_no_device")); return; }
+        if (!dev.guid_is_write_safe) { alert(t("ipod_write_unsafe")); return; }
+
+        if (!confirm(t("ipod_sync_review").replace("{n}", basket.length))) return;
+
+        let consentAck = false;
+        if (!dev.music_app_consent_granted) {
+            consentAck = confirm(t("ipod_write_consent"));
+            if (!consentAck) return;
+        }
+
+        if (btn) btn.disabled = true;
+        const tracks = basket.map(it => ({
+            source_path: it.source_path,
+            title: it.title || "",
+            artist: it.artist || null,
+            album: it.album || null,
+            genre: it.genre || null,
+            year: it.year || null,
+            track_number: it.track_number || null,
+            length_ms: it.length_ms || null,
+            filetype: it.filetype || null,
+        }));
+        const playlists = ipodState.syncBasketPlaylists.map(p => ({ name: p.name, source_paths: p.source_paths }));
+        const { res, data } = await ipodMediaSync({ tracks, consent_ack: consentAck, playlists });
+        if (!res.ok) throw new Error(_ipodErr(data));
+        if (data.success) {
+            alert(t("ipod_write_ok").replace("{n}", data.tracks_written));
+            ipodState.syncBasket = [];
+            ipodState.syncBasketPlaylists = [];
+            updateSyncBasketBadge();
+            renderIpodSyncBasket();
+            await loadIpodLibrary();
+            switchIpodCategory("songs");
+        } else {
+            const restored = data.restored_from_backup ? t("ipod_write_rolled_back") : "";
+            alert(t("ipod_write_failed") + (data.error || "") + restored);
+        }
+    } catch (e) {
+        alert(t("error_prefix") + e.message);
+    } finally {
+        if (btn) btn.disabled = ipodState.syncBasket.length === 0;
     }
 }
 
@@ -384,6 +506,7 @@ function renderIpodSongs() {
         if (ipodState.filters.album && t.album !== ipodState.filters.album) return false;
         return true;
     });
+    ipodState.filteredSongs = filtered;   // para reproducir por índice (#4)
 
     if (ipodState.viewMode === "list") {
         listContainer.classList.remove("hidden");
@@ -395,7 +518,7 @@ function renderIpodSongs() {
         }
 
         listContainer.innerHTML = filtered.map((tr, i) => `
-            <div class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-btn-hover transition-colors group">
+            <div class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-btn-hover transition-colors group cursor-pointer" onclick="playIpodTrack(${i})" oncontextmenu="${_ipodCtxAttr(tr)}" title="${t("ipod_play_title")}">
                 <span class="font-data-sm text-[12px] text-muted/40 w-7 text-right flex-shrink-0">${i + 1}</span>
                 <div class="w-8 h-8 rounded-lg bg-btn flex items-center justify-center flex-shrink-0 text-muted/40 group-hover:text-accent">
                     <span class="material-symbols-outlined text-[18px]">music_note</span>
@@ -424,7 +547,7 @@ function renderIpodSongs() {
         }
 
         gridContainer.innerHTML = filtered.map((tr, i) => `
-            <div class="ipod-media-card group">
+            <div class="ipod-media-card group cursor-pointer" onclick="playIpodTrack(${i})" oncontextmenu="${_ipodCtxAttr(tr)}" title="${t("ipod_play_title")}">
                 <div class="aspect-square w-full rounded-lg bg-black/10 dark:bg-white/5 flex items-center justify-center relative overflow-hidden">
                     <span class="material-symbols-outlined text-[36px] text-muted/30 group-hover:text-accent transition-colors">album</span>
                     <span class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white font-data-sm text-[10px]">${_formatMs(tr.length_ms)}</span>
@@ -436,6 +559,172 @@ function renderIpodSongs() {
             </div>
         `).join("");
     }
+}
+
+// --- Menú contextual de una canción del iPod: Agregar a Playlist / Eliminar del iPod ---
+function _ipodAttrJson(v) {
+    return JSON.stringify(v == null ? "" : v).replace(/"/g, "&quot;");
+}
+
+function _ipodCtxAttr(tr) {
+    return "showIpodSongContextMenu(event, " + _ipodAttrJson(tr.db_track_id) + ", " +
+        _ipodAttrJson(tr.title) + ", " + _ipodAttrJson(tr.artist) + ")";
+}
+
+let ipodContextTrack = null;
+
+function showIpodSongContextMenu(event, dbTrackId, title, artist) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!dbTrackId) return;
+    ipodContextTrack = { db_track_id: dbTrackId, title: title, artist: artist };
+    hideIpodPlaylistSubmenu();
+    const menu = document.getElementById("ipod-context-menu");
+    if (!menu) return;
+    menu.style.display = "flex";
+    let x = event.clientX, y = event.clientY;
+    if (x + 220 > window.innerWidth) x -= 220;
+    if (y + menu.offsetHeight > window.innerHeight) y -= menu.offsetHeight;
+    menu.style.left = x + "px";
+    menu.style.top = y + "px";
+}
+
+document.addEventListener('click', function() {
+    const menu = document.getElementById("ipod-context-menu");
+    if (menu && menu.style.display === "flex") menu.style.display = "none";
+    hideIpodPlaylistSubmenu();
+});
+
+function hideIpodPlaylistSubmenu() {
+    const sub = document.getElementById("ipod-playlist-submenu");
+    if (sub) sub.style.display = "none";
+}
+
+function showIpodPlaylistSubmenu(event) {
+    const sub = document.getElementById("ipod-playlist-submenu");
+    if (!sub) return;
+    const userPls = (ipodState.playlists || []).filter(p => !p.is_master);
+    sub.innerHTML = userPls.length
+        ? userPls.map(p =>
+            '<div class="context-menu-item" onclick="contextAddIpodTrackToPlaylist(' + _ipodAttrJson(p.title) + ')">' +
+            '<span class="material-symbols-outlined text-[18px]">queue_music</span>' +
+            '<span>' + _escapeHtmlIpod(p.title || "—") + '</span></div>'
+          ).join("")
+        : '<div class="context-menu-item" style="opacity:.5;cursor:default">' + t("ctx_ipod_no_playlists") + '</div>';
+
+    const r = event.currentTarget.getBoundingClientRect();
+    let x = r.right;
+    if (x + 220 > window.innerWidth) x = Math.max(0, r.left - 220);
+    let y = r.top;
+    sub.style.display = "flex";
+    if (y + sub.offsetHeight > window.innerHeight) y = Math.max(0, window.innerHeight - sub.offsetHeight - 8);
+    sub.style.left = x + "px";
+    sub.style.top = y + "px";
+}
+
+async function _ipodWriteGate() {
+    const { data: st } = await ipodFetchStatus();
+    const dev = (st.devices || [])[0];
+    if (!dev) { alert(t("ipod_write_no_device")); return null; }
+    if (!dev.guid_is_write_safe) { alert(t("ipod_write_unsafe")); return null; }
+    let consentAck = false;
+    if (!dev.music_app_consent_granted) {
+        consentAck = confirm(t("ipod_write_consent"));
+        if (!consentAck) return null;
+    }
+    return { consentAck };
+}
+
+async function contextAddIpodTrackToPlaylist(playlistName) {
+    hideIpodPlaylistSubmenu();
+    const menu = document.getElementById("ipod-context-menu");
+    if (menu) menu.style.display = "none";
+    if (!ipodContextTrack) return;
+    const pl = (ipodState.playlists || []).find(p => p.title === playlistName);
+    if (!pl) return;
+    const already = (pl.tracks || []).some(tr => tr.db_track_id === ipodContextTrack.db_track_id);
+    if (already) { alert(t("ctx_ipod_already_in_playlist").replace("{name}", pl.title)); return; }
+    try {
+        const gate = await _ipodWriteGate();
+        if (!gate) return;
+        const items = (pl.tracks || []).map(tr => ({ db_track_id: tr.db_track_id }));
+        items.push({ db_track_id: ipodContextTrack.db_track_id });
+        const { res, data } = await ipodPlaylistSet({
+            playlist_name: pl.title, items: items, consent_ack: gate.consentAck,
+        });
+        if (!res.ok || !data.success) {
+            alert(t("ipod_write_failed") + (data.error || _ipodErr(data)));
+        } else {
+            alert(t("ctx_ipod_added_to_playlist").replace("{name}", pl.title));
+        }
+        await loadIpodLibrary();
+        renderIpodPlaylists();
+    } catch (e) {
+        alert(t("error_prefix") + e.message);
+    }
+}
+
+async function contextRemoveFromIpod() {
+    const menu = document.getElementById("ipod-context-menu");
+    if (menu) menu.style.display = "none";
+    if (!ipodContextTrack) return;
+    if (!confirm(t("ctx_ipod_remove_confirm").replace("{title}", ipodContextTrack.title || ""))) return;
+    try {
+        const gate = await _ipodWriteGate();
+        if (!gate) return;
+        const { res, data } = await ipodTrackRemove({
+            db_track_id: ipodContextTrack.db_track_id, consent_ack: gate.consentAck,
+        });
+        if (!res.ok || !data.success) {
+            alert(t("ipod_write_failed") + (data.error || _ipodErr(data)));
+        }
+        await loadIpodLibrary();
+        renderIpodSongs();
+        renderIpodPlaylists();
+    } catch (e) {
+        alert(t("error_prefix") + e.message);
+    }
+}
+
+// --- Reproducir una canción del iPod desde la biblioteca local (#4) ---
+function _normTxt(s) {
+    return String(s == null ? "" : s).toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+// Busca en la biblioteca local (libraryTracks) una pista que corresponda a la del
+// iPod (por título + artista; fallback a título). Devuelve el track local o null.
+function _findLocalTrack(iTrack) {
+    if (typeof libraryTracks === "undefined" || !libraryTracks || !libraryTracks.length) return null;
+    const nt = _normTxt(iTrack.title);
+    if (!nt) return null;
+    const na = _normTxt(iTrack.artist);
+    let m = libraryTracks.find(l => _normTxt(l.title) === nt && _normTxt(l.artist) === na);
+    if (!m) m = libraryTracks.find(l => _normTxt(l.title) === nt);
+    return m || null;
+}
+
+function playIpodTrack(index) {
+    const songs = ipodState.filteredSongs || [];
+    const iTrack = songs[index];
+    if (!iTrack) return;
+    if (!_findLocalTrack(iTrack)) {
+        alert(t("ipod_play_not_in_library"));
+        return;
+    }
+    // Cola con las pistas del iPod que sí están en la biblioteca, para que
+    // siguiente/anterior naveguen entre ellas. Reproduce desde la clickeada.
+    const queue = [];
+    let startIdx = 0;
+    songs.forEach((s, si) => {
+        const local = _findLocalTrack(s);
+        if (local) {
+            if (si === index) startIdx = queue.length;
+            queue.push(local);
+        }
+    });
+    if (typeof libraryQueues === "undefined") window.libraryQueues = {};
+    libraryQueues["__ipod__"] = queue;
+    if (typeof playFromQueue === "function") playFromQueue("__ipod__", startIdx);
 }
 
 // --- VISTA 2: PLAYLISTS ---
@@ -471,26 +760,197 @@ function renderIpodPlaylists() {
 
     const selectedPl = ipodState.playlists[ipodState.selectedPlaylistIndex];
     if (selectedPl) {
+        const isMaster = !!selectedPl.is_master;
+        // Master = todas las canciones (no reordenable); usuario = sus pistas reales.
+        const plTracks = isMaster ? ipodState.tracks : (selectedPl.tracks || []);
         if (titleEl) titleEl.textContent = selectedPl.title || "Playlist";
-        if (countEl) countEl.textContent = (selectedPl.count || 0) + " " + t("ipod_tracks_count");
+        if (countEl) countEl.textContent = plTracks.length + " " + t("ipod_tracks_count");
 
-        // Mostrar canciones de la playlist (o las canciones generales si es la master)
-        const displayTracks = ipodState.tracks.slice(0, selectedPl.count || ipodState.tracks.length);
-        tracksList.innerHTML = displayTracks.map((tr, i) => `
-            <div class="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-btn-hover transition-colors">
+        const saveBtn = document.getElementById("ipod-playlist-save-order-btn");
+        if (saveBtn) {
+            const show = !isMaster && ipodPlaylistDirty;
+            saveBtn.classList.toggle("hidden", !show);
+            saveBtn.classList.toggle("inline-flex", show);
+        }
+        const addBtn = document.getElementById("ipod-playlist-add-btn");
+        if (addBtn) {
+            addBtn.classList.toggle("hidden", isMaster);
+            addBtn.classList.toggle("inline-flex", !isMaster);
+        }
+
+        tracksList.innerHTML = plTracks.map((tr, i) => {
+            const drag = isMaster ? "" :
+                ` draggable="true" ondragstart="handleIpodTrackDragStart(event, ${i})" ondragend="handleIpodTrackDragEnd(event)" ondragover="handleIpodTrackDragOver(event)" ondrop="handleIpodTrackDrop(event)"`;
+            return `
+            <div data-ipod-track-idx="${i}"${drag}
+                class="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-btn-hover transition-colors ${isMaster ? '' : 'cursor-grab'}">
+                ${isMaster ? '' : '<span class="material-symbols-outlined text-[16px] text-muted/30 flex-shrink-0">drag_indicator</span>'}
                 <span class="font-data-sm text-[12px] text-muted/40 w-6 text-right flex-shrink-0">${i + 1}</span>
                 <div class="flex-1 min-w-0">
                     <div class="font-data-sm text-[13px] text-main truncate font-medium">${_escapeHtmlIpod(tr.title || t("track_untitled"))}</div>
                     <div class="font-data-sm text-[11px] text-muted/60 truncate">${_escapeHtmlIpod(tr.artist || "")}${tr.album ? ' — ' + _escapeHtmlIpod(tr.album) : ''}</div>
                 </div>
+                ${tr.source_path ? `<span class="material-symbols-outlined text-[15px] text-accent flex-shrink-0" title="${t('ipod_playlist_new_track')}">fiber_new</span>` : ''}
                 <span class="font-data-sm text-[11px] text-muted/50">${_formatMs(tr.length_ms)}</span>
-            </div>
-        `).join("");
+            </div>`;
+        }).join("");
+    }
+}
+
+// --- Reordenar pistas de una playlist del iPod (drag-drop -> persistir) ---
+let ipodDragSourceIndex = null;
+let ipodDraggedNode = null;
+let ipodPlaylistDirty = false;
+
+function handleIpodTrackDragStart(e, index) {
+    ipodDragSourceIndex = index;
+    ipodDraggedNode = e.currentTarget;
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(index));
+    e.currentTarget.classList.add("opacity-40");
+}
+
+function handleIpodTrackDragEnd(e) {
+    e.currentTarget.classList.remove("opacity-40");
+    ipodDraggedNode = null;
+}
+
+function handleIpodTrackDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (ipodDraggedNode && ipodDraggedNode !== e.currentTarget) {
+        const b = e.currentTarget.getBoundingClientRect();
+        const mid = b.y + b.height / 2;
+        if (e.clientY - mid > 0) e.currentTarget.after(ipodDraggedNode);
+        else e.currentTarget.before(ipodDraggedNode);
+    }
+}
+
+function handleIpodTrackDrop(e) {
+    e.preventDefault();
+    if (ipodDragSourceIndex === null) return;
+    ipodDragSourceIndex = null;
+    ipodDraggedNode = null;
+    const pl = ipodState.playlists[ipodState.selectedPlaylistIndex];
+    if (!pl || !pl.tracks) return;
+    const container = document.getElementById("ipod-playlist-tracks-list");
+    const newOrder = [];
+    container.querySelectorAll("[data-ipod-track-idx]").forEach(row => {
+        const old = pl.tracks[parseInt(row.dataset.ipodTrackIdx, 10)];
+        if (old) newOrder.push(old);
+    });
+    pl.tracks = newOrder;
+    ipodPlaylistDirty = true;
+    renderIpodPlaylists();
+}
+
+async function saveIpodPlaylistOrder() {
+    const pl = ipodState.playlists[ipodState.selectedPlaylistIndex];
+    if (!pl || pl.is_master || !pl.tracks) return;
+    try {
+        const { data: st } = await ipodFetchStatus();
+        const dev = (st.devices || [])[0];
+        if (!dev) { alert(t("ipod_write_no_device")); return; }
+        if (!dev.guid_is_write_safe) { alert(t("ipod_write_unsafe")); return; }
+        let consentAck = false;
+        if (!dev.music_app_consent_granted) {
+            consentAck = confirm(t("ipod_write_consent"));
+            if (!consentAck) return;
+        }
+        const items = pl.tracks.map(tr => {
+            if (tr.source_path) {
+                return {
+                    source_path: tr.source_path, title: tr.title || "",
+                    artist: tr.artist || "", album: tr.album || "",
+                    filetype: tr.filetype || (String(tr.source_path).split(".").pop() || "").toLowerCase(),
+                };
+            }
+            return { db_track_id: tr.db_track_id };
+        }).filter(it => it.source_path || it.db_track_id != null);
+        const { res, data } = await ipodPlaylistSet({
+            playlist_name: pl.title, items: items, consent_ack: consentAck,
+        });
+        if (!res.ok || !data.success) {
+            alert(t("ipod_write_failed") + (data.error || _ipodErr(data)));
+            await loadIpodLibrary();
+        } else {
+            ipodPlaylistDirty = false;
+            alert(t("ipod_playlist_order_saved"));
+            await loadIpodLibrary();
+        }
+        renderIpodPlaylists();
+    } catch (e) {
+        alert(t("error_prefix") + e.message);
     }
 }
 
 function selectIpodPlaylist(idx) {
     ipodState.selectedPlaylistIndex = idx;
+    ipodPlaylistDirty = false;   // descarta cambios no guardados al cambiar
+    renderIpodPlaylists();
+}
+
+// --- Agregar canciones de la biblioteca local a una playlist del iPod ---
+function openIpodPlaylistAddPicker() {
+    const pl = ipodState.playlists[ipodState.selectedPlaylistIndex];
+    if (!pl || pl.is_master) return;
+    const modal = document.getElementById("ipod-playlist-add-modal");
+    if (!modal) return;
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+    const search = document.getElementById("ipod-playlist-add-search");
+    if (search) search.value = "";
+    renderIpodAddPickerList("");
+}
+
+function closeIpodPlaylistAddModal() {
+    const modal = document.getElementById("ipod-playlist-add-modal");
+    if (!modal) return;
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+}
+
+function renderIpodAddPickerList(query) {
+    const list = document.getElementById("ipod-playlist-add-list");
+    if (!list) return;
+    if (typeof libraryTracks === "undefined" || !libraryTracks || !libraryTracks.length) {
+        list.innerHTML = `<p class="font-data-sm text-[12px] text-muted/40 p-2">${t("ipod_playlist_add_empty")}</p>`;
+        return;
+    }
+    const q = _normTxt(query || "");
+    const matches = (q
+        ? libraryTracks.filter(l => _normTxt((l.title || "") + " " + (l.artist || "") + " " + (l.album || "")).includes(q))
+        : libraryTracks).slice(0, 200);
+    if (!matches.length) {
+        list.innerHTML = `<p class="font-data-sm text-[12px] text-muted/40 p-2">${t("ipod_playlist_add_noresults")}</p>`;
+        return;
+    }
+    list.innerHTML = matches.map(l => {
+        const p = _escapeHtmlIpod(l.path);
+        return `
+        <button type="button" onclick="addLibrarySongToIpodPlaylist('${p.replace(/'/g, "\\'")}')"
+            class="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-btn-hover transition-colors text-left w-full">
+            <span class="material-symbols-outlined text-[16px] text-accent flex-shrink-0">add</span>
+            <div class="flex-1 min-w-0">
+                <div class="font-data-sm text-[13px] text-main truncate font-medium">${_escapeHtmlIpod(l.title || t("track_untitled"))}</div>
+                <div class="font-data-sm text-[11px] text-muted/60 truncate">${_escapeHtmlIpod(l.artist || "")}${l.album ? ' — ' + _escapeHtmlIpod(l.album) : ''}</div>
+            </div>
+        </button>`;
+    }).join("");
+}
+
+function addLibrarySongToIpodPlaylist(path) {
+    const pl = ipodState.playlists[ipodState.selectedPlaylistIndex];
+    if (!pl || pl.is_master) return;
+    const l = libraryTracks.find(x => x.path === path);
+    if (!l) return;
+    if (!pl.tracks) pl.tracks = [];
+    pl.tracks.push({
+        source_path: l.path, title: l.title || "", artist: l.artist || "",
+        album: l.album || "", length_ms: null, db_track_id: null,
+        filetype: (String(l.path).split(".").pop() || "").toLowerCase(),
+    });
+    ipodPlaylistDirty = true;
     renderIpodPlaylists();
 }
 
@@ -813,13 +1273,14 @@ async function submitCreatePlaylist() {
     }
 
     try {
-        await _postJson("/api/ipod/playlists/create", { name });
+        const { res, data } = await ipodPlaylistsCreate({ name });
+        if (!res.ok) { alert(_ipodErr(data)); return; }
         ipodState.playlists.push({ title: name, count: 0, is_master: false });
         updateIpodCategoryCounts();
         renderIpodPlaylists();
         closeCreatePlaylistModal();
     } catch (e) {
-        alert("Error creando playlist: " + e.message);
+        alert(t("error_prefix") + e.message);
     }
 }
 
@@ -857,14 +1318,15 @@ function closeImportPlaylistModal() {
 
 async function selectImportPlaylist(name) {
     try {
-        await _postJson("/api/ipod/playlists/import", { source_name: name, tracks: [] });
+        const { res, data } = await ipodPlaylistsImport({ source_name: name, tracks: [] });
+        if (!res.ok) { alert(_ipodErr(data)); return; }
         ipodState.playlists.push({ title: name, count: 0, is_master: false });
         updateIpodCategoryCounts();
         renderIpodPlaylists();
         closeImportPlaylistModal();
         alert(`Playlist '${name}' importada.`);
     } catch (e) {
-        alert("Error importando playlist: " + e.message);
+        alert(t("error_prefix") + e.message);
     }
 }
 
@@ -872,7 +1334,7 @@ async function selectImportPlaylist(name) {
 async function ejectIpod() {
     if (!confirm(t("ipod_eject_confirm"))) return;
     try {
-        const { res, data } = await _postJson("/api/ipod/eject", { force: false });
+        const { res, data } = await ipodEject({ force: false });
         if (data.ejected) {
             alert(t("ipod_eject_success"));
             scanIpod();
@@ -885,37 +1347,20 @@ async function ejectIpod() {
 }
 
 // --- SINCRONIZACIÓN Y BACKUPS (conservados y adaptados) ---
-function _ipodErr(data) {
-    const d = data && data.detail;
-    if (!d) return t("error_unknown");
-    return (typeof d === "object" ? (d.error || d.code) : d) || t("error_unknown");
-}
-
-async function _postJson(url, body) {
-    const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body || {}),
-    });
-    let data = {};
-    try { data = await res.json(); } catch (_) {}
-    return { res, data };
-}
-
 async function syncIpod() {
     const btn = document.getElementById("btn-sync-ipod");
     try {
-        const st = await (await fetch("/api/ipod/status")).json();
+        const { data: st } = await ipodFetchStatus();
         const dev = (st.devices || [])[0];
         if (!dev) { alert(t("ipod_write_no_device")); return; }
         if (!dev.guid_is_write_safe) { alert(t("ipod_write_unsafe")); return; }
 
-        const tData = await (await fetch("/api/ipod/tracks")).json();
+        const { data: tData } = await ipodFetchTracks();
         const tracks = tData.tracks || [];
         if (!tracks.length) { alert(t("ipod_write_empty")); return; }
 
         if (btn) btn.disabled = true;
-        const { res: planRes, data: plan } = await _postJson("/api/ipod/plan", { tracks });
+        const { res: planRes, data: plan } = await ipodPlanCreate({ tracks });
         if (!planRes.ok) throw new Error(_ipodErr(plan));
 
         if (!confirm(t("ipod_write_review").replace("{n}", plan.tracks_count))) return;
@@ -926,8 +1371,8 @@ async function syncIpod() {
             if (!consentAck) return;
         }
 
-        const { res: applyRes, data: result } = await _postJson(
-            "/api/ipod/apply", { plan_id: plan.plan_id, consent_ack: consentAck });
+        const { res: applyRes, data: result } = await ipodApplyPlan(
+            { plan_id: plan.plan_id, consent_ack: consentAck });
         if (!applyRes.ok) throw new Error(_ipodErr(result));
 
         if (result.success) {
@@ -949,7 +1394,7 @@ async function backupIpod() {
     const btn = document.getElementById("btn-backup-ipod");
     try {
         if (btn) btn.disabled = true;
-        const { res, data } = await _postJson("/api/ipod/backup", { full: false });
+        const { res, data } = await ipodBackupNow({ full: false });
         if (!res.ok) throw new Error(_ipodErr(data));
         const mb = data.size_bytes ? (data.size_bytes / 1048576).toFixed(1) + " MB" : "";
         alert(t("ipod_backup_ok").replace("{path}", data.path || "—").replace("{size}", mb));
