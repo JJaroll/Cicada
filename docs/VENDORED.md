@@ -391,3 +391,52 @@ Tests añadidos en Fase 3 (20 tests):
 
 **Total suite iPod tras Fase 3:** 280 tests pasando.
 
+### Paquete 7 — `artworkdb_writer/` → `cicada/ipod/db/artwork/` (Fase 4, por etapas)
+
+Escritor de `ArtworkDB` + `.ithmb`. Origen: `src/iopenpod/artworkdb_writer/`,
+`src/iopenpod/artworkdb_shared/` @ `ea72e3e` (4521 líneas en el original).
+
+**Alcance de esta fase: SOLO iPod Nano 7G (RGB565_LE, 4 formatos fijos).**
+Esto es una decisión de **entrega incremental, no el objetivo final** — iOpenPod
+soporta más modelos (otros formatos de píxel: RGB565_BE, RGB555, UYVY, JPEG; y
+otras tablas de dimensiones), y Cicada debe soportarlos todos eventualmente.
+Ver **Etapa 4f** más abajo para la generalización — no está descartada, está
+diferida.
+
+- **Etapa 4a — Fuente de imagen unificada. Estado: implementado y verificado.**
+  Cicada ya embebe carátula al organizar la biblioteca (`audio_processor.py`,
+  vía Shazam/AcoustID) y ya la vuelve a leer para la UI de Biblioteca
+  (`core/routes/library.py::_extract_embedded_artwork`, endpoint
+  `/api/library/artwork`). En vez de portar `art_extractor.py` de iOpenPod
+  (un segundo sistema de extracción), esa función se movió a
+  `cicada/shared/artwork.py::extract_embedded_artwork` — módulo neutral que
+  tanto `cicada.core` como `cicada.ipod` pueden importar sin romper la regla
+  de que `cicada.ipod` nunca importa de `cicada.core`. `art_extractor.py` de
+  iOpenPod **no se porta** (redundante).
+  Tests: `tests/shared/test_artwork.py` (5 tests, fixtures reales en
+  `tests/fixtures/audio/` generadas con ffmpeg+mutagen: mp3/m4a/flac con y
+  sin `APIC`/`covr`/picture).
+- **Etapa 4b — Codec RGB565_LE + tipos.** Pendiente. Acotado a los 4 formatos
+  del Nano 7G (`rgb565.py` simplificado); no se porta `ithmb_codecs.py`
+  completo (RGB565_BE/RGB555/UYVY/JPEG, decode) en esta etapa — ver 4f.
+- **Etapa 4c — Escritor binario ArtworkDB + `.ithmb`.** Pendiente.
+  Decisión tomada tras medir con la biblioteca real del usuario (954 tracks,
+  952 con arte, 669 únicas): reescritura completa cada sync (~12s), **sin**
+  dedup por hash ni preservación incremental — el ahorro del dedup (~30%,
+  de 12.4s a 8.7s) no compensa la complejidad/riesgo frente al patrón
+  "reescritura completa" ya usado en el resto de Cicada. `write_guard.py` no
+  necesita cambios: `assert_within_ipod_control()` ya es genérico para
+  cualquier subárbol de `iPod_Control/`, incluido `Artwork/`.
+- **Etapa 4d — Enganche con `TrackInfo`/`create_plan()`.** Pendiente.
+  `TrackInfo.mhii_link`/`.artwork_size`/`.artwork_count` y su escritura en
+  `mhit_writer.py` ya existen desde Fase 2 (siempre en 0 hasta ahora) — solo
+  falta poblarlos antes de `create_plan()`.
+- **Etapa 4e — API/CLI/UI.** Pendiente.
+- **Etapa 4f — Generalización a otros modelos (diferida, no descartada).**
+  Activar `ithmb_codecs.py` completo (RGB565_BE, RGB555, UYVY, JPEG) y las
+  tablas de dimensiones de otros modelos ya presentes en
+  `artwork_presets.py` (`ARTWORK_FORMATS_BY_ID` ya cubre generaciones
+  1005-3005, no solo Nano 7G). No portar `hydrate_track_artwork_refs`
+  (`itunesdb_parser/artwork_links.py`) hasta entonces tampoco — solo
+  relevante para reconciliar DBs legadas de otros modelos.
+

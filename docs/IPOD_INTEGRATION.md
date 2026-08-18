@@ -371,6 +371,30 @@ escribir para capturar la zona horaria real del dispositivo).
       "Calificar" y vista "Conflictos" en la sub-sidebar del iPod.
 
 ### Fase 4 — Artwork
+
+Escritor de `ArtworkDB` + `.ithmb` (`artworkdb_writer` de iOpenPod, Paquete 7
+en `VENDORED.md`). **Objetivo final: todos los modelos que soporta iOpenPod**
+(varios formatos de píxel — RGB565_BE, RGB555, UYVY, JPEG — y tablas de
+dimensiones por familia/generación). La entrega se trocea así para reducir
+riesgo, empezando por un único caso real verificable contra hardware:
+
+- [x] **4a** — Fuente de imagen: reusa el pipeline de carátula ya existente
+      (`audio_processor.py` embebe, ahora `cicada/shared/artwork.py` extrae —
+      compartido entre `core` y `ipod`, sin segundo sistema de descarga).
+- [ ] **4b** — Codec RGB565_LE + tipos, acotado a Nano 7G.
+- [ ] **4c** — Escritor binario ArtworkDB + `.ithmb`. Reescritura completa en
+      cada sync (sin dedup ni preservación incremental — medido contra una
+      biblioteca real de 954 tracks: ~12s de coste total, no compensa la
+      complejidad del dedup por ~3s de ahorro).
+- [ ] **4d** — Enganche con `TrackInfo.mhii_link`/`.artwork_size`/`.artwork_count`
+      (campos ya escritos por `mhit_writer.py` desde Fase 2, siempre en 0 hasta ahora).
+- [ ] **4e** — API/CLI/UI.
+- [ ] **4f** — Generalización: activar los demás formatos de píxel y modelos
+      que `artwork_presets.py` ya tiene tabulados (`ARTWORK_FORMATS_BY_ID`
+      cubre generaciones 1005-3005). Diferido, no descartado.
+
+**Alcance parcial temporal de 4a-4e: solo iPod Nano 7G, RGB565_LE.**
+
 ### Fase 5 — Podcasts y audiolibros
 ### Fase 6 — Fotos y video
 

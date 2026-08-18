@@ -18,6 +18,7 @@ from cicada.core.state import (
     playlist_manager,
     save_app_config,
 )
+from cicada.shared.artwork import extract_embedded_artwork
 
 router = APIRouter()
 
@@ -212,46 +213,10 @@ def _resolve_path_within_library(raw_path: str) -> Path:
     return target
 
 
-def _extract_embedded_artwork(file_path: Path):
-    try:
-        import mutagen
-        from mutagen.mp4 import MP4
-        from mutagen.flac import FLAC
-
-        audio = mutagen.File(str(file_path))
-        if audio is None:
-            return None, None
-
-        if isinstance(audio, MP4):
-            covers = audio.tags.get("covr") if audio.tags else None
-            if covers:
-                cover = covers[0]
-                mime = "image/png" if cover.imageformat == cover.FORMAT_PNG else "image/jpeg"
-                return bytes(cover), mime
-            return None, None
-
-        if isinstance(audio, FLAC):
-            if audio.pictures:
-                pic = audio.pictures[0]
-                return pic.data, pic.mime
-            return None, None
-
-        # ID3 (mp3, wav, aiff)
-        if audio.tags is not None:
-            for key in list(audio.tags.keys()):
-                if str(key).startswith("APIC"):
-                    apic = audio.tags[key]
-                    return apic.data, apic.mime
-
-        return None, None
-    except Exception:
-        return None, None
-
-
 @router.get("/api/library/artwork")
 async def get_track_artwork(path: str):
     target = _resolve_path_within_library(path)
-    image_bytes, mime = await asyncio.to_thread(_extract_embedded_artwork, target)
+    image_bytes, mime = await asyncio.to_thread(extract_embedded_artwork, target)
     if not image_bytes:
         raise HTTPException(status_code=404, detail="Este archivo no tiene carátula embebida.")
     return Response(content=image_bytes, media_type=mime or "image/jpeg")
