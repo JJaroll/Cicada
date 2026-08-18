@@ -358,8 +358,17 @@ escribir para capturar la zona horaria real del dispositivo).
 - [x] Playlists estándar; smart playlists preservadas sin interpretar en v1
       (conserva los bytes crudos y reescríbelos idénticos vía `playlists.py`).
 - [x] Lectura de contadores desde `Dynamic.itdb` / `iTunesCDB`, delta contra `playback_state` (`bidirectional.py`).
+      Conectado a la app vía `sync_playback_stats()` — `POST /api/ipod/sync/playback`
+      y `cicada ipod sync-playback`; corre en segundo plano tras cada escaneo.
 - [x] Persistencia local en SQLite `~/.cicada/ipod.db` (`state.py`).
-- [ ] Resolución de conflictos interactiva en UI.
+- [x] Resolución de conflictos interactiva en UI. Único campo genuinamente
+      conflictivo: el rating (play_count/skip_count se suman, timestamps toman
+      `max()`). Tercer punto de dato (`local_playback_state`) + diff de tres vías
+      (`conflicts.py::scan_for_conflicts`) para distinguir "cambió solo en el
+      dispositivo" de "cambió en ambos lados y difieren" — nunca se resuelve un
+      conflicto real en silencio. `GET/POST /api/ipod/conflicts[/resolve[-all]]`,
+      calificar desde Cicada vía `POST /api/ipod/track/rate`, menú contextual
+      "Calificar" y vista "Conflictos" en la sub-sidebar del iPod.
 
 ### Fase 4 — Artwork
 ### Fase 5 — Podcasts y audiolibros
