@@ -433,14 +433,44 @@ diferida.
   JPEG/PNG/RGBA, resize a los 4 formatos Nano 7G, conversión RGB565 bit-exacta
   (rojo/verde/azul/blanco/negro puros), padding de stride, tamaños de salida
   para los 4 formatos, rechazo de formatos no-RGB565_LE (BE/RGB555/YUV).
-- **Etapa 4c — Escritor binario ArtworkDB + `.ithmb`.** Pendiente.
-  Decisión tomada tras medir con la biblioteca real del usuario (954 tracks,
-  952 con arte, 669 únicas): reescritura completa cada sync (~12s), **sin**
-  dedup por hash ni preservación incremental — el ahorro del dedup (~30%,
-  de 12.4s a 8.7s) no compensa la complejidad/riesgo frente al patrón
-  "reescritura completa" ya usado en el resto de Cicada. `write_guard.py` no
-  necesita cambios: `assert_within_ipod_control()` ya es genérico para
-  cualquier subárbol de `iPod_Control/`, incluido `Artwork/`.
+- **Etapa 4c — Escritor binario ArtworkDB + `.ithmb`. Estado: implementado
+  y verificado.** `cicada/ipod/db/artwork/{chunks,writer}.py`.
+  Reescritura completa cada sync (~12s medido contra 954 tracks reales),
+  **sin** dedup por hash ni preservación incremental — el ahorro del dedup
+  (~30%, de 12.4s a 8.7s) no compensa la complejidad/riesgo frente al
+  patrón "reescritura completa" ya usado en el resto de Cicada. Cada track
+  recibe su propio `img_id` aunque comparta imagen con otro (sin tabla de
+  reuso). `write_guard.py` no necesita cambios: `assert_within_ipod_control()`
+  ya es genérico para cualquier subárbol de `iPod_Control/`, incluido
+  `Artwork/` (la escritura a disco es responsabilidad del coordinador,
+  Etapa 4d — `writer.py` aquí solo produce `bytes`, mismo patrón que
+  `db/writer/build.py`: "aquí no se toca disco").
+  `reference_mhfd` de iOpenPod (fusión de bytes con el ArtworkDB anterior,
+  soporte de preservación) no se porta — no aplica sin preservación.
+  `read_artworkdb()` es deliberadamente más simple que
+  `read_existing_artwork()` de iOpenPod: sin el blindaje defensivo contra
+  ArtworkDB de terceros corrupto, porque de momento solo relee lo que este
+  mismo escritor acaba de producir (staging, no dispositivo real todavía).
+  Se añadió `rgb565_le_to_rgb888()` a `rgb565.py` (4b) — inversa del
+  encoder, solo para esta verificación, no forma parte del camino de
+  escritura.
+  **Verificación exigida antes de construir esto** (no solo "reparsea sin
+  excepción"): con 3 imágenes de prueba conocidas (patrones de 4 cuadrantes,
+  colores distintos por track) se comprobó (a) que el `.ithmb` releído y
+  decodificado en el offset que indica el propio ArtworkDB reproduce los
+  píxeles originales dentro del margen RGB565, (b) que esos offsets son
+  exactos y no solapan entre tracks (chequeo anti-contaminación cruzada
+  explícito, no solo tamaño total del archivo), y (c) que `song_id`/`img_id`
+  en cada MHII corresponde al track correcto. Sanity check adicional: se
+  inyectó a propósito un bug de offset (`offsets[fmt_id] = 0` en vez de
+  `len(buf)`) y se confirmó que 13 de los 29 tests de
+  `test_writer.py` lo detectan, antes de revertirlo — la suite no es solo
+  happy-path.
+  Tests: `tests/ipod/db/artwork/test_chunks.py` (7, round-trip binario
+  sintético de cada chunk) y `test_writer.py` (29, verificación de extremo
+  a extremo descrita arriba). Prueba en hardware real (que la carátula
+  aparezca en pantalla) diferida a la Etapa 4d, cuando esté enganchado con
+  `create_plan()`.
 - **Etapa 4d — Enganche con `TrackInfo`/`create_plan()`.** Pendiente.
   `TrackInfo.mhii_link`/`.artwork_size`/`.artwork_count` y su escritura en
   `mhit_writer.py` ya existen desde Fase 2 (siempre en 0 hasta ahora) — solo

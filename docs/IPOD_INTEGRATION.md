@@ -384,10 +384,15 @@ riesgo, empezando por un único caso real verificable contra hardware:
 - [x] **4b** — Codec RGB565_LE + tipos (`cicada/ipod/db/artwork/`). Acepta
       cualquier `ArtworkFormat` pero rechaza formatos no-RGB565_LE en vez
       de adivinar (falla explícito hasta 4f).
-- [ ] **4c** — Escritor binario ArtworkDB + `.ithmb`. Reescritura completa en
-      cada sync (sin dedup ni preservación incremental — medido contra una
-      biblioteca real de 954 tracks: ~12s de coste total, no compensa la
-      complejidad del dedup por ~3s de ahorro).
+- [x] **4c** — Escritor binario ArtworkDB + `.ithmb` (`cicada/ipod/db/artwork/
+      {chunks,writer}.py`). Reescritura completa en cada sync (sin dedup ni
+      preservación incremental — medido contra una biblioteca real de 954
+      tracks: ~12s de coste total, no compensa la complejidad del dedup por
+      ~3s de ahorro). Verificado con imágenes de prueba conocidas: pixel
+      round-trip vía offset leído del propio ArtworkDB (no contadores
+      internos), offsets exactos sin solape entre tracks, song_id/img_id
+      correctos — ver detalle y sanity check (bug inyectado a propósito y
+      detectado) en `docs/VENDORED.md`, Paquete 7.
 - [ ] **4d** — Enganche con `TrackInfo.mhii_link`/`.artwork_size`/`.artwork_count`
       (campos ya escritos por `mhit_writer.py` desde Fase 2, siempre en 0 hasta ahora).
 - [ ] **4e** — API/CLI/UI.

@@ -75,6 +75,29 @@ def rgb888_to_rgb565_le(
     return rgb565.astype("<u2").tobytes()
 
 
+def rgb565_le_to_rgb888(data: bytes, width: int, height: int, stride: Optional[int] = None) -> Image.Image:
+    """Inversa de rgb888_to_rgb565_le — solo para verificación/inspección.
+
+    No hace falta en el camino de escritura (Cicada no preserva/decodifica
+    arte existente, Etapa 4c), pero sí para comprobar en staging que un
+    .ithmb generado, releído y decodificado reproduce los píxeles
+    originales (dentro del margen de pérdida de la cuantización RGB565).
+    """
+    if stride is None:
+        stride = width
+
+    arr = np.frombuffer(data, dtype="<u2").reshape((height, stride))[:, :width]
+    r = ((arr >> 11) & 0x1F).astype(np.uint8)
+    g = ((arr >> 5) & 0x3F).astype(np.uint8)
+    b = (arr & 0x1F).astype(np.uint8)
+    # Replicar los bits altos en los bajos (5/6 bits -> 8 bits) en vez de
+    # solo desplazar, para que blanco/negro/tonos puros redondeen exacto.
+    r8 = (r << 3) | (r >> 2)
+    g8 = (g << 2) | (g >> 4)
+    b8 = (b << 3) | (b >> 2)
+    return Image.fromarray(np.dstack([r8, g8, b8]), mode="RGB")
+
+
 def convert_art_for_format(art_bytes: bytes, fmt: ArtworkFormat) -> Optional[EncodedFormatPayload]:
     """Decodifica + redimensiona + codifica arte para un ArtworkFormat concreto.
 

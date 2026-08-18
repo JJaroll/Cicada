@@ -8,6 +8,7 @@ from cicada.ipod.db.artwork.rgb565 import (
     convert_art_for_format,
     image_from_bytes,
     resize_for_format,
+    rgb565_le_to_rgb888,
     rgb888_to_rgb565_le,
 )
 from cicada.ipod.device.artwork_presets import (
@@ -164,3 +165,48 @@ class TestConvertArtForFormat:
             pytest.skip("format_id coincidentally RGB565_LE globally")
         with pytest.raises(NotImplementedError):
             convert_art_for_format(_jpeg_bytes(), fmt)
+
+
+class TestRgb565LeToRgb888:
+    """Decoder inverso — solo para verificación en staging (Etapa 4c)."""
+
+    def test_decodes_pure_red(self):
+        data = (0x1F << 11).to_bytes(2, "little")
+        img = rgb565_le_to_rgb888(data, 1, 1)
+        assert img.getpixel((0, 0)) == (255, 0, 0)
+
+    def test_decodes_pure_green(self):
+        data = (0x3F << 5).to_bytes(2, "little")
+        img = rgb565_le_to_rgb888(data, 1, 1)
+        assert img.getpixel((0, 0)) == (0, 255, 0)
+
+    def test_decodes_pure_blue(self):
+        data = (0x1F).to_bytes(2, "little")
+        img = rgb565_le_to_rgb888(data, 1, 1)
+        assert img.getpixel((0, 0)) == (0, 0, 255)
+
+    def test_decodes_black_and_white(self):
+        assert rgb565_le_to_rgb888(b"\x00\x00", 1, 1).getpixel((0, 0)) == (0, 0, 0)
+        assert rgb565_le_to_rgb888(b"\xff\xff", 1, 1).getpixel((0, 0)) == (255, 255, 255)
+
+    def test_ignores_stride_padding_columns(self):
+        # 2px visibles + 1px de relleno a stride=3; el píxel de relleno
+        # (blanco) no debe aparecer en la imagen decodificada de 2px.
+        data = b"\xff\xff\xff\xff\x00\x00"  # blanco, blanco, negro(relleno)
+        img = rgb565_le_to_rgb888(data, 2, 1, stride=3)
+        assert img.size == (2, 1)
+        assert img.getpixel((0, 0)) == (255, 255, 255)
+        assert img.getpixel((1, 0)) == (255, 255, 255)
+
+    @pytest.mark.parametrize("fmt", NANO_7G_COVER_ART_FORMATS)
+    def test_round_trip_within_rgb565_quantization(self, fmt):
+        # Colores puros solo pierden precisión de cuantización RGB565
+        # (5/6/5 bits), no más: el decode debe reproducirlos exactos.
+        img = Image.new("RGB", (fmt.width, fmt.height), (255, 128, 64))
+        stride = fmt.row_bytes // 2
+        encoded = rgb888_to_rgb565_le(img, fmt.width, fmt.height, stride=stride)
+        decoded = rgb565_le_to_rgb888(encoded, fmt.width, fmt.height, stride=stride)
+        r, g, b = decoded.getpixel((0, 0))
+        assert abs(r - 255) <= 4
+        assert abs(g - 128) <= 4
+        assert abs(b - 64) <= 4
