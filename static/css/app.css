@@ -135,7 +135,7 @@ body {
 .context-menu-item.danger:hover {
     background-color: rgba(239, 68, 68, 0.1);
 }
-#ipod-context-menu, #ipod-playlist-submenu {
+#ipod-context-menu, #ipod-playlist-submenu, #ipod-rating-submenu {
     position: fixed;
     z-index: 200;
     width: 220px;

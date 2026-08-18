@@ -44,6 +44,7 @@ async function ipodFetchPhotos() { return _ipodGet("/api/ipod/photos"); }
 async function ipodFetchVideos() { return _ipodGet("/api/ipod/videos"); }
 async function ipodFetchPodcasts() { return _ipodGet("/api/ipod/podcasts"); }
 async function ipodFetchAudiobooks() { return _ipodGet("/api/ipod/audiobooks"); }
+async function ipodFetchConflicts() { return _ipodGet("/api/ipod/conflicts"); }
 
 async function ipodMediaSync(payload) { return _ipodPost("/api/ipod/media/sync", payload); }
 async function ipodPlaylistSet(payload) { return _ipodPost("/api/ipod/playlist/set", payload); }
@@ -55,3 +56,6 @@ async function ipodPlanCreate(payload) { return _ipodPost("/api/ipod/plan", payl
 async function ipodApplyPlan(payload) { return _ipodPost("/api/ipod/apply", payload); }
 async function ipodBackupNow(payload) { return _ipodPost("/api/ipod/backup", payload); }
 async function ipodSyncPlayback() { return _ipodPost("/api/ipod/sync/playback", {}); }
+async function ipodTrackRate(payload) { return _ipodPost("/api/ipod/track/rate", payload); }
+async function ipodConflictResolve(payload) { return _ipodPost("/api/ipod/conflicts/resolve", payload); }
+async function ipodConflictResolveAll(payload) { return _ipodPost("/api/ipod/conflicts/resolve-all", payload); }

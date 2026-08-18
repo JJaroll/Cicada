@@ -26,7 +26,8 @@ let ipodState = {
     selectedPodcastIndex: 0,
     selectedAudiobookIndex: 0,
     syncBasket: [],           // pistas locales pendientes de enviar al iPod (por source_path)
-    syncBasketPlaylists: []   // playlists pendientes de crear: {name, source_paths}
+    syncBasketPlaylists: [],  // playlists pendientes de crear: {name, source_paths}
+    conflicts: []             // conflictos de rating pendientes (GET /api/ipod/conflicts)
 };
 
 function _setIpodButtons(enabled) {
@@ -93,8 +94,11 @@ async function scanIpod() {
 
             // Actualiza la línea base de reproducciones (rating/play_count/etc.)
             // en segundo plano: solo lee el dispositivo y escribe SQLite local,
-            // nunca el iPod — si falla, no debe romper el escaneo visible.
-            ipodSyncPlayback().catch(e => console.error("Error sincronizando playback state:", e));
+            // nunca el iPod — si falla, no debe romper el escaneo visible. El
+            // badge de conflictos se refresca DESPUÉS (depende del baseline recién commiteado).
+            ipodSyncPlayback()
+                .then(() => _refreshIpodConflictsBadge())
+                .catch(e => console.error("Error sincronizando playback state:", e));
         } else if (data.state === "no_ipod_control") {
             ipodState.connected = false;
             if (container) container.classList.add("hidden");
@@ -273,7 +277,8 @@ function switchIpodCategory(category) {
         "ipod-view-videos",
         "ipod-view-podcasts",
         "ipod-view-audiobooks",
-        "ipod-view-sync"
+        "ipod-view-sync",
+        "ipod-view-conflicts"
     ];
     containers.forEach(id => {
         const el = document.getElementById(id);
@@ -319,6 +324,9 @@ function renderCurrentIpodCategory() {
             break;
         case "sync":
             renderIpodSyncBasket();
+            break;
+        case "conflicts":
+            renderIpodConflicts();
             break;
     }
 }
@@ -399,6 +407,83 @@ function renderIpodSyncBasket() {
             playlists.map(p => ipodSyncBasketPlaylistRowHtml(p)).join("") + '</div>';
     }
     list.innerHTML = plHtml + basket.map(it => ipodSyncBasketTrackRowHtml(it)).join("");
+}
+
+// --- CONFLICTOS DE RATING (local vs. dispositivo vs. última sincronización) ---
+async function _refreshIpodConflictsBadge() {
+    const badge = document.getElementById("ipod-count-conflicts");
+    try {
+        const { res, data } = await ipodFetchConflicts();
+        const count = (res.ok && data.conflicts) ? data.conflicts.length : 0;
+        ipodState.conflicts = (res.ok && data.conflicts) ? data.conflicts : [];
+        if (badge) {
+            badge.textContent = count;
+            badge.classList.toggle("hidden", count === 0);
+        }
+        if (ipodState.currentCategory === "conflicts") renderIpodConflicts();
+    } catch (e) {
+        console.error("Error consultando conflictos:", e);
+    }
+}
+
+async function renderIpodConflicts() {
+    const list = document.getElementById("ipod-conflicts-list");
+    const batchActions = document.getElementById("ipod-conflicts-batch-actions");
+    if (!list) return;
+    try {
+        const { res, data } = await ipodFetchConflicts();
+        if (!res.ok) throw new Error(_ipodErr(data));
+        ipodState.conflicts = data.conflicts || [];
+    } catch (e) {
+        list.innerHTML = `<p class="font-data-sm text-[13px] text-muted/60 text-center py-8">${t("error_prefix")}${e.message}</p>`;
+        return;
+    }
+    const badge = document.getElementById("ipod-count-conflicts");
+    if (badge) {
+        badge.textContent = ipodState.conflicts.length;
+        badge.classList.toggle("hidden", ipodState.conflicts.length === 0);
+    }
+    if (batchActions) batchActions.classList.toggle("hidden", ipodState.conflicts.length === 0);
+    if (!ipodState.conflicts.length) {
+        list.innerHTML = `<p class="font-data-sm text-[13px] text-muted/60 text-center py-8">${t("ipod_conflicts_empty")}</p>`;
+        return;
+    }
+    list.innerHTML = ipodState.conflicts.map(c => ipodConflictRowHtml(c)).join("");
+}
+
+async function resolveIpodConflict(dbid, resolution) {
+    try {
+        const gate = await _ipodWriteGate();
+        if (!gate) return;
+        const { res, data } = await ipodConflictResolve({
+            ipod_dbid: dbid, resolution: resolution, consent_ack: gate.consentAck,
+        });
+        if (!res.ok || !data.success) {
+            alert(t("ipod_write_failed") + (data.error || _ipodErr(data)));
+        }
+        await renderIpodConflicts();
+    } catch (e) {
+        alert(t("error_prefix") + e.message);
+    }
+}
+
+async function resolveAllIpodConflicts(resolution) {
+    if (!ipodState.conflicts.length) return;
+    const confirmMsg = resolution === "local" ? t("ipod_conflicts_confirm_all_local") : t("ipod_conflicts_confirm_all_device");
+    if (!confirm(confirmMsg.replace("{n}", ipodState.conflicts.length))) return;
+    try {
+        const gate = await _ipodWriteGate();
+        if (!gate) return;
+        const { res, data } = await ipodConflictResolveAll({
+            resolution: resolution, consent_ack: gate.consentAck,
+        });
+        if (!res.ok || !data.success) {
+            alert(t("ipod_write_failed") + (data.error || _ipodErr(data)));
+        }
+        await renderIpodConflicts();
+    } catch (e) {
+        alert(t("error_prefix") + e.message);
+    }
 }
 
 // Envía el carrito al iPod vía el pipeline real (/media/sync), con gate de consentimiento.
@@ -509,6 +594,7 @@ function showIpodSongContextMenu(event, dbTrackId, title, artist) {
     if (!dbTrackId) return;
     ipodContextTrack = { db_track_id: dbTrackId, title: title, artist: artist };
     hideIpodPlaylistSubmenu();
+    hideIpodRatingSubmenu();
     const menu = document.getElementById("ipod-context-menu");
     if (!menu) return;
     menu.style.display = "flex";
@@ -523,11 +609,53 @@ document.addEventListener('click', function() {
     const menu = document.getElementById("ipod-context-menu");
     if (menu && menu.style.display === "flex") menu.style.display = "none";
     hideIpodPlaylistSubmenu();
+    hideIpodRatingSubmenu();
 });
 
 function hideIpodPlaylistSubmenu() {
     const sub = document.getElementById("ipod-playlist-submenu");
     if (sub) sub.style.display = "none";
+}
+
+function hideIpodRatingSubmenu() {
+    const sub = document.getElementById("ipod-rating-submenu");
+    if (sub) sub.style.display = "none";
+}
+
+function showIpodRatingSubmenu(event) {
+    const sub = document.getElementById("ipod-rating-submenu");
+    if (!sub) return;
+    const stars = [1, 2, 3, 4, 5];
+    sub.innerHTML = stars.map(n =>
+        '<div class="context-menu-item" onclick="contextRateIpodTrack(' + n + ')">' +
+        '<span>' + "★".repeat(n) + "☆".repeat(5 - n) + '</span></div>'
+    ).join("") + '<div class="context-menu-item" onclick="contextRateIpodTrack(0)"><span>' + t("ipod_conflicts_no_rating") + '</span></div>';
+
+    const r = event.currentTarget.getBoundingClientRect();
+    let x = r.right;
+    if (x + 220 > window.innerWidth) x = Math.max(0, r.left - 220);
+    let y = r.top;
+    sub.style.display = "flex";
+    if (y + sub.offsetHeight > window.innerHeight) y = Math.max(0, window.innerHeight - sub.offsetHeight - 8);
+    sub.style.left = x + "px";
+    sub.style.top = y + "px";
+}
+
+async function contextRateIpodTrack(stars) {
+    hideIpodRatingSubmenu();
+    const menu = document.getElementById("ipod-context-menu");
+    if (menu) menu.style.display = "none";
+    if (!ipodContextTrack) return;
+    try {
+        const rating = Math.max(0, Math.min(5, stars)) * 20;
+        const { res, data } = await ipodTrackRate({ db_track_id: ipodContextTrack.db_track_id, rating: rating });
+        if (!res.ok || !data.success) {
+            alert(t("ipod_write_failed") + (data.error || _ipodErr(data)));
+        }
+        await _refreshIpodConflictsBadge();
+    } catch (e) {
+        alert(t("error_prefix") + e.message);
+    }
 }
 
 function showIpodPlaylistSubmenu(event) {

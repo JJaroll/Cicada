@@ -233,3 +233,31 @@ function ipodChapterRowHtml(ch, i, author) {
             </div>
         `;
 }
+
+// --- Conflictos de rating (local vs. dispositivo vs. baseline) ---
+function _starsText(rating0to100) {
+    const n = Math.max(0, Math.min(5, Math.round((rating0to100 || 0) / 20)));
+    return "★".repeat(n) + "☆".repeat(5 - n);
+}
+
+function ipodConflictRowHtml(c) {
+    const name = c.title
+        ? _escapeHtmlIpod(c.title) + (c.artist ? " — " + _escapeHtmlIpod(c.artist) : "")
+        : t("track_untitled");
+    return `
+        <div class="flex items-center justify-between gap-3 px-3 py-2.5 rounded-lg bg-btn">
+            <div class="flex-1 min-w-0">
+                <div class="font-data-sm text-[13px] text-main font-medium truncate">${name}</div>
+                <div class="font-data-sm text-[12px] text-muted/60 truncate">
+                    ${t("ipod_conflicts_local_label")}: ${_starsText(c.local_rating)} (${c.local_rating})
+                    &nbsp;·&nbsp;
+                    ${t("ipod_conflicts_device_label")}: ${_starsText(c.device_rating)} (${c.device_rating})
+                </div>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0">
+                <button type="button" onclick="resolveIpodConflict(${_ipodAttrJson(c.ipod_dbid)}, 'local')" class="px-3 py-1.5 rounded-full bg-accent-light text-accent font-label-caps text-[11px] hover:brightness-110 transition-all">${t("ipod_conflicts_use_local")}</button>
+                <button type="button" onclick="resolveIpodConflict(${_ipodAttrJson(c.ipod_dbid)}, 'device')" class="px-3 py-1.5 rounded-full bg-btn-hover text-main font-label-caps text-[11px] hover:brightness-110 transition-all">${t("ipod_conflicts_use_device")}</button>
+            </div>
+        </div>
+    `;
+}

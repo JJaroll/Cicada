@@ -167,7 +167,7 @@ async def get():
             }
           }
         </script>
-        <link rel="stylesheet" href="/static/css/app.css?v=2.1.0">
+        <link rel="stylesheet" href="/static/css/app.css?v=2.2.0">
     </head>
     <body class="bg-app text-main font-body-md text-body-md h-screen flex justify-center p-4">
         <div class="app-shell w-full h-full max-w-[1920px] mx-auto flex gap-4">
@@ -417,12 +417,18 @@ async def get():
                 <span data-i18n="ctx_ipod_add_to_playlist">Agregar a Playlist</span>
                 <span class="material-symbols-outlined text-[16px] submenu-arrow">chevron_right</span>
             </div>
+            <div class="context-menu-item has-submenu" onmouseenter="showIpodRatingSubmenu(event)">
+                <span class="material-symbols-outlined text-[18px]">star</span>
+                <span data-i18n="ctx_ipod_rate">Calificar</span>
+                <span class="material-symbols-outlined text-[16px] submenu-arrow">chevron_right</span>
+            </div>
             <div class="context-menu-item danger" onclick="contextRemoveFromIpod()">
                 <span class="material-symbols-outlined text-[18px]">delete</span>
                 <span data-i18n="ctx_ipod_remove">Eliminar del iPod</span>
             </div>
         </div>
         <div id="ipod-playlist-submenu"></div>
+        <div id="ipod-rating-submenu"></div>
 
         <!-- Modal de Obtener Información -->
         <div id="track-info-modal" class="hidden fixed inset-0 z-[100] items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -923,6 +929,11 @@ async def get():
                                 <span class="flex-1 truncate" data-i18n="ipod_cat_sync">Sincronizar con Cicada</span>
                                 <span id="ipod-count-sync" class="font-data-sm text-[11px] text-secondary font-bold">0</span>
                             </button>
+                            <button type="button" class="ipod-cat-btn" data-cat="conflicts" onclick="switchIpodCategory('conflicts')">
+                                <span class="material-symbols-outlined text-[18px]">warning</span>
+                                <span class="flex-1 truncate" data-i18n="ipod_cat_conflicts">Conflictos</span>
+                                <span id="ipod-count-conflicts" class="hidden font-data-sm text-[11px] text-white bg-[#f43f5e] rounded-full px-1.5 font-bold">0</span>
+                            </button>
                         </div>
 
                         <!-- Contenedor Principal de la Categoría -->
@@ -1115,6 +1126,21 @@ async def get():
                                 </div>
                                 <div id="ipod-sync-basket-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
                             </div>
+
+                            <!-- VISTA 8: CONFLICTOS DE RATING -->
+                            <div id="ipod-view-conflicts" class="hidden flex-1 flex flex-col gap-3 overflow-hidden">
+                                <div class="flex items-center justify-between pb-2 border-b border-theme">
+                                    <div class="flex flex-col min-w-0">
+                                        <h4 class="font-label-caps text-[13px] text-main font-semibold" data-i18n="ipod_conflicts_title">Conflictos de calificación</h4>
+                                        <span class="font-data-sm text-[12px] text-muted/60" data-i18n="ipod_conflicts_hint">Cambiaron en Cicada y en el iPod desde la última sincronización — elige cuál vale.</span>
+                                    </div>
+                                    <div id="ipod-conflicts-batch-actions" class="hidden flex-shrink-0 flex items-center gap-2">
+                                        <button type="button" onclick="resolveAllIpodConflicts('local')" class="px-3 py-1.5 rounded-full bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors" data-i18n="ipod_conflicts_use_local_all">Usar Local en todos</button>
+                                        <button type="button" onclick="resolveAllIpodConflicts('device')" class="px-3 py-1.5 rounded-full bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors" data-i18n="ipod_conflicts_use_device_all">Usar Dispositivo en todos</button>
+                                    </div>
+                                </div>
+                                <div id="ipod-conflicts-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-2"></div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1264,16 +1290,16 @@ async def get():
 
         <audio id="library-audio" preload="none"></audio>
 
-        <script src="/static/js/i18n.js?v=2.1.0"></script>
-        <script src="/static/js/common.js?v=2.1.0"></script>
-        <script src="/static/js/metadata.js?v=2.1.0"></script>
-        <script src="/static/js/download.js?v=2.1.0"></script>
-        <script src="/static/js/playlist.js?v=2.1.0"></script>
-        <script src="/static/js/library.js?v=2.1.0"></script>
-        <script src="/static/js/player.js?v=2.1.0"></script>
-        <script src="/static/js/ipod/api.js?v=2.1.0"></script>
-        <script src="/static/js/ipod/render.js?v=2.1.0"></script>
-        <script src="/static/js/ipod/ui.js?v=2.1.0"></script>
+        <script src="/static/js/i18n.js?v=2.2.0"></script>
+        <script src="/static/js/common.js?v=2.2.0"></script>
+        <script src="/static/js/metadata.js?v=2.2.0"></script>
+        <script src="/static/js/download.js?v=2.2.0"></script>
+        <script src="/static/js/playlist.js?v=2.2.0"></script>
+        <script src="/static/js/library.js?v=2.2.0"></script>
+        <script src="/static/js/player.js?v=2.2.0"></script>
+        <script src="/static/js/ipod/api.js?v=2.2.0"></script>
+        <script src="/static/js/ipod/render.js?v=2.2.0"></script>
+        <script src="/static/js/ipod/ui.js?v=2.2.0"></script>
         <script>
             // Inicialización de la UI
             applyLanguage(currentLang);
