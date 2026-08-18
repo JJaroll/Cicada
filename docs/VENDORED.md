@@ -157,7 +157,7 @@ devuelve `Blocker(pid, name, path, ppid, parent, friendly_name)` al llamador.
   API** (`RmStartSession`/`RmGetList`, ctypes) — se dejó fuera por no poder
   probarlo en hardware Windows. Ausencia declarada, no ctypes sin verificar.
 
-Tests: `tests/ipod/device/test_eject.py` (20), incl. parser contra la salida real.
+Tests: `tests/ipod/device/test_eject.py` (29), incl. parser contra la salida real.
 
 #### Etapa 2c — Identidad desde el volumen (código propio, sin vendorizar)
 
