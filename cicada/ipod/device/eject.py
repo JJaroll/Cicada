@@ -60,6 +60,16 @@ FRIENDLY_NAMES: dict[str, str] = {
     "cloudd": "iCloud",
 }
 
+#: Shells cuyo directorio actual puede estar dentro del punto de montaje. El
+#: usuario no necesita cerrarlas — basta con salir del directorio (`cd ~`).
+_SHELL_NAMES: frozenset[str] = frozenset({
+    "zsh", "bash", "sh", "fish", "dash", "csh", "tcsh",
+})
+
+#: Mensaje de éxito en lenguaje de usuario — no el texto crudo de diskutil
+#: (que casi siempre imprime algo tipo "Disk disk4 ejected").
+_EJECT_SUCCESS_MSG = "iPod expulsado correctamente. Puedes desconectarlo."
+
 
 @dataclass(frozen=True)
 class Blocker:
@@ -92,15 +102,28 @@ class EjectResult:
 def _busy_message(blockers: list[Blocker]) -> str:
     if not blockers:
         return "El iPod está ocupado y no se pudo expulsar."
-    nombres: list[str] = []
-    for b in blockers:
-        fn = b.friendly_name
-        if fn not in nombres:
-            nombres.append(fn)
-    if len(nombres) == 1:
-        return f"{nombres[0]} está usando el iPod, ciérralo e intenta de nuevo."
-    joined = ", ".join(nombres[:-1]) + f" y {nombres[-1]}"
-    return f"{joined} están usando el iPod, ciérralos e intenta de nuevo."
+
+    shells = [b for b in blockers if b.name in _SHELL_NAMES]
+    others = [b for b in blockers if b.name not in _SHELL_NAMES]
+
+    parts: list[str] = []
+    if others:
+        nombres: list[str] = []
+        for b in others:
+            fn = b.friendly_name
+            if fn not in nombres:
+                nombres.append(fn)
+        if len(nombres) == 1:
+            parts.append(f"{nombres[0]} está usando el iPod, ciérralo e intenta de nuevo.")
+        else:
+            joined = ", ".join(nombres[:-1]) + f" y {nombres[-1]}"
+            parts.append(f"{joined} están usando el iPod, ciérralos e intenta de nuevo.")
+    if shells:
+        parts.append(
+            "Una terminal tiene su directorio actual dentro del iPod; "
+            "sal de ahí con `cd ~` e intenta de nuevo."
+        )
+    return " ".join(parts)
 
 
 # ──────────────────────────────────────────────────────────────────────
@@ -205,8 +228,8 @@ def _eject_macos(mount: Path, *, force: bool, timeout: float) -> EjectResult:
                            platform="darwin")
 
     if proc.returncode == 0:
-        return EjectResult(True, proc.stdout.strip() or "iPod expulsado.",
-                           platform="darwin")
+        logger.debug("diskutil eject stdout: %s", proc.stdout.strip())
+        return EjectResult(True, _EJECT_SUCCESS_MSG, platform="darwin")
 
     text = (proc.stderr or "") + "\n" + (proc.stdout or "")
     blockers = _parse_diskutil_dissenters(text) or _lsof_blockers(mount, timeout=timeout)
@@ -228,7 +251,7 @@ def _force_eject_macos(mount: Path, disk: str, blockers: list[Blocker], *,
         return EjectResult(False, "La expulsión forzada excedió el tiempo límite.",
                            tuple(blockers), forced=True, platform="darwin")
     if proc.returncode == 0:
-        return EjectResult(True, "iPod expulsado (forzado).", tuple(blockers),
+        return EjectResult(True, _EJECT_SUCCESS_MSG, tuple(blockers),
                            forced=True, platform="darwin")
     return EjectResult(False, "La expulsión forzada falló. " + _busy_message(blockers),
                        tuple(blockers), forced=True, platform="darwin")

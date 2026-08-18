@@ -103,6 +103,37 @@ def test_mensaje_usuario_deduplica():
     assert msg == "Música está usando el iPod, ciérralo e intenta de nuevo."
 
 
+@pytest.mark.parametrize("shell", ["zsh", "bash", "sh", "fish", "dash", "csh", "tcsh"])
+def test_mensaje_usuario_shell_solo(shell):
+    # Una terminal bloqueando: no se le pide "cerrarla", se le pide salir del directorio.
+    msg = _busy_message([Blocker(pid=1, name=shell)])
+    assert msg == ("Una terminal tiene su directorio actual dentro del iPod; "
+                   "sal de ahí con `cd ~` e intenta de nuevo.")
+
+
+def test_mensaje_usuario_shell_y_app_mixto():
+    # Bloqueador mixto: la app se pide cerrar, la terminal se pide abandonar.
+    msg = _busy_message([
+        Blocker(pid=1, name="AMPDevicesAgent"),
+        Blocker(pid=2, name="zsh"),
+    ])
+    assert msg == (
+        "Música está usando el iPod, ciérralo e intenta de nuevo. "
+        "Una terminal tiene su directorio actual dentro del iPod; "
+        "sal de ahí con `cd ~` e intenta de nuevo."
+    )
+
+
+def test_mensaje_usuario_varias_shells_no_repite():
+    # Dos shells bloqueando -> una sola cláusula (no una por proceso).
+    msg = _busy_message([
+        Blocker(pid=1, name="zsh"),
+        Blocker(pid=2, name="bash"),
+    ])
+    assert msg == ("Una terminal tiene su directorio actual dentro del iPod; "
+                   "sal de ahí con `cd ~` e intenta de nuevo.")
+
+
 # --------------------------------------------------------------------------- #
 # eject_ipod (macOS) con subprocess mockeado
 # --------------------------------------------------------------------------- #
@@ -137,6 +168,8 @@ def test_eject_exito(force_macos, monkeypatch, tmp_path):
     assert res.ejected is True
     assert res.platform == "darwin"
     assert res.blockers == ()
+    # Mensaje en lenguaje de usuario, NO el texto crudo de diskutil ("Disk disk4 ejected").
+    assert res.message == "iPod expulsado correctamente. Puedes desconectarlo."
 
 
 def test_eject_bloqueado_devuelve_quien(force_macos, monkeypatch, tmp_path):
@@ -213,6 +246,8 @@ def test_force_solo_con_flag(force_macos, monkeypatch, tmp_path):
     assert res.ejected is True
     assert res.forced is True
     assert any(c[:3] == ["diskutil", "unmountDisk", "force"] for c in llamadas)
+    # Mismo tono amigable que la vía normal (antes decía "iPod expulsado (forzado).").
+    assert res.message == "iPod expulsado correctamente. Puedes desconectarlo."
 
 
 # --------------------------------------------------------------------------- #

@@ -279,7 +279,8 @@ def _cmd_eject(args: argparse.Namespace) -> int:
     print(result.message)
     if not result.ejected and result.blockers:
         for b in result.blockers:
-            print(f"  PID {b.pid}  {b.friendly_name} ({b.name})")
+            label = b.friendly_name if b.friendly_name == b.name else f"{b.friendly_name} ({b.name})"
+            print(f"  PID {b.pid}  {label}")
         return 1
     return 0 if result.ejected else 1
 

@@ -150,6 +150,34 @@ def test_cli_consent_subcommands(mock_cli_ipod: Path, capsys: pytest.CaptureFixt
     assert "revocado" in capsys.readouterr().out
 
 
+def test_cli_eject_bloqueador_sin_nombre_amigable_no_repite(
+    mock_cli_ipod: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
+):
+    # Regresión: un binario sin entrada en FRIENDLY_NAMES (p.ej. "zsh") no debe
+    # imprimirse duplicado como "zsh (zsh)" — solo "zsh".
+    from cicada.ipod.device.eject import Blocker, EjectResult
+
+    fake_result = EjectResult(
+        ejected=False,
+        message="mensaje de prueba",
+        blockers=(
+            Blocker(pid=111, name="zsh"),
+            Blocker(pid=222, name="Finder"),   # sí tiene friendly_name propio (igual al name)
+            Blocker(pid=333, name="AMPDevicesAgent"),  # friendly_name distinto del name
+        ),
+    )
+    monkeypatch.setattr("cicada.ipod.cli.eject_ipod", lambda *a, **k: fake_result)
+
+    code = main(["eject"])
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "zsh (zsh)" not in out
+    assert "Finder (Finder)" not in out
+    assert "PID 111  zsh" in out
+    assert "PID 222  Finder" in out
+    assert "PID 333  Música (AMPDevicesAgent)" in out
+
+
 def test_cli_backup_and_restore(mock_cli_ipod: Path, tmp_path: Path, capsys: pytest.CaptureFixture):
     # backup
     assert main(["backup"]) == 0
