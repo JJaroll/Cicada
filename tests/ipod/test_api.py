@@ -17,6 +17,7 @@ from cicada.ipod.db.coordinator.consent import (
 )
 from cicada.ipod.db.coordinator.plan import create_plan
 from cicada.ipod.db.models import PlaylistInfo
+from cicada.ipod.db.parser import load_ipod_library
 from cicada.ipod.db.writer.mhit_writer import TrackInfo
 from cicada.ipod.device.capabilities import capabilities_for_family_gen
 from cicada.ipod.device.checksum import ChecksumType
@@ -712,6 +713,70 @@ async def test_api_media_sync_without_artwork_reports_zero(async_client: httpx.A
     assert data["artwork_touched"] is False
     assert data["artwork_tracks_count"] == 0
     assert data["artwork_skipped_count"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind,expected_media_type", [
+    ("podcast", 0x04),
+    ("audiobook", 0x08),
+])
+async def test_api_media_sync_kind_escribe_media_type_y_flags_reales(
+    async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path, kind, expected_media_type,
+):
+    """Fase 5a: 'kind' debe llegar hasta el iTunesDB real, no solo a la
+    respuesta HTTP. Round-trip byte a byte: se parsea el iTunesCDB
+    escrito en disco (load_ipod_library), no se compara contra valores
+    fijos ni contra la respuesta de otro endpoint de Cicada."""
+    src = tmp_path / f"{kind}.mp3"
+    src.write_bytes(b"AUDIO-BYTES" * 50)
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [{
+            "source_path": str(src), "title": f"Un {kind}", "artist": "A",
+            "kind": kind, "category": "Ficción",
+        }],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["success"] is True
+
+    lib = load_ipod_library(
+        str(mock_ipod / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mock_ipod),
+    )
+    track = next(t for t in lib["mhlt"] if t.get("Title") == f"Un {kind}")
+    assert track.get("media_type") == expected_media_type
+    assert track.get("skip_when_shuffling") == 1
+    assert track.get("remember_position") == 1
+    assert track.get("Category") == "Ficción"
+    if kind == "podcast":
+        assert track.get("use_podcast_now_playing_flag") == 1
+    else:
+        assert track.get("use_podcast_now_playing_flag", 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_api_media_sync_kind_music_no_cambia_comportamiento_previo(
+    async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path,
+):
+    """'kind' omitido (o 'music' explícito) debe seguir dando el mismo
+    resultado que antes de Fase 5a: sin regresión para el camino existente."""
+    src = tmp_path / "music.mp3"
+    src.write_bytes(b"AUDIO-BYTES" * 50)
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [{"source_path": str(src), "title": "Cancion Normal", "artist": "A"}],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["success"] is True
+
+    from cicada.ipod.db.shared.constants import MEDIA_TYPE_AUDIO
+    lib = load_ipod_library(
+        str(mock_ipod / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mock_ipod),
+    )
+    track = next(t for t in lib["mhlt"] if t.get("Title") == "Cancion Normal")
+    assert track.get("media_type") == MEDIA_TYPE_AUDIO
+    assert track.get("skip_when_shuffling", 0) == 0
+    assert track.get("remember_position", 0) == 0
+    assert track.get("use_podcast_now_playing_flag", 0) == 0
 
 
 @pytest.mark.asyncio

@@ -782,3 +782,151 @@ diferida.
     ninguna capacidad) — ese trabajo mayor debe definir su propio diseño,
     no colgar de "generalizar artwork".
 
+### Paquete 8 — `podcasts/` → excluido (Fase 5, `cicada/ipod/db/media/chapters.py`)
+
+**Investigación (2026-08-19):** `src/iopenpod/podcasts/` en el origen no está
+vendorizado localmente — auditado bajando cada archivo con `curl` directo
+contra GitHub (`raw.githubusercontent.com`), no con `WebFetch` (ver la
+lección ya documentada en Etapa 4f-2 sobre resúmenes fabricados).
+
+Son 9 archivos: `artwork.py`, `downloader.py`, `feed_parser.py`,
+`itunes_search.py`, `models.py`, `network_errors.py`, `podcast_sync.py`,
+`subscription_store.py`, `__init__.py`. **Todos son gestión de feeds RSS,
+suscripciones, búsqueda en el directorio de iTunes y descarga HTTP de
+episodios** — `feed_parser.py` usa `feedparser` (ya descartado en la §3 del
+spec original). Ninguno tiene lógica de escritura de iTunesDB propia; todos
+terminan produciendo datos que pasan por `itunesdb_writer`, ya vendorizado
+sin depender de nada de este paquete.
+
+**Decisión de alcance (confirmada explícitamente, no un vacío de
+documentación):** Cicada no gestiona feeds ni suscripciones — es un gestor
+de biblioteca que además escribe al iPod, no un cliente de podcasts. El
+alcance de Fase 5 es "el usuario ya tiene el episodio/audiolibro como
+archivo local, Cicada lo pone bien en el dispositivo", no "Cicada descarga
+episodios nuevos de un feed". Esto corrige una suposición que había quedado
+escrita en `ui-ipod.md` §2.5 (contrato de `/podcasts` con `feed_url`, nota
+de "conectar con el feed parser de podcasts") — corregida en Etapa 5d.
+
+**Excluido en bloque, sin caso de uso:** `feed_parser.py`, `downloader.py`
+(descarga HTTP), `itunes_search.py`, `subscription_store.py`,
+`podcast_sync.py` (matching episodio↔track, modos de gestión "newest"/
+"next", borrado de episodios viejos — todo asume suscripción activa),
+`artwork.py`/`network_errors.py` (soporte del pipeline de descarga).
+
+**Vendorizado parcialmente:** `downloader.py:extract_chapters()` es la
+única pieza desacoplada de feeds — toma un `file_path` local y devuelve
+capítulos. De sus tres rutas internas se vendorizaron dos, sin dependencias
+nuevas (mutagen, ya presente en `requirements.txt`, cubre ambas):
+- `_read_nero_chapters` (átomo MP4 `chpl`, bytes crudos)
+- `_chapters_from_mp3` (frames ID3v2 `CHAP`)
+
+**Excluido explícitamente:** el fallback `_read_ffprobe_chapters` (pista de
+capítulos QuickTime sin átomo Nero) — depende de un binario `ffprobe` que
+Cicada no tiene como dependencia hoy (confirmado: no hay ninguna llamada a
+`ffmpeg`/`ffprobe` en el código de Cicada). Sin caso de uso: los audiolibros
+M4B reales usan casi siempre `chpl`. Diferido, no implementado.
+
+**También excluidos explícitamente, sin caso de uso:**
+- `mpeg_audio_type=41` (Audible/AAX): DRM cifrado, Cicada no maneja DRM.
+- `MEDIA_TYPE_VIDEO_PODCAST`: requiere el pipeline de video de Fase 6
+  (`movie_file_flag`), que no existe todavía.
+
+**Hallazgo de la investigación — nada de esto necesitaba paquete nuevo:**
+el soporte de podcasts/audiolibros a nivel de `itunesdb_parser`/
+`itunesdb_writer` (Paquetes 3 y 4) **ya estaba completo desde fases
+anteriores**, como infraestructura MHOD/MHIT genérica nunca activada:
+`write_mhod_podcast_url()`, `write_mhod_chapter_data()` (el
+`build_chapter_blob` de la Etapa 2/Community 17), y los campos
+`bookmark_time`/`remember_position`/`podcast_flag`/`category` en
+`TrackInfo`/`mhit_defs.py`. Confirmado con grep exhaustivo: `create_plan()`/
+`apply()` no tienen ninguna lógica condicionada a `media_type` — todo fluye
+por el mismo camino genérico que música. Fase 5a-c es enteramente trabajo
+de entrada (qué llena `TrackInfo`) y salida (qué lee `/podcasts` y
+`/audiobooks`), no de coordinador ni de formato binario nuevo.
+
+**`pc_track_to_info()` (`cicada/ipod/db/writer/_track_conversion.py:159`) —
+referencia de diseño no usada, mismo tratamiento que otras piezas
+descartadas de iOpenPod.** Ya implementaba la derivación
+`media_type→podcast_flag/skip_when_shuffling/remember_position` que
+necesitaba 5a, pero recibe un objeto `pc_track` (atributos `.is_podcast`,
+`.is_audiobook`, `.video_kind`, `.chapters`) que **no corresponde a ningún
+tipo real en Cicada** — es un residuo del propio modelo de biblioteca local
+de iOpenPod, nunca instanciado ni llamado desde ningún sitio del código.
+**Decisión (2026-08-19):** no se adaptó — envolver una interfaz ajena que no
+existe habría sido inventar una capa de traducción innecesaria. La
+derivación real (Etapa 5a) se escribió directa en `cicada/ipod/api.py`,
+más simple que la función original porque no necesita distinguir video ni
+preservar `existing_media_type` (ese caso es para UPDATE, fuera de alcance
+de "añadir track nuevo").
+
+#### Etapa 5a — Derivar `media_type`/flags/`category` en la entrada de `/media/sync`. **Estado: implementado y verificado.**
+
+`MediaTrackInput` (api.py) gana `kind: "music" | "podcast" | "audiobook"`
+(default `"music"`, validado por Pydantic `Literal`) y `category:
+str | None`. En `sync_media()`, `kind="podcast"` setea
+`media_type=MEDIA_TYPE_PODCAST`, `podcast_flag=1`,
+`skip_when_shuffling=True`, `remember_position=True`; `kind="audiobook"`
+setea `media_type=MEDIA_TYPE_AUDIOBOOK` y las mismas dos flags de
+reproducción (sin `podcast_flag`, que es específico de podcast).
+`kind="music"` (o ausente) no cambia nada del comportamiento previo.
+
+Tests (`tests/ipod/test_api.py`): round-trip real — `POST /media/sync` con
+`kind="podcast"`/`"audiobook"`, luego `load_ipod_library()` parseando el
+`iTunesCDB` **escrito en disco**, no la respuesta HTTP de otro endpoint de
+Cicada ni valores hardcodeados. Mismo patrón de rigor que el round-trip de
+Fase 2/4 que ya atrapó dos bugs reales antes. Verificado con mutation
+sanity check: se comentó la línea `remember_position=True` del caso
+audiobook, el test correspondiente falló exactamente como se esperaba, se
+revirtió. Suite completa: 478 tests verdes (475 + 3 nuevos).
+
+#### Etapa 5b — Extracción de capítulos embebidos. **Estado: implementado y verificado.**
+
+`cicada/ipod/db/writer/chapter_extraction.py` (nuevo, vendorizado desde
+`downloader.py` @ `c66a4bdb`): `extract_chapters(file_path)` lee el átomo
+Nero `chpl` (MP4/M4A/M4B/M4V/MOV) o frames ID3v2 `CHAP` (MP3), devolviendo
+`[{"startpos", "title"}, ...]` crudo — la normalización/validación final
+(orden, límite, títulos sospechosos) ya la hace
+`mhod_writer._normalized_chapters_for_track()`, vendorizada desde Fase 2,
+así que no se duplicó.
+
+**Enganche:** decidido en implementación, no en el plan original —
+`_prepare_new_tracks()` en `cicada/ipod/db/coordinator/media.py`, junto a
+`_read_audio_info()` (que ya probaba length/bitrate/sample_rate del archivo
+real para toda pista nueva). Es el mismo mecanismo, agnóstico de `kind`: no
+se gateó por `kind="podcast"/"audiobook"` en `api.py` como sugería el plan,
+porque no hay motivo real para negarle capítulos a un archivo de música que
+los traiga embebidos — la extracción es puramente aditiva (no cambia
+`media_type` ni ninguna otra flag) y barata (no-op si el archivo no tiene
+capítulos). Efecto colateral correcto: cualquier llamador de
+`sync_media_to_ipod`/`_prepare_new_tracks` los recibe gratis, no solo
+`POST /media/sync` (también `set_ipod_playlist` con tracks nuevas).
+
+**Hallazgo real durante la verificación (no hipotético — atrapado por el
+propio test antes de dar la función por buena):** el código de origen lee
+`frame.sub_frames` como lista (`for sub in frame.sub_frames`), pero mutagen
+1.47.0 (el pinneado en `requirements.txt`) lo expone como un `ID3Tags`
+dict-like (`{"TIT2": TIT2(...)}`, ni siquiera `isinstance(x, dict)` da
+`True`) — iterarlo directo da las claves-string, `hasattr(sub, "text")` es
+siempre `False`, y el título de cada capítulo caía en silencio al genérico
+`"Chapter N"`. El test de capítulos MP3 falló al primer intento con el
+código vendorizado tal cual; fix: detectar `hasattr(sub_frames, "values")`
+en vez de `isinstance(..., dict)` y desenvolver antes de iterar. Confirmado
+con mutation sanity check explícito (revertido el fix, el test volvió a
+fallar exactamente igual, se restauró).
+
+Tests: `tests/ipod/db/writer/test_chapter_extraction.py` (7, unitarios —
+fixtures de M4B/MP3 construidas byte a byte en el propio test, sin audio
+con copyright: átomo `chpl` armado a mano, frames `CHAP` vía mutagen sobre
+la fixture MP3 real ya existente; casos negativos: sin capítulos, archivo
+inexistente, extensión no soportada, atom `chpl` truncado no debe lanzar).
+`tests/ipod/db/coordinator/test_media_sync.py` (+2): round-trip real de
+extremo a extremo — `sync_media_to_ipod()` con un `.m4b` con capítulos
+Nero, luego `load_ipod_library()` sobre el iTunesCDB escrito en disco
+(MHOD 17 real, no el dict de entrada) **y** lectura directa por `sqlite3`
+de la tabla `chapter` en `Extras.itdb` (mismo mecanismo que ya usan las
+lyrics). Regresión: track sin capítulos no debe dejar `chapter_data` en el
+track parseado ni fila en `Extras.itdb`. Mutation sanity check adicional
+sobre el enganche en `media.py` (deshabilitado con `if False`, el test de
+round-trip falló como se esperaba, se revirtió). Suite completa: 487 tests
+verdes (478 + 9 nuevos).
+

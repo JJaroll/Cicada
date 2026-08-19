@@ -295,6 +295,79 @@ def test_sync_media_playlist_con_paths_desincronizados_no_desaparece(ipod_with_d
     assert "Desincronizada" in names   # se crea (aunque vacía), nunca se descarta
 
 
+def _build_atom(fourcc: bytes, body: bytes) -> bytes:
+    import struct
+    return struct.pack(">I", 8 + len(body)) + fourcc + body
+
+
+def _build_nero_chpl_m4b(path: Path, chapters: list[tuple[int, str]]) -> None:
+    import struct
+    body = bytes([0]) + bytes(4) + bytes([len(chapters)])
+    for start_ms, title in chapters:
+        title_bytes = title.encode("utf-8")
+        body += struct.pack(">Q", start_ms * 10_000) + bytes([len(title_bytes)]) + title_bytes
+    chpl = _build_atom(b"chpl", body)
+    udta = _build_atom(b"udta", chpl)
+    moov = _build_atom(b"moov", udta)
+    path.write_bytes(moov)
+
+
+def test_sync_media_kind_audiobook_con_capitulos_round_trip(ipod_with_db):
+    """Fase 5b: un audiolibro nuevo con capítulos Nero (.m4b) debe llegar con
+    su chapter_data intacto tanto al iTunesDB principal (MHOD 17, verificado
+    parseando el archivo real escrito en disco) como a Extras.itdb (blob de
+    la tabla chapter, mismo mecanismo que ya usan lyrics)."""
+    mount, dev = ipod_with_db
+    src = mount.parent / "book.m4b"
+    _build_nero_chpl_m4b(src, [(0, "Capitulo 1"), (90000, "Capitulo 2")])
+
+    new = TrackInfo(title="Un Libro", location="", filetype="m4b", media_type=0x08)
+    new.source_path = str(src)
+
+    res = sync_media_to_ipod(mount, [new], device_info=dev, consent_ack=True)
+    assert res.success is True
+
+    lib = load_ipod_library(str(mount / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mount))
+    track = next(t for t in lib["mhlt"] if t.get("Title") == "Un Libro")
+    chapters = track["chapter_data"]["chapters"]
+    assert [(c["startpos"], c["title"]) for c in chapters] == [
+        (0, "Capitulo 1"), (90000, "Capitulo 2"),
+    ]
+
+    import sqlite3
+
+    from cicada.ipod.db.sqlite._helpers import s64
+    conn = sqlite3.connect(str(mount / "iPod_Control" / "iTunes" / "iTunes Library.itlp" / "Extras.itdb"))
+    row = conn.execute(
+        "SELECT data FROM chapter WHERE item_pid = ?", (s64(track["db_track_id"]),),
+    ).fetchone()
+    conn.close()
+    assert row is not None and len(row[0]) > 0
+
+
+def test_sync_media_track_sin_capitulos_no_agrega_chapter_data(ipod_with_db):
+    """Regresión: un track normal (sin capítulos embebidos) no debe terminar
+    con chapter_data — ni en el iTunesDB ni una fila fantasma en Extras.itdb."""
+    mount, dev = ipod_with_db
+    src = mount.parent / "cancion.mp3"
+    src.write_bytes(b"AUDIO-BYTES" * 50)
+    new = TrackInfo(title="Cancion Sin Capitulos", location="", filetype="mp3")
+    new.source_path = str(src)
+
+    res = sync_media_to_ipod(mount, [new], device_info=dev, consent_ack=True)
+    assert res.success is True
+
+    lib = load_ipod_library(str(mount / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mount))
+    track = next(t for t in lib["mhlt"] if t.get("Title") == "Cancion Sin Capitulos")
+    assert "chapter_data" not in track
+
+    import sqlite3
+    conn = sqlite3.connect(str(mount / "iPod_Control" / "iTunes" / "iTunes Library.itlp" / "Extras.itdb"))
+    count = conn.execute("SELECT COUNT(*) FROM chapter").fetchone()[0]
+    conn.close()
+    assert count == 0
+
+
 def test_sync_media_sin_playlists_preserva_existentes(ipod_with_db):
     # Aunque no se envíen playlists, un sync normal NO debe borrar las de usuario.
     mount, dev = ipod_with_db

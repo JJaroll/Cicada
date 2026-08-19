@@ -203,6 +203,11 @@ def _prepare_new_tracks(mount, new_tracks):
         if sr:
             ti.sample_rate = sr
         ti.vbr = vbr
+        if not ti.chapter_data:
+            from cicada.ipod.db.writer.chapter_extraction import extract_chapters
+            chapters = extract_chapters(str(ti.source_path))
+            if chapters:
+                ti.chapter_data = {"chapters": chapters}
         if not ti.db_track_id:
             ti.db_track_id = random.getrandbits(64)
     return assignments, {str(ti.source_path): ti.db_track_id for ti in new_tracks}

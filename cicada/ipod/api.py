@@ -15,7 +15,7 @@ import shutil
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -44,6 +44,7 @@ from cicada.ipod.db.coordinator.plan import (
 )
 from cicada.ipod.db.parser import load_ipod_library
 from cicada.ipod.db.models import TrackInfo
+from cicada.ipod.db.shared.constants import MEDIA_TYPE_AUDIOBOOK, MEDIA_TYPE_PODCAST
 from cicada.ipod.db.coordinator.media import (
     preserve_existing_playlists,
     remove_track_from_ipod,
@@ -882,6 +883,13 @@ class MediaTrackInput(BaseModel):
     track_number: Optional[int] = None
     length_ms: Optional[int] = None
     filetype: Optional[str] = None
+    # Fase 5: variante de medio. "music" no cambia el comportamiento previo.
+    # "podcast"/"audiobook" solo setean media_type y las flags de reproducción
+    # asociadas (skip_when_shuffling, remember_position) — mismo camino de
+    # escritura que música, sin chunk binario nuevo (ver docs/IPOD_INTEGRATION.md
+    # Fase 5). video_podcast excluido: requiere el pipeline de video de Fase 6.
+    kind: Literal["music", "podcast", "audiobook"] = "music"
+    category: Optional[str] = None
 
 
 class MediaPlaylistInput(BaseModel):
@@ -930,7 +938,17 @@ def sync_media(req: MediaSyncRequest) -> ApplyResponse:
                 track_number=t.track_number or 0,
                 length=t.length_ms or 0,
                 filetype=(t.filetype or src.suffix.lstrip(".")).lower(),
+                category=t.category,
             )
+            if t.kind == "podcast":
+                ti.media_type = MEDIA_TYPE_PODCAST
+                ti.podcast_flag = 1
+                ti.skip_when_shuffling = True
+                ti.remember_position = True
+            elif t.kind == "audiobook":
+                ti.media_type = MEDIA_TYPE_AUDIOBOOK
+                ti.skip_when_shuffling = True
+                ti.remember_position = True
             ti.source_path = str(src)
             new_tracks.append(ti)
 
