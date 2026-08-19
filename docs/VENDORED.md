@@ -535,6 +535,30 @@ diferida.
   referencia colgante forzada, y el test de dos syncs consecutivos
   descrito arriba). Prueba de fuego en hardware real (Nano 7G): siguiente
   paso, fuera de esta etapa.
+
+  **Deuda conocida encontrada preparando la prueba de fuego (2026-08-18):**
+  - `cicada ipod plan`/`sync` (CLI) **no puede escribir artwork**:
+    `_load_tracks_from_file()` en `cli.py` nunca rellena `TrackInfo.source_path`
+    al construir tracks desde el JSON de `--tracks-file`, así que un track
+    nuevo por esa vía jamás resuelve fuente de imagen (solo el fallback a
+    `location` funcionaría, y solo para tracks YA presentes en el dispositivo
+    con audio real en esa ruta). El CLI necesita conectarse al mismo pipeline
+    que ya usa `POST /api/ipod/media/sync` (`sync_media_to_ipod()` en
+    `coordinator/media.py`, que sí asigna `source_path`) antes de poder
+    ejercer artwork por esa vía. No es un bug de 4d — el CLI nunca tuvo este
+    camino — pero 4d lo hizo visible. Sin arreglar todavía, a propósito.
+  - **`Plan.artwork_touched`/`.artwork_tracks_count`/`.artwork_skipped_count`
+    (pensados en el punto 7 del diseño de 4d para visibilidad de dry-run) no
+    llegan a ninguna superficie que el usuario pueda leer**: ni
+    `PlanResponse`/`ApplyResponse` en `api.py`, ni la salida de
+    `cicada ipod plan`/`sync`. `POST /api/ipod/media/sync` en particular
+    hace `create_plan()`+`apply()` en una sola llamada sin paso de
+    preview intermedio, así que ahí ni siquiera hay un momento natural de
+    "dry-run antes de confirmar" para mostrarlos hoy. Pendiente: cablear
+    estos 3 campos a `ApplyResponse`/`sync_media()` (post-hoc, ya que no
+    hay preview separado) y a la salida de `_cmd_plan()`/`_cmd_sync()` del
+    CLI. No bloqueante, pero comprometido para después de la prueba de
+    fuego — no dejar indefinido.
 - **Etapa 4e — API/CLI/UI.** Pendiente.
 - **Etapa 4f — Generalización a otros modelos (diferida, no descartada).**
   Activar `ithmb_codecs.py` completo (RGB565_BE, RGB555, UYVY, JPEG) y las
