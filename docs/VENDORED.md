@@ -100,9 +100,41 @@ que cumple la interfaz que espera `info.py` (`read_authority`,
   semántica derivan de iOpenPod (MIT) — atribución en NOTICE.
 - Añadida `clean_foreign_authority(ipod_path)` (vía `write_guard`), expuesta como
   `cicada ipod clean-foreign`: elimina el `iOpenPodSysInfoAuthority` ajeno del
-  dispositivo. No automática — para verificar la hipótesis del rechazo de Music.app.
+  dispositivo.
 
-Tests: `tests/ipod/device/test_authority.py` (12).
+**Hipótesis confirmada con hardware real (2026-08-19)**: en un iPod con residuo real de
+iOpenPod que Music.app ya rechazaba, `clean-foreign` + borrado manual de los `.backup`
+ajenos —sin tocar `mhbd`/SQLite, sin restaurar— bastó para que Music.app reconociera el
+dispositivo completo de nuevo. Detalle y comparación byte a byte del `mhbd`/SQLite
+(idénticos entre Cicada e iOpenPod salvo 4 IDs aleatorios esperados) en
+`docs/IPOD_INTEGRATION.md` §0.3.
+
+**`clean_foreign_authority()` extendida para cubrir también los `.backup` ajenos
+(2026-08-19).** Ya no limpia solo `iOpenPodSysInfoAuthority` — también los 7 `.backup`
+en sitio de los 7 archivos de base de datos (`FOREIGN_BACKUP_RELPATHS`: mecanismo
+propio de `write_itunesdb`/`write_sqlite_databases` de iOpenPod, que el camino activo
+de Cicada nunca invoca). **Cambio de firma explícito**: devuelve `list[str]` (rutas
+relativas eliminadas) en vez de `bool` — así el CLI/futuro API pueden reportar
+exactamente qué se borró, no solo si se borró algo.
+
+**Garantía de seguridad, verificada por comportamiento, no por lectura de código**:
+antes de borrar automáticamente esos 7 nombres hacía falta la certeza de que el camino
+activo de escritura de Cicada (`build_itunescdb`/`build_sqlite_databases`, vía
+`create_plan()`) nunca los produce — de lo contrario, `clean-foreign` podría borrar algo
+propio. `test_create_plan_never_produces_foreign_backup_filenames`
+(`tests/ipod/db/coordinator/test_plan.py`) corre `create_plan()` de verdad y revisa el
+staging resultante, en vez de confiar en que un grep de hoy siga siendo cierto mañana.
+Sanity check de mutación: se inyectó a mano un `.write_bytes` que generaba
+`iTunesCDB.backup` en `create_plan()`, el test lo detectó, se revirtió.
+
+**Decisión de nombre registrada, no un olvido**: la función se sigue llamando
+`clean_foreign_authority` pese a que ya cubre más que solo el archivo de autoridad —
+a propósito, porque es el nombre del comando público `cicada ipod clean-foreign` ya
+conocido, y no hay urgencia de romperlo. Un rename a `clean_foreign_artifacts` (o
+similar) sería apropiado si en el futuro algo más importa este nombre directamente.
+
+Tests: `tests/ipod/device/test_authority.py` (18, incluye los `.backup` y el caso
+combinado autoridad+backups) + 1 en `test_plan.py` (la garantía de arriba).
 
 **`sysinfo.py` — vendorizado sin modificar.** Origen: `src/iopenpod/device/sysinfo.py`
 @ `ea72e3e`. **Estado: copiado y verificado.** Parseo puro de SysInfo/SysInfoExtended;
@@ -217,11 +249,19 @@ De paquete 4 (`itunesdb_writer`) @ `ea72e3e`, lo mínimo para verificar:
 `verify_hashab` reproduce **byte a byte** las firmas de **iOpenPod** (mismo WASM), pero
 **NO** las de **Apple/iTunes** (verify=False contra la base real de iTunes). Dos hechos
 verificados con hardware, **distintos**: (1) el **firmware del iPod acepta AMBAS firmas**
-—el dispositivo reproduce lo que escribe iOpenPod—; (2) **Music.app solo acepta la de
-Apple** y pide restaurar el iPod. El go/no-go de Fase 2 es que el dispositivo funcione →
-**la escritura HASHAB es VIABLE**, con la limitación conocida de que **rompe la
-compatibilidad con Music.app de forma irreversible**. Fase 2 debe advertir al usuario
-antes de la primera escritura. Ver §0.3 del spec.
+—el dispositivo reproduce lo que escribe iOpenPod—; (2) en esta fase se creía que
+**Music.app solo acepta la de Apple** y por eso pedía restaurar el iPod. El go/no-go de
+Fase 2 fue que el dispositivo funcione → **la escritura HASHAB es VIABLE**.
+
+**Corrección posterior (2026-08-19, ver §0.3 del spec): la firma nunca fue la causa del
+rechazo de Music.app.** `mhbd`/SQLite de Cicada e iOpenPod son idénticos byte a byte
+(salvo 4 IDs aleatorios esperados) — la causa real es `iOpenPodSysInfoAuthority` +
+reescritura de `SysInfo`/`SysInfoExtended` + `.backup` residuales, todo fuera del
+`iTunesCDB`, y todo evitado por diseño en Cicada desde `authority.py` (Paquete 2 más
+arriba). Confirmado limpiando esos archivos en hardware real sin restaurar: Music.app
+volvió a reconocer el dispositivo. El requisito de advertir antes de la primera
+escritura se mantiene (la firma sigue sin ser la de Apple), pero ya no por el motivo
+que se creía aquí.
 
 **Hallazgo que corrige el spec (§0.3):** el SHA1 se computa sobre el **iTunesCDB
 COMPRIMIDO** en disco (no el descomprimido), con `hashing_scheme`=4 y el zeroing estándar,
@@ -355,7 +395,7 @@ por separado** (parser del iTunesCDB sin signo ↔ sqlite3 con signo, normalizad
 
 Orquestador propio de escritura transaccional con rollback para el iPod Nano 7G. **Estado: implementado y verificado.**
 
-- `consent.py` (propio): Gate de advertencia de incompatibilidad con Music.app de Apple. Persiste consentimiento off-device en `~/.cicada/consent/<sha256(guid)[:16]>.json` con escritura atómica. No re-pregunta si ya fue otorgado.
+- `consent.py` (propio): Gate de advertencia de divergencia de firma con Music.app de Apple. Persiste consentimiento off-device en `~/.cicada/consent/<sha256(guid)[:16]>.json` con escritura atómica. No re-pregunta si ya fue otorgado. **Se mantiene, no descartado** — la firma HASHAB de Cicada sigue sin ser la de Apple. **Nota pendiente (2026-08-19, no aplicada a propósito):** el texto del docstring de `consent.py` y del aviso en `cli.py`/`api.py` ("invalidará la compatibilidad con Music.app") quedó desactualizado tras confirmar en `docs/IPOD_INTEGRATION.md` §0.3 que Cicada, por sí sola, **no** rompe esa compatibilidad — el riesgo real es residuo de terceros (iOpenPod u otras herramientas) en el dispositivo, no la escritura de Cicada. Revisar el texto del mensaje cuando se decida tocar este gate; el mecanismo en sí no cambia.
 - `plan.py` (propio): Generador de planes dry-run. Captura la huella `PreStateFingerprint` de los 7 archivos pre-existentes en el iPod, genera los 7 artefactos en staging off-device (`iTunesCDB` comprimido/firmado + 6 archivos `iTunes Library.itlp/`), y valida consistencia interna antes de congelar el plan.
 - `apply.py` (propio): Ejecución en 5 fases rigurosas:
   - Fase A (Precondiciones): Revalida montaje, permisos, procedencia de GUID (`guid_is_write_safe`), gate de consentimiento y huella pre-estado.
@@ -536,35 +576,209 @@ diferida.
   descrito arriba). Prueba de fuego en hardware real (Nano 7G): siguiente
   paso, fuera de esta etapa.
 
-  **Deuda conocida encontrada preparando la prueba de fuego (2026-08-18):**
-  - `cicada ipod plan`/`sync` (CLI) **no puede escribir artwork**:
-    `_load_tracks_from_file()` en `cli.py` nunca rellena `TrackInfo.source_path`
-    al construir tracks desde el JSON de `--tracks-file`, así que un track
-    nuevo por esa vía jamás resuelve fuente de imagen (solo el fallback a
-    `location` funcionaría, y solo para tracks YA presentes en el dispositivo
-    con audio real en esa ruta). El CLI necesita conectarse al mismo pipeline
-    que ya usa `POST /api/ipod/media/sync` (`sync_media_to_ipod()` en
-    `coordinator/media.py`, que sí asigna `source_path`) antes de poder
-    ejercer artwork por esa vía. No es un bug de 4d — el CLI nunca tuvo este
-    camino — pero 4d lo hizo visible. Sin arreglar todavía, a propósito.
-  - **`Plan.artwork_touched`/`.artwork_tracks_count`/`.artwork_skipped_count`
-    (pensados en el punto 7 del diseño de 4d para visibilidad de dry-run) no
-    llegan a ninguna superficie que el usuario pueda leer**: ni
-    `PlanResponse`/`ApplyResponse` en `api.py`, ni la salida de
-    `cicada ipod plan`/`sync`. `POST /api/ipod/media/sync` en particular
-    hace `create_plan()`+`apply()` en una sola llamada sin paso de
-    preview intermedio, así que ahí ni siquiera hay un momento natural de
-    "dry-run antes de confirmar" para mostrarlos hoy. Pendiente: cablear
-    estos 3 campos a `ApplyResponse`/`sync_media()` (post-hoc, ya que no
-    hay preview separado) y a la salida de `_cmd_plan()`/`_cmd_sync()` del
-    CLI. No bloqueante, pero comprometido para después de la prueba de
-    fuego — no dejar indefinido.
+  **Prueba de fuego contra hardware real (Nano 7G), ejecutada dos veces
+  (2026-08-18/19):** backup → sync → verificación independiente releyendo
+  ArtworkDB/iTunesCDB ya instalados (no solo confiar en la respuesta) →
+  eject limpio, ambas veces. Primera corrida por `curl` manual a
+  `/api/ipod/media/sync`: artwork correcto, pero metadata (artista/álbum)
+  vacía porque el payload a mano nunca incluyó esos campos — no fue un bug
+  de Cicada, fue un payload incompleto (`MediaTrackInput`/`sync_media()`
+  construyen `TrackInfo` solo de lo que el request trae, no leen tags del
+  MP3). Segunda corrida repetida desde la UI real (búsqueda → selección →
+  "Agregar a iPod" → carrito → sync), que sí arma el payload completo
+  desde `libraryTracks`: artwork y metadata correctos, verificado
+  releyendo el iTunesCDB instalado. Diagnóstico completo (TrackInfo
+  antes/después de `build_artwork_assets()`, instrumentación temporal
+  revertida) confirmó que el paso de artwork de 4d muta `TrackInfo`
+  in-place y no toca ningún otro campo — no hay pérdida de metadata en el
+  pipeline de escritura, nunca la hubo.
+
+  **`cicada ipod plan`/`sync` (CLI): NO es una capacidad de artwork
+  incompleta — tiene un contrato distinto, documentado aquí para que no
+  se confunda con un bug (investigado y cerrado 2026-08-19).**
+  `_load_tracks_from_file()` en `cli.py` nunca rellena `TrackInfo.source_path`
+  porque `_cmd_plan()`/`_cmd_sync()` llaman a `create_plan()`/`apply()`
+  **directamente**, y ese par **nunca copia audio** al dispositivo (el
+  propio docstring de `plan.py` lo dice: "NUNCA escribe en el volumen del
+  iPod"; `apply.py`'s `_BASE_INSTALL_SEQUENCE`/`_ARTWORK_INSTALL_SEQUENCE`
+  solo listan artefactos de base de datos). La copia de audio vive
+  exclusivamente en `copy_media()` dentro de `sync_media_to_ipod()`
+  (`coordinator/media.py`), usada solo por `POST /api/ipod/media/sync`
+  (la UI). Las claves que lee `_load_tracks_from_file()` (`Title`,
+  `Artist`, `Album`, `Location`, con esa capitalización) coinciden
+  exactamente con lo que emite `cicada ipod tracks --json` — el contrato
+  real del CLI es **volcar → editar a mano → reaplicar** sobre tracks que
+  **ya están en el iPod**, no agregar audio nuevo desde la PC. Para ese
+  caso (round-trip de tracks existentes), el fallback a `location` de la
+  Etapa 4d ya resuelve artwork sin ningún cambio — es el mismo mecanismo
+  validado por el test de dos syncs consecutivos.
+  Agregarle `source_path` al parser sin más habría sido un fix engañoso:
+  `plan` mostraría `artwork_touched=True` (el paso de artwork solo
+  necesita `source_path`), pero `sync`/`apply` fallaría después con
+  `ValueError: track iPod location is empty` (reproducido de verdad
+  durante el diagnóstico de metadata) o, peor, escribiría una referencia a
+  un archivo que no existe en el dispositivo.
+  **No se construye por ahora**: agregar audio nuevo por CLI (un futuro
+  `cicada ipod add` envolviendo `sync_media_to_ipod()`, sin tocarla) sería
+  una **capacidad nueva**, no un fix — decisión explícita de no construirla
+  sin un caso de uso real pidiéndola (automatización, uso headless); ese
+  caso, cuando aparezca, debe definir su propio diseño.
+
+  **`Plan.artwork_touched`/`.artwork_tracks_count`/`.artwork_skipped_count`
+  cableados a `ApplyResult`/`PlanResponse`/`ApplyResponse`/CLI, cerrando el
+  punto 7 del diseño de 4d (2026-08-19).**
+  `ApplyResult` (`db/coordinator/apply.py`) gana los 3 campos, poblados solo
+  en el `return` de éxito desde `plan.*` — igual patrón que `tracks_written`;
+  los dos `return` de rollback se quedan en 0/False, nada se instaló de
+  verdad. `PlanResponse`/`ApplyResponse` en `api.py` los exponen en
+  `POST /plan`, `POST /apply` y `POST /media/sync` (los tres comparten
+  `ApplyResponse`; los demás endpoints que la reusan — `/restore`,
+  `/playlist/*`, `/track/rate`, `/conflicts/resolve*` — no se tocaron,
+  quedan en los defaults ya que no tocan artwork). CLI: `_cmd_plan`/`_cmd_sync`
+  imprimen una línea de artwork cuando aplica.
+  Tests con verificación fuerte, no solo presencia del campo: releen el
+  ArtworkDB *realmente instalado* con `read_artworkdb()` y comparan su
+  conteo de entradas contra el valor reportado en la respuesta —
+  `tests/ipod/db/coordinator/test_apply.py` (+2), `tests/ipod/test_api.py`
+  (+3, incluye el par `/plan`+`/apply` vía `location` y `/media/sync` vía
+  `source_path`), `tests/ipod/test_cli.py` (+2). Sanity check de mutación:
+  se forzó `artwork_touched=False` a mano en el handler de `/media/sync`,
+  se confirmó que el test lo detecta, se revirtió. 467 tests tras esto.
 - **Etapa 4e — API/CLI/UI.** Pendiente.
-- **Etapa 4f — Generalización a otros modelos (diferida, no descartada).**
-  Activar `ithmb_codecs.py` completo (RGB565_BE, RGB555, UYVY, JPEG) y las
-  tablas de dimensiones de otros modelos ya presentes en
-  `artwork_presets.py` (`ARTWORK_FORMATS_BY_ID` ya cubre generaciones
-  1005-3005, no solo Nano 7G). No portar `hydrate_track_artwork_refs`
-  (`itunesdb_parser/artwork_links.py`) hasta entonces tampoco — solo
-  relevante para reconciliar DBs legadas de otros modelos.
+- **Etapa 4f — Generalización a otros modelos.**
+
+  **Hallazgo de investigación (2026-08-19) que redujo el alcance real**:
+  de los formatos de píxel que iOpenPod soporta (RGB565_LE, RGB565_BE,
+  RGB555/REC_RGB555_LE, UYVY, I420_LE, JPEG), **las 24 device families que
+  Cicada modela en `capabilities.py` usan RGB565_LE para `cover_art_formats`
+  sin ninguna excepción** — verificado grepeando cada asignación
+  `cover_art_formats=(...)` una por una. Los formatos no-LE (`RGB565_BE_90`,
+  `RGB565_BE` en 1013/1019/1023, `UYVY`/`I420_LE`/`JPEG` en 1019/1067/1081)
+  son de **fotos (slideshow) o salida de TV** (`role="photo_*"`/`"tv_out"`,
+  subsistema `photo_formats`, Fase 6) — no ArtworkDB/cover art. Los
+  restantes (`RGB565_BE` en 2002/2003 "iPod Mobile", `RGB555`/`REC_RGB555_LE`
+  en 3001-3005 "iPod touch") no tienen ninguna entrada en
+  `_FAMILY_GEN_CAPABILITIES` — Cicada no modela esos dispositivos en
+  ninguna capacidad hoy, no solo artwork. Diferido con el mismo criterio
+  que `cicada ipod add` (ver arriba): no se construye sin que exista
+  primero soporte real de esa familia de dispositivo.
+  `ithmb_codecs.py` de iOpenPod SÍ tiene encoders completos para todos esos
+  formatos (`encode_image_for_format()`, línea 419-517) — si algún día
+  hace falta, es portar, no escribir de cero. No portar
+  `hydrate_track_artwork_refs` (`itunesdb_parser/artwork_links.py`)
+  tampoco — solo relevante para reconciliar DBs legadas.
+
+  **Esquema de verificación de tres niveles** (sin hardware de otros
+  modelos disponible): (1) *verificado por construcción* — mismo código ya
+  probado exhaustivamente en 4c/4d, solo parametrizado con otro
+  `ArtworkFormat`; (2) *auditado contra la fuente, no contra runtime* — la
+  tabla de dimensiones se transcribió de libgpod (`src/itdb_device.c`,
+  citado en el docstring de `artwork_presets.py`), así que se audita por
+  diff contra esa fuente, no se re-verifica en ejecución; (3) *marcado
+  explícitamente como no verificado en hardware real*, por family, sin
+  eufemismos. Se rechazó bit-exactitud contra los codecs de iOpenPod como
+  sustituto — sería circular, ya sabemos que coinciden porque es la misma
+  reimplementación ya verificada en 4b.
+
+  - **Etapa 4f-1 — Activar RGB565_LE para las 23 device families restantes
+    (además de Nano 7G). Estado: implementado y verificado.**
+    `chunks.py`/`writer.py` (4c) ya eran agnósticos del formato de píxel
+    (grep de `"RGB565"`/`"pixel_format"` sobre ambos: cero resultados) y
+    `build_artwork_assets()` ya tomaba `formats` como parámetro con
+    default de Nano 7G — la generalización no fue "escribir codecs", fue
+    activar 3 puntos de hardcodeo localizados con precisión:
+    `plan.py` (`ARTWORK_TARGET_RELPATHS` constante de módulo fija →
+    función `artwork_target_relpaths(formats)`; `build_artwork_assets()`
+    llamado sin `formats=` → ahora recibe `cover_art_formats` resuelto de
+    `device_info.capabilities.cover_art_formats`) y `apply.py`
+    (`_ARTWORK_INSTALL_SEQUENCE` fija → derivada de
+    `plan.capabilities.cover_art_formats`, cero campos nuevos en `Plan`).
+    Gate único: `cover_art_formats` vacío (dispositivo sin
+    `supports_artwork` o con tabla vacía por omisión) salta el subsistema
+    entero sin intentar extraer nada — ni siquiera se lee el audio.
+
+    **Hallazgo encontrado en el diseño, antes de escribir código**: sin
+    generalizar también `PreStateFingerprint`, un plan para cualquier
+    family que no fuera Nano 7G fingerprintearía rutas `F1010_*` que nunca
+    le pertenecen y **nunca detectaría deriva real en sus propios
+    `.ithmb`** — un rollback que no dispara cuando debería, silencioso
+    hasta que algo se corrompe de verdad. Corregido: `capture()` recibe
+    `artwork_relpaths` (derivado de los formatos DEL DISPOSITIVO antes de
+    capturar), y `matches()` se simplificó para re-hashear exactamente
+    `self.files.keys()` en vez de tener que volver a recibir qué formatos
+    importaban.
+    Tests (Nano 7G suite completa sin cambios de comportamiento — pasa a
+    ser "un caso más", no uno especial): `test_plan.py` (+3) — Classic
+    construye artwork con SUS format_id (1055/1060/1061/1068, no los de
+    Nano 7G); **gate por capacidad del dispositivo, no por disponibilidad
+    de fuente** (Shuffle 1G con un track cuyo `source_path` SÍ tiene
+    carátula real embebida — la misma fixture que en otros tests SÍ
+    produce artwork — sigue en `artwork_touched=False`); fingerprint usa
+    los formatos de Classic, no los de Nano 7G. `test_apply.py` (+1):
+    round-trip completo de `apply()` para Nano 6G (mismo esquema
+    HASHAB/CDB comprimida que Nano 7G, aísla la generalización de formatos
+    del eje ortogonal de esquema de firma por family) — instala
+    `F1073_1.ithmb`/`F1074_1.ithmb`/`F1085_1.ithmb`/`F1089_1.ithmb`
+    reales, no los de Nano 7G. Dos sanity checks de mutación: (a)
+    deshabilitar el gate `if cover_art_formats:` — el test de Shuffle 1G
+    lo detecta; (b) hacer que `capture()` ignore `artwork_relpaths` (el
+    bug real que este bloque encontró) — el test de fingerprint de Classic
+    lo detecta. Ambas revertidas. 471 tests tras esto.
+  - **Etapa 4f-2 — Auditoría de la tabla de dimensiones contra libgpod.
+    Estado: completada para las 12 de 13 families con `supports_artwork`
+    que tienen tabla en libgpod (2026-08-19).**
+    Fuente: `src/itdb_device.c` de `gtkpod/libgpod` (rama `master`),
+    descargado directo con `curl` — **no** vía el resumen de `WebFetch`,
+    que en un primer intento fabricó un array `ipod_nano6g_cover_art_info`
+    idéntico byte a byte al de Nano 4G (alucinación del modelo resumidor,
+    detectada porque dos arrays distintos no deberían ser idénticos, y
+    descartada) — grep directo sobre el archivo crudo confirmó que **ese
+    array no existe en absoluto** en libgpod. Lección: para auditoría
+    contra fuente, bajar el archivo y grepear, no confiar en el resumen.
+
+    Resultado, comparado campo a campo (format_id, width, height,
+    pixel_format) contra los arrays reales de libgpod:
+    - **Classic (6G/6.5G/7G, comparten `CLASSIC_COVER_ART_FORMATS`)**:
+      coincidencia exacta con `ipod_classic_1_cover_art_info` — 1061
+      (56×56), 1055 (128×128), 1068 (128×128), 1060 (320×320), los 4 en
+      RGB565_LE. libgpod trae su propia nota de incertidumbre sobre 1061
+      ("officially 55x55 -- verify!") — no es un gap nuestro, es
+      incertidumbre ya presente en la fuente que igual coincide con nuestro
+      valor.
+    - **Nano 3G**: coincidencia exacta — libgpod reutiliza literalmente el
+      array de Classic para 3G Nano (comentario `/* also used for 3G Nano
+      */` en la fuente), y así lo tiene ya `capabilities.py` (1061/1055/
+      1068/1060), sin que nadie lo hubiera documentado como tal hasta ahora.
+    - **Nano 1G/2G**: coincidencia exacta — 1031 (42×42), 1027 (100×100).
+    - **Nano 4G**: coincidencia exacta — los 6 formatos (1055/1068/1071/
+      1074/1078/1084) con las mismas dimensiones.
+    - **Nano 5G**: coincidencia exacta — 1056 (128×128), 1078 (80×80), 1073
+      (240×240), 1074 (50×50).
+    - **iPod 4G photo/color** (`ipod_photo_cover_art_info`): coincidencia
+      exacta — 1017 (56×56), 1016 (140×140).
+    - **iPod Video / 5G / 5.5G** (`ipod_video_cover_art_info`): coincidencia
+      exacta — 1028 (100×100), 1029 (200×200).
+    - **iPod Mobile** (2002/2003, fuera de alcance — ningún device family de
+      Cicada lo usa): coincidencia exacta igual, la tabla en sí es fiel
+      aunque no esté cableada a ninguna family hoy.
+    - **Nano 7G**: no está en libgpod en absoluto (nunca lo soportó) —
+      pero es la family con MÁS verificación de todas, contra hardware
+      real (4a-4d, fixtures HASHAB reales, prueba de fuego dos veces). No
+      necesita auditoría de libgpod, ya tiene algo mejor.
+    - **Nano 6G**: **sin poder auditar** — `1085`/`1089` no aparecen en
+      libgpod en absoluto (grep sobre el archivo completo, cero
+      resultados), y no existe ningún array `nano6g` real en esta fuente
+      (confirmado también en el fork `fadingred/libgpod`, idéntico). La
+      tabla de Cicada para Nano 6G viene de alguna de las otras fuentes
+      citadas en el docstring de `artwork_presets.py` (Keith's photo
+      database reader README / cyianor's ithmbrdr README / volcado propio
+      de Nano 7G), no de libgpod. **Queda explícitamente en el nivel 3
+      (no verificado contra fuente ni hardware)** — el resto de families
+      con `supports_artwork` suben a nivel 2 (Classic/Nano1-5G/iPod
+      Video/4G photo-color) o ya tenían nivel de hardware real (Nano 7G).
+  - **Etapa 4f-3 — RGB565_BE/RGB555 para iPod touch/"Mobile". Diferida, no
+    descartada.** No se construye sin que exista primero soporte real de
+    Cicada para esa familia de dispositivo (hoy no existe en absoluto, en
+    ninguna capacidad) — ese trabajo mayor debe definir su propio diseño,
+    no colgar de "generalizar artwork".
 

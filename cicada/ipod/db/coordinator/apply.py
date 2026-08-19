@@ -47,11 +47,11 @@ from cicada.ipod.db.coordinator.consent import (
     record_music_app_consent,
 )
 from cicada.ipod.db.coordinator.plan import (
-    ARTWORK_TARGET_RELPATHS,
     DATABASE_TARGET_RELPATHS,
     InconsistentArtifactsError,
     Plan,
     UnsafeDeviceError,
+    artwork_target_relpaths,
 )
 from cicada.ipod.db.parser import load_ipod_library
 from cicada.ipod.db.sqlite._helpers import u64
@@ -98,20 +98,22 @@ _BASE_INSTALL_SEQUENCE: tuple[tuple[str, str], ...] = (
     ("iTunesCDB", "iPod_Control/iTunes/iTunesCDB"),
 )
 
-#: ArtworkDB + los 4 .ithmb (Fase 4, Etapa 4d) — se instalan ANTES de la
-#: secuencia base para que, cuando iTunesCDB/Library.itdb (que referencian
-#: artwork_id_ref) se vuelvan visibles, el ArtworkDB que referencian ya
-#: exista en disco. Solo se usa cuando plan.artwork_touched.
-_ARTWORK_INSTALL_SEQUENCE: tuple[tuple[str, str], ...] = tuple(
-    (f"Artwork/{rel.rsplit('/', 1)[-1]}", rel) for rel in ARTWORK_TARGET_RELPATHS
-)
+def _artwork_install_sequence(plan: Plan) -> tuple[tuple[str, str], ...]:
+    """ArtworkDB + un .ithmb por formato DEL DISPOSITIVO de este plan (Fase 4,
+    Etapas 4d/4f-1) — se instalan ANTES de la secuencia base para que, cuando
+    iTunesCDB/Library.itdb (que referencian artwork_id_ref) se vuelvan
+    visibles, el ArtworkDB que referencian ya exista en disco. Vacío si el
+    plan no tocó artwork."""
+    if not plan.artwork_touched:
+        return ()
+    formats = plan.capabilities.cover_art_formats if plan.capabilities else ()
+    relpaths = artwork_target_relpaths(formats)
+    return tuple((f"Artwork/{rel.rsplit('/', 1)[-1]}", rel) for rel in relpaths)
 
 
 def _install_sequence(plan: Plan) -> tuple[tuple[str, str], ...]:
     """Secuencia de instalación para este plan: con Artwork/ solo si la tocó."""
-    if plan.artwork_touched:
-        return _ARTWORK_INSTALL_SEQUENCE + _BASE_INSTALL_SEQUENCE
-    return _BASE_INSTALL_SEQUENCE
+    return _artwork_install_sequence(plan) + _BASE_INSTALL_SEQUENCE
 
 
 class ApplyError(Exception):
@@ -134,6 +136,9 @@ class ApplyResult:
     first_write_committed: bool = False
     error: Optional[str] = None
     tracks_written: int = 0
+    artwork_touched: bool = False
+    artwork_tracks_count: int = 0
+    artwork_skipped_count: int = 0
 
 
 def default_commit_dir() -> Path:
@@ -472,4 +477,7 @@ def apply(
         restored_from_backup=False,
         first_write_committed=plan.consent_needed,
         tracks_written=plan.tracks_count,
+        artwork_touched=plan.artwork_touched,
+        artwork_tracks_count=plan.artwork_tracks_count,
+        artwork_skipped_count=plan.artwork_skipped_count,
     )

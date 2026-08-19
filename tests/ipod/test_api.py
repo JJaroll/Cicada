@@ -23,6 +23,7 @@ from cicada.ipod.device.checksum import ChecksumType
 from cicada.ipod.device.device_info import DeviceInfo
 
 GUID_STR = "000A27002484DDFB"
+ART_MP3 = Path(__file__).resolve().parents[1] / "fixtures" / "audio" / "with_art.mp3"
 
 
 @pytest.fixture
@@ -672,3 +673,81 @@ async def test_api_media_sync_consent_requerido(async_client: httpx.AsyncClient,
     })
     assert resp.status_code == 403
     assert resp.json()["detail"]["code"] == "CONSENT_REQUIRED"
+
+
+@pytest.mark.asyncio
+async def test_api_media_sync_reports_artwork_counts(async_client: httpx.AsyncClient, mock_ipod: Path):
+    """artwork_touched/tracks_count/skipped_count en la respuesta de
+    /media/sync deben coincidir con el ArtworkDB REALMENTE instalado, no
+    con un número fijo."""
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [{"source_path": str(ART_MP3), "title": "Con Arte", "artist": "A"}],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["success"] is True
+    assert data["artwork_touched"] is True
+    assert data["artwork_tracks_count"] == 1
+    assert data["artwork_skipped_count"] == 0
+
+    from cicada.ipod.db.artwork.chunks import read_artworkdb
+    artworkdb_bytes = (mock_ipod / "iPod_Control" / "Artwork" / "ArtworkDB").read_bytes()
+    entries = read_artworkdb(artworkdb_bytes)
+    assert len(entries) == data["artwork_tracks_count"]
+
+
+@pytest.mark.asyncio
+async def test_api_media_sync_without_artwork_reports_zero(async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path):
+    """Un track sin carátula embebida (bytes crudos, sin tags) reporta 0/False."""
+    src = tmp_path / "no_art.mp3"
+    src.write_bytes(b"AUDIO-BYTES" * 50)
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [{"source_path": str(src), "title": "Sin Arte", "artist": "A"}],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["success"] is True
+    assert data["artwork_touched"] is False
+    assert data["artwork_tracks_count"] == 0
+    assert data["artwork_skipped_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_api_plan_apply_reports_artwork_counts_via_location(
+    async_client: httpx.AsyncClient, mock_ipod: Path
+):
+    """/plan y /apply (el par TrackSchema, sin source_path) resuelven artwork
+    vía `location` — el contrato real de round-trip, no de agregar audio
+    nuevo. Los conteos reportados deben coincidir con el ArtworkDB instalado."""
+    music_path = mock_ipod / "iPod_Control" / "Music" / "F02" / "ART.mp3"
+    music_path.parent.mkdir(parents=True, exist_ok=True)
+    music_path.write_bytes(ART_MP3.read_bytes())
+
+    new_tracks = [{
+        "title": "Con Arte", "artist": "A", "album": "Al",
+        "location": ":iPod_Control:Music:F02:ART.mp3", "db_track_id": 501,
+    }]
+
+    resp_plan = await async_client.post("/api/ipod/plan", json={"tracks": new_tracks})
+    assert resp_plan.status_code == 200
+    plan_data = resp_plan.json()
+    assert plan_data["artwork_touched"] is True
+    assert plan_data["artwork_tracks_count"] == 1
+    assert plan_data["artwork_skipped_count"] == 0
+
+    resp_apply = await async_client.post(
+        "/api/ipod/apply", json={"tracks": new_tracks, "consent_ack": True}
+    )
+    assert resp_apply.status_code == 200
+    apply_data = resp_apply.json()
+    assert apply_data["success"] is True
+    assert apply_data["artwork_touched"] is True
+    assert apply_data["artwork_tracks_count"] == 1
+    assert apply_data["artwork_skipped_count"] == 0
+
+    from cicada.ipod.db.artwork.chunks import read_artworkdb
+    artworkdb_bytes = (mock_ipod / "iPod_Control" / "Artwork" / "ArtworkDB").read_bytes()
+    entries = read_artworkdb(artworkdb_bytes)
+    assert len(entries) == apply_data["artwork_tracks_count"]

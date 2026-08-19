@@ -45,6 +45,7 @@ __all__ = [
     "SYSINFO_FIELDS",
     "AUTHORITY_FILENAME",
     "FOREIGN_AUTHORITY_FILENAME",
+    "FOREIGN_BACKUP_RELPATHS",
     "read_authority",
     "check_authority_coverage",
     "update_sysinfo",
@@ -60,6 +61,23 @@ AUTHORITY_FILENAME = "authority.json"
 
 #: Archivo de autoridad de iOpenPod en el dispositivo — ajeno, otro formato.
 FOREIGN_AUTHORITY_FILENAME = "iOpenPodSysInfoAuthority"
+
+#: .backup en sitio de los 7 archivos de base de datos — mecanismo propio de
+#: write_itunesdb/write_sqlite_databases de iOpenPod (backup=True antes de
+#: sobrescribir). El camino activo de escritura de Cicada
+#: (build_itunescdb/build_sqlite_databases, vía create_plan) nunca produce
+#: estos nombres — ver test_create_plan_never_produces_foreign_backup_filenames
+#: en tests/ipod/db/coordinator/test_plan.py, que protege este supuesto contra
+#: cambios futuros en vez de confiar en un grep de hoy.
+FOREIGN_BACKUP_RELPATHS: tuple[str, ...] = (
+    "iPod_Control/iTunes/iTunesCDB.backup",
+    "iPod_Control/iTunes/iTunes Library.itlp/Library.itdb.backup",
+    "iPod_Control/iTunes/iTunes Library.itlp/Locations.itdb.backup",
+    "iPod_Control/iTunes/iTunes Library.itlp/Dynamic.itdb.backup",
+    "iPod_Control/iTunes/iTunes Library.itlp/Extras.itdb.backup",
+    "iPod_Control/iTunes/iTunes Library.itlp/Genius.itdb.backup",
+    "iPod_Control/iTunes/iTunes Library.itlp/Locations.itdb.cbk.backup",
+)
 
 # ── Ranking de procedencia (de más a menos fiable) ─────────────────────
 _SOURCE_ORDER: list[str] = [
@@ -490,22 +508,50 @@ def _normalise_sysinfo_extended(raw_xml: bytes | str) -> bytes:
 # ──────────────────────────────────────────────────────────────────────
 # Limpieza del archivo de autoridad ajeno (iOpenPod) — vía write_guard
 # ──────────────────────────────────────────────────────────────────────
-def clean_foreign_authority(ipod_path: str) -> bool:
-    """Elimina ``iOpenPodSysInfoAuthority`` del dispositivo, vía write_guard.
+def clean_foreign_authority(ipod_path: str) -> list[str]:
+    """Elimina artefactos ajenos conocidos del dispositivo, vía write_guard.
 
-    Hipótesis: ese archivo (ajeno, escrito por iOpenPod en
-    ``iPod_Control/Device/``) es por lo que Music.app rechaza el dispositivo.
-    No es automático; se expone como ``cicada ipod clean-foreign`` para poder
-    verificarlo. Devuelve ``True`` si borró algo.
+    Cubre dos categorías, ambas confirmadas en hardware real como causa de
+    que Music.app rechace un dispositivo sin relación con lo que escriba
+    Cicada (ver docs/IPOD_INTEGRATION.md §0.3):
+
+    - El archivo de autoridad de iOpenPod (``iOpenPodSysInfoAuthority`` en
+      ``iPod_Control/Device/``), que además reescribe ``SysInfo``/
+      ``SysInfoExtended`` en el dispositivo.
+    - Los ``.backup`` en sitio de los 7 archivos de base de datos
+      (:data:`FOREIGN_BACKUP_RELPATHS`) — mecanismo propio de
+      ``write_itunesdb``/``write_sqlite_databases`` de iOpenPod. El camino
+      activo de Cicada nunca produce estos nombres (protegido por test, ver
+      el docstring de :data:`FOREIGN_BACKUP_RELPATHS`), así que no hay
+      riesgo de borrar algo propio.
+
+    Devuelve la lista de rutas relativas eliminadas (vacía si no había nada).
+
+    Nota de nombre: se llama ``_authority`` desde antes de cubrir los
+    ``.backup``; se mantiene así a propósito — es el nombre del comando
+    público ``cicada ipod clean-foreign`` ya conocido, sin urgencia de
+    romperlo. Un rename a algo como ``clean_foreign_artifacts`` sería
+    apropiado si en el futuro alguien más importa este nombre directamente.
+    Ver docs/VENDORED.md.
     """
     from cicada.ipod.device import write_guard as wg
 
     mount = wg.resolve_mount(candidates=[ipod_path])
-    target = mount / "iPod_Control" / "Device" / FOREIGN_AUTHORITY_FILENAME
-    wg.assert_within_ipod_control(target, mount)  # confinamiento
     wg.assert_writable(mount)
-    if target.is_file():
-        target.unlink()
+    removed: list[str] = []
+
+    auth_rel = f"iPod_Control/Device/{FOREIGN_AUTHORITY_FILENAME}"
+    auth_target = wg.assert_within_ipod_control(mount / auth_rel, mount)
+    if auth_target.is_file():
+        auth_target.unlink()
+        removed.append(auth_rel)
         logger.info("Eliminado %s del dispositivo.", FOREIGN_AUTHORITY_FILENAME)
-        return True
-    return False
+
+    for rel in FOREIGN_BACKUP_RELPATHS:
+        target = wg.assert_within_ipod_control(mount / rel, mount)
+        if target.is_file():
+            target.unlink()
+            removed.append(rel)
+            logger.info("Eliminado %s ajeno del dispositivo.", rel)
+
+    return removed

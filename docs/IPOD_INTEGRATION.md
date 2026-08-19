@@ -66,35 +66,85 @@ en `~/.cicada/` (p. ej. `~/.cicada/sysinfo/<guid>.json`), indexado por GUID. El 
 `CicadaSysInfoAuthority` se conserva solo como identificador lógico del caché, no como
 archivo en el iPod.
 
-### 0.3 Hashing — escritura VIABLE con una limitación conocida (Music.app)
+**Esta era una hipótesis de diseño cuando se escribió; §0.3 la confirma con hardware
+real** (2026-08-19): limpiar `iOpenPodSysInfoAuthority` + los `.backup` de iOpenPod, sin
+tocar `mhbd` ni SQLite ni restaurar nada, basta para que Music.app vuelva a reconocer el
+dispositivo — la arquitectura de este párrafo ya evitaba la causa real, no solo un síntoma.
 
-> **Corrección (verificada contra hardware, Fase 1).** Nuestra firma HASHAB (vía el WASM
-> de dstaley/hashab que usa iOpenPod) reproduce **byte a byte** las firmas escritas por
-> **iOpenPod**, pero **NO** las de **iTunes/Apple** (contra una base real de iTunes,
-> mismo GUID, `verify_hashab` falla; 120 variantes de SHA1 no la reproducen; el WASM
-> tiene 25 posiciones de bytes invariantes y Apple viola 23 → otra clave del white-box,
-> o algoritmo distinto).
+### 0.3 Hashing — escritura VIABLE, y la incompatibilidad con Music.app NO viene de la firma
+
+> **Corrección definitiva (verificada contra hardware real, 2026-08-19) — reemplaza la
+> hipótesis anterior de esta sección, que quedaba registrada aquí por trazabilidad.**
 >
-> **Dos hechos distintos, verificados con hardware — no confundirlos:**
-> 1. **El firmware del iPod ACEPTA AMBAS firmas.** Confirmado: el dispositivo reproduce
->    en pantalla y suena la música cuya base escribió iOpenPod. Si el firmware exigiera
->    la firma de Apple, mostraría biblioteca vacía.
-> 2. **Music.app solo acepta la firma de Apple.** Al conectar un iPod cuya base fue
->    escrita por Cicada/iOpenPod, Music lo considera no reconocido y pide **restaurarlo**
->    (irreversible: borra la biblioteca).
+> Se investigó a fondo un hallazgo que contradecía la primera versión de esta sección:
+> con Cicada, Music.app **sigue reconociendo el iPod** tras escribir; con iOpenPod, se
+> rompe — pese a que ambos comparten el mismo WASM HASHAB. La causa **no es la firma**:
 >
-> **Go/no-go de Fase 2 = ¿funciona el dispositivo? Sí → GO.** El criterio es que el iPod
-> reproduzca lo que escribimos, no que Music lo apruebe. **La escritura HASHAB es viable**,
-> con esta **limitación conocida: rompe la compatibilidad con Music.app de forma
-> irreversible** (revertir requiere restaurar el iPod desde Music/Finder).
+> 1. **`mhbd` y las tablas SQLite (`Library.itdb` completo) son idénticos byte a byte**
+>    entre Cicada e iOpenPod para el mismo input — comparación directa, no por hash:
+>    de 7314 bytes del `mhbd`, solo 32 difieren, y esos 32 se explican exactamente por
+>    las 4 únicas llamadas a `random.getrandbits(64)` del árbol de escritura (IDs
+>    internos de álbum/artista/track/playlist, no determinísticos por diseño en ambos
+>    codebases). Las 20 tablas de `Library.itdb`, fila por fila, campo por campo:
+>    coincidencia total. **La firma HASHAB nunca fue la variable — nunca lo fue, ni
+>    siquiera en la versión anterior de esta sección, que asumía que "misma firma →
+>    mismo resultado con Music" sin haberlo aislado.**
+> 2. **La causa real está fuera del `iTunesCDB`**: iOpenPod escribe
+>    `iPod_Control/Device/iOpenPodSysInfoAuthority` (JSON de procedencia de la
+>    identidad del dispositivo) y, como parte de esa reconciliación, **reescribe
+>    `SysInfo`/`SysInfoExtended` en el dispositivo** — confirmado leyendo el archivo
+>    real en un iPod con residuo de una sesión anterior de iOpenPod, con
+>    `SysInfoExtended` reescrito en el mismo instante que el archivo de autoridad.
+>    Además deja `.backup` de los 7 archivos de base de datos
+>    (`iTunesCDB.backup`, `Library.itdb.backup`, etc. — mecanismo de backup-en-sitio
+>    de `write_itunesdb`/`write_sqlite_databases`). Todo esto vive fuera de lo que
+>    Apple espera encontrar en esos archivos, y es lo que hace que Music.app trate el
+>    dispositivo como no reconocido.
+> 3. **Prueba directa, sin restaurar el iPod**: sobre un dispositivo con este residuo
+>    real de iOpenPod (que Music.app ya rechazaba), se ejecutó `cicada ipod
+>    clean-foreign` (borra `iOpenPodSysInfoAuthority`) más el borrado manual de los 7
+>    `.backup` — **sin tocar `mhbd` ni las tablas SQLite, sin restaurar nada** — y
+>    Music.app volvió a reconocer el dispositivo completo, con toda la biblioteca.
+>    Confirmación directa del mecanismo, no solo correlación.
 >
-> **Requisito de Fase 2:** advertir al usuario **antes de la primera escritura**, de forma
-> explícita: *"Cicada escribirá una firma que el dispositivo acepta pero Music.app no
-> reconocerá. Revertirlo requiere restaurar el iPod."*
+> **El firmware del iPod acepta la firma HASHAB de Cicada/iOpenPod** (sigue siendo
+> cierto, sin cambios: el dispositivo reproduce lo que escribimos). Lo que cambia es
+> el motivo por el que Music.app a veces no lo acepta — nunca fue la firma.
 >
-> **Investigación paralela (no bloqueante):** una segunda base escrita por iTunes en el
-> mismo dispositivo con contenido distinto (otro SHA1) permitiría desambiguar "clave" vs
-> "algoritmo" — y, si es clave, podría dar compatibilidad total con Apple más adelante.
+> **Implicación para Cicada: no reproduce este problema, y no requirió ningún cambio de
+> código para lograrlo.** `cicada/ipod/device/authority.py` ya existía con esta
+> arquitectura desde una fase anterior del proyecto — su propio docstring ya documentaba
+> la hipótesis ("iOpenPod... reescribe SysInfo/SysInfoExtended... Eso hace que Music.app
+> considere el iPod corrupto") y ya la evitaba: la autoridad de Cicada vive enteramente
+> en `~/.cicada/sysinfo/<hash(guid)>/`, **nunca escribe `SysInfo`/`SysInfoExtended` en el
+> volumen**, y nunca genera `.backup` en sitio (el camino activo de escritura,
+> `build_itunescdb`/`build_sqlite_databases`, no invoca en ningún punto las funciones
+> vendorizadas-pero-no-usadas que sí lo harían). **Verificado en hardware real, no solo
+> por inspección de código.**
+>
+> **Requisito de consentimiento — se mantiene, pero con el motivo corregido.** El gate
+> de `consent.py` (`ConsentRequiredError`, aviso antes de la primera escritura) **no se
+> elimina**: la firma HASHAB de Cicada sigue sin ser la de Apple, y eso en sí mismo sigue
+> siendo una divergencia real del formato, aunque ya sabemos que no es lo que rompe
+> Music.app. El valor del gate pasa de "advertir de una incompatibilidad garantizada"
+> a "advertir de una divergencia de firma cuyo impacto real en Music.app depende de que
+> el dispositivo no cargue además residuo de terceros" — más matizado, pero sigue
+> siendo información que el usuario debe poder ver antes de escribir. Sin cambios de
+> código pendientes aquí.
+>
+> **Advertencia inversa (nueva, más útil que la anterior) — el riesgo real está en
+> terceros, no en Cicada.** Si el dispositivo tiene residuo de iOpenPod (o de cualquier
+> otra herramienta que reescriba `SysInfo`/deje `.backup` en sitio) de una sesión previa,
+> Music.app puede rechazarlo **aunque Cicada nunca haya escrito nada problemático** — el
+> caso real de esta investigación. `cicada ipod clean-foreign` ahora cubre **ambas**
+> categorías: `iOpenPodSysInfoAuthority` y los 7 `.backup` ajenos conocidos
+> (`iTunesCDB.backup`, `{Library,Locations,Dynamic,Extras,Genius}.itdb.backup`,
+> `Locations.itdb.cbk.backup`) — extendido el 2026-08-19, ya no requiere borrado manual.
+> Cambio de firma explícito: devuelve la lista de rutas eliminadas, no un booleano.
+> Seguro por diseño y por test: `create_plan()` real (no un grep) se verifica que nunca
+> produce esos 7 nombres antes de confiar en que borrarlos automáticamente no toque algo
+> propio. Detalle, sanity check de mutación y la nota de por qué el nombre de la función
+> no cambió en `docs/VENDORED.md`, Paquete 2.
 
 El firmware verifica una firma en el header `mhbd` del `iTunesCDB`. Sin ella, el iPod
 muestra la biblioteca vacía aunque los archivos estén presentes.
@@ -405,11 +455,36 @@ riesgo, empezando por un único caso real verificable contra hardware:
       Verificado con un escenario forzado de dos syncs consecutivos
       (regresión de artwork_id_ref cerrada, con sanity check de mutación).
 - [ ] **4e** — API/CLI/UI.
-- [ ] **4f** — Generalización: activar los demás formatos de píxel y modelos
-      que `artwork_presets.py` ya tiene tabulados (`ARTWORK_FORMATS_BY_ID`
-      cubre generaciones 1005-3005). Diferido, no descartado.
+- **4f** — Generalización a otros modelos. Hallazgo: las 24 device families
+      que Cicada modela usan RGB565_LE sin excepción para cover art — los
+      demás formatos de píxel de iOpenPod son de fotos/TV-out (subsistema
+      aparte) o de dispositivos (iPod touch/"Mobile") que Cicada no modela
+      en ninguna capacidad. Detalle y esquema de verificación de tres
+      niveles en `docs/VENDORED.md`, Paquete 7.
+      - [x] **4f-1** — RGB565_LE activado para las 23 families restantes
+            (antes solo Nano 7G). `chunks.py`/`writer.py` ya eran
+            agnósticos del formato; el hardcodeo estaba en 3 puntos de
+            `plan.py`/`apply.py`, ahora device-aware vía
+            `device_info.capabilities.cover_art_formats`. Bug real
+            encontrado y corregido antes de escribir código:
+            `PreStateFingerprint` fingerprinteaba rutas fijas de Nano 7G
+            para cualquier family — nunca detectaba deriva real en los
+            `.ithmb` propios de otro dispositivo.
+      - [x] **4f-2** — Auditoría contra `itdb_device.c` de libgpod
+            (descargado y grepeado directo, no vía resumen — un intento de
+            WebFetch fabricó un array de Nano 6G inexistente, descartado).
+            12 de 13 families con `supports_artwork` confirmadas exactas
+            (Classic incl. el reuso para 3G Nano, Nano 1-5G, iPod Video,
+            4G photo/color). Nano 7G no está en libgpod pero tiene algo
+            mejor: hardware real. Nano 6G queda en nivel 3 (no auditable:
+            sus format_id no existen en libgpod) — detalle en
+            `docs/VENDORED.md`, Paquete 7.
+      - **4f-3** — RGB565_BE/RGB555 para iPod touch/"Mobile". Diferido con
+            el mismo criterio que `cicada ipod add`: no se construye sin
+            soporte real de esa familia de dispositivo primero.
 
-**Alcance parcial temporal de 4a-4e: solo iPod Nano 7G, RGB565_LE.**
+**Alcance de 4a-4e: RGB565_LE, ahora en las 24 device families que Cicada
+modela (antes solo Nano 7G) desde 4f-1.**
 
 ### Fase 5 — Podcasts y audiolibros
 ### Fase 6 — Fotos y video

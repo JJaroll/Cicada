@@ -160,6 +160,9 @@ class PlanResponse(BaseModel):
     created_at: str
     plan_id: str
     artifacts_summary: Dict[str, int] = {}
+    artwork_touched: bool = False
+    artwork_tracks_count: int = 0
+    artwork_skipped_count: int = 0
 
 
 class ApplyRequest(BaseModel):
@@ -175,6 +178,9 @@ class ApplyResponse(BaseModel):
     first_write_committed: bool = False
     tracks_written: int = 0
     error: Optional[str] = None
+    artwork_touched: bool = False
+    artwork_tracks_count: int = 0
+    artwork_skipped_count: int = 0
 
 
 class ConsentResponse(BaseModel):
@@ -516,6 +522,9 @@ def create_ipod_plan(req: PlanRequest) -> PlanResponse:
         created_at=plan.created_at,
         plan_id=plan_id,
         artifacts_summary=summary,
+        artwork_touched=plan.artwork_touched,
+        artwork_tracks_count=plan.artwork_tracks_count,
+        artwork_skipped_count=plan.artwork_skipped_count,
     )
 
 
@@ -553,6 +562,9 @@ def apply_ipod_plan(req: ApplyRequest) -> ApplyResponse:
             first_write_committed=res.first_write_committed,
             tracks_written=res.tracks_written,
             error=res.error,
+            artwork_touched=res.artwork_touched,
+            artwork_tracks_count=res.artwork_tracks_count,
+            artwork_skipped_count=res.artwork_skipped_count,
         )
 
     except ConsentRequiredError as exc:
@@ -934,6 +946,9 @@ def sync_media(req: MediaSyncRequest) -> ApplyResponse:
             first_write_committed=res.first_write_committed,
             tracks_written=res.tracks_written,
             error=res.error,
+            artwork_touched=res.artwork_touched,
+            artwork_tracks_count=res.artwork_tracks_count,
+            artwork_skipped_count=res.artwork_skipped_count,
         )
     except ConsentRequiredError as exc:
         raise HTTPException(

@@ -34,7 +34,7 @@ from cicada.ipod.db.sqlite.build import ITLP_FILES, build_sqlite_databases
 from cicada.ipod.db.writer.build import build_itunescdb
 from cicada.ipod.db.models import PlaylistInfo, TrackInfo
 from cicada.ipod.db.writer.verify import verify_hashab
-from cicada.ipod.device.artwork_presets import NANO_7G_COVER_ART_FORMATS
+from cicada.ipod.device.artwork_presets import ArtworkFormat
 from cicada.ipod.device.capabilities import DeviceCapabilities, capabilities_for_family_gen
 from cicada.ipod.device.checksum import ChecksumType
 from cicada.ipod.device.device_info import DeviceInfo
@@ -43,7 +43,7 @@ from cicada.shared.artwork import extract_embedded_artwork
 
 __all__ = [
     "DATABASE_TARGET_RELPATHS",
-    "ARTWORK_TARGET_RELPATHS",
+    "artwork_target_relpaths",
     "PreStateFingerprint",
     "Plan",
     "PlanError",
@@ -63,22 +63,22 @@ DATABASE_TARGET_RELPATHS: tuple[str, ...] = (
     "iPod_Control/iTunes/iTunes Library.itlp/Genius.itdb",
 )
 
-#: ArtworkDB + los 4 .ithmb del Nano 7G (Fase 4, Etapa 4d). Se instalan solo
-#: cuando el plan realmente construyó artwork (Plan.artwork_touched) — ver
-#: docs/VENDORED.md, Paquete 7.
-ARTWORK_TARGET_RELPATHS: tuple[str, ...] = (
-    "iPod_Control/Artwork/ArtworkDB",
-    *(
-        f"iPod_Control/Artwork/{ithmb_filename(fmt.format_id)}"
-        for fmt in NANO_7G_COVER_ART_FORMATS
-    ),
-)
 
-#: Unión usada solo para PreStateFingerprint (detección de deriva) — se hashea
-#: siempre, independientemente de si este plan concreto toca artwork, porque
-#: es barato (solo lectura+hash, no backup) y una detección de más nunca deja
-#: el dispositivo inconsistente, solo fuerza regenerar el plan.
-_FINGERPRINT_RELPATHS: tuple[str, ...] = DATABASE_TARGET_RELPATHS + ARTWORK_TARGET_RELPATHS
+def artwork_target_relpaths(formats: tuple[ArtworkFormat, ...]) -> tuple[str, ...]:
+    """ArtworkDB + un .ithmb por formato, para el set de formatos de UN
+    dispositivo concreto (Fase 4, Etapa 4f-1 — antes fijo a Nano 7G).
+
+    ``formats`` viene de ``DeviceCapabilities.cover_art_formats``, ya
+    resuelto por familia/generación. Vacío (dispositivo sin
+    ``supports_artwork``, o con la tabla vacía) devuelve ``()`` — nada que
+    fingerprintear, stagear ni instalar para ese dispositivo.
+    """
+    if not formats:
+        return ()
+    return (
+        "iPod_Control/Artwork/ArtworkDB",
+        *(f"iPod_Control/Artwork/{ithmb_filename(fmt.format_id)}" for fmt in formats),
+    )
 
 
 class PlanError(Exception):
@@ -113,21 +113,32 @@ class PreStateFingerprint:
     files: dict[str, Optional[tuple[int, str]]]  # relpath -> (size_bytes, sha256) o None
 
     @classmethod
-    def capture(cls, mount: Path | str) -> PreStateFingerprint:
-        """Captura los hashes y tamaños de los 7 archivos de base de datos y los
-        5 de Artwork (Etapa 4d) en mount — estos últimos ``None`` si el
-        dispositivo aún no tiene ``iPod_Control/Artwork/``."""
+    def capture(
+        cls, mount: Path | str, *, artwork_relpaths: tuple[str, ...] = ()
+    ) -> PreStateFingerprint:
+        """Captura los hashes y tamaños de los 7 archivos de base de datos y,
+        si se pasan, los de Artwork/ (Etapa 4d/4f-1) — ``None`` si el
+        dispositivo aún no tiene ``iPod_Control/Artwork/``.
+
+        ``artwork_relpaths`` debe venir de :func:`artwork_target_relpaths`
+        con los formatos DEL DISPOSITIVO CONCRETO — un set fijo (p. ej. el
+        de Nano 7G) fingerprintearía rutas que no le pertenecen a otro
+        dispositivo y nunca detectaría deriva real en sus propios archivos.
+        """
         mount_path = Path(mount)
-        fingerprint = {}
-        for rel in _FINGERPRINT_RELPATHS:
-            full = mount_path / rel
-            fingerprint[rel] = _hash_file(full)
+        relpaths = DATABASE_TARGET_RELPATHS + artwork_relpaths
+        fingerprint = {rel: _hash_file(mount_path / rel) for rel in relpaths}
         return cls(files=fingerprint)
 
     def matches(self, mount: Path | str) -> bool:
-        """Comprueba si el estado actual del disco coincide exactamente con esta huella."""
-        current = PreStateFingerprint.capture(mount)
-        return self.files == current.files
+        """Comprueba si el estado actual del disco coincide exactamente con esta huella.
+
+        Re-hashea exactamente las rutas que esta huella ya capturó
+        (``self.files``) — no necesita saber de nuevo qué formatos de
+        artwork aplicaban, evita tener que repetir ese parámetro aquí."""
+        mount_path = Path(mount)
+        current = {rel: _hash_file(mount_path / rel) for rel in self.files}
+        return self.files == current
 
 
 @dataclass(frozen=True)
@@ -196,11 +207,17 @@ def create_plan(
     if caps is None:
         caps = capabilities_for_family_gen("iPod Nano", "7th Gen")
 
+    # Formatos de artwork de ESTE dispositivo (Etapa 4f-1) — () si no
+    # soporta artwork o su tabla está vacía; determina si el subsistema de
+    # artwork se toca en absoluto, más abajo.
+    cover_art_formats: tuple[ArtworkFormat, ...] = caps.cover_art_formats if caps else ()
+    artwork_relpaths = artwork_target_relpaths(cover_art_formats)
+
     # 2. Gate de consentimiento de Music.app
     consent_needed = not has_music_app_consent(guid_str, consent_dir=consent_dir)
 
     # 3. Huella del estado actual
-    pre_state = PreStateFingerprint.capture(mount)
+    pre_state = PreStateFingerprint.capture(mount, artwork_relpaths=artwork_relpaths)
 
     # 4. Directorio de staging off-device
     temp_handle = None
@@ -214,33 +231,38 @@ def create_plan(
         temp_handle = tempfile.TemporaryDirectory(prefix="cicada-plan-")
         staging_dir = Path(temp_handle.name)
 
-    # 4b. Artwork (Fase 4, Etapa 4d) — ANTES de iTunesCDB/sqlite: sus
+    # 4b. Artwork (Fase 4, Etapas 4d/4f-1) — ANTES de iTunesCDB/sqlite: sus
     # artwork_id_ref/mhii_link deben salir de este mismo mapeo, no de un
     # paso posterior que podría desincronizarse. Fuente por track: source_path
     # (pista recién copiada) o el propio audio ya en el iPod vía `location`
-    # (mismo patrón que _heal_track_lengths en coordinator/media.py). Se
-    # omite el subsistema entero (staging/artifacts/instalación/backup) si
-    # NINGÚN track tiene una fuente resoluble — no hay nada que tocar.
+    # (mismo patrón que _heal_track_lengths en coordinator/media.py).
+    # Dos razones distintas para omitir el subsistema entero (staging/
+    # artifacts/instalación/backup), verificadas por separado en tests:
+    # (a) el dispositivo no soporta artwork o no tiene tabla de formatos
+    #     (cover_art_formats vacío) — ni se intenta resolver fuente alguna;
+    # (b) el dispositivo SÍ soporta artwork pero ningún track tiene fuente
+    #     resoluble — no hay nada que tocar igualmente.
     mount_path = Path(mount)
     artwork_sources: list[ArtworkSourceTrack] = []
-    for track in tracks:
-        audio_path: Optional[Path] = None
-        if track.source_path:
-            audio_path = Path(track.source_path)
-        elif track.location:
-            try:
-                candidate = assert_within_ipod_control(
-                    mount_path / track.location.lstrip(":").replace(":", "/"), mount_path
-                )
-            except PathOutsideIpodControlError:
-                candidate = None
-            if candidate is not None and candidate.is_file():
-                audio_path = candidate
-        if audio_path is None or not audio_path.is_file():
-            continue
-        art_bytes, _mime = extract_embedded_artwork(audio_path)
-        if art_bytes:
-            artwork_sources.append(ArtworkSourceTrack(db_track_id=track.db_track_id, art_bytes=art_bytes))
+    if cover_art_formats:
+        for track in tracks:
+            audio_path: Optional[Path] = None
+            if track.source_path:
+                audio_path = Path(track.source_path)
+            elif track.location:
+                try:
+                    candidate = assert_within_ipod_control(
+                        mount_path / track.location.lstrip(":").replace(":", "/"), mount_path
+                    )
+                except PathOutsideIpodControlError:
+                    candidate = None
+                if candidate is not None and candidate.is_file():
+                    audio_path = candidate
+            if audio_path is None or not audio_path.is_file():
+                continue
+            art_bytes, _mime = extract_embedded_artwork(audio_path)
+            if art_bytes:
+                artwork_sources.append(ArtworkSourceTrack(db_track_id=track.db_track_id, art_bytes=art_bytes))
 
     artwork_touched = len(artwork_sources) > 0
     artwork_tracks_count = 0
@@ -248,7 +270,7 @@ def create_plan(
     artwork_artifacts: dict[str, tuple[int, str]] = {}
 
     if artwork_touched:
-        artwork_result = build_artwork_assets(artwork_sources)
+        artwork_result = build_artwork_assets(artwork_sources, formats=cover_art_formats)
         artwork_tracks_count = len(artwork_result.track_artwork)
         artwork_skipped_count = len(artwork_result.skipped_track_ids)
 

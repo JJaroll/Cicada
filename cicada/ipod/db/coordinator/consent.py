@@ -1,8 +1,18 @@
-"""Gate de consentimiento para la advertencia de incompatibilidad con Music.app.
+"""Gate de consentimiento para la advertencia de firma no-Apple en el iPod.
 
-La primera escritura de Cicada en el iPod invalida la compatibilidad con Music.app
-de Apple (debido a diferencias en la firma HASHAB, aunque el firmware del iPod
-la acepta plenamente). Este módulo persiste el consentimiento del usuario off-device
+La primera escritura de Cicada en el iPod usa una firma HASHAB propia, no la de
+Apple — el firmware del iPod la acepta igual. Esa divergencia, por sí sola, NO
+rompe la compatibilidad con Music.app: verificado contra hardware real (ver
+docs/IPOD_INTEGRATION.md §0.3; mhbd y SQLite de Cicada son idénticos byte a byte
+a los de iOpenPod salvo IDs aleatorios esperados). El riesgo real de que Music.app
+rechace el dispositivo es que YA cargue residuo de otra herramienta (iOpenPod u
+otra) de una sesión previa — archivo de autoridad ajeno
+(iOpenPodSysInfoAuthority), SysInfo/SysInfoExtended reescritos, o .backup en
+sitio —, algo independiente de lo que escriba Cicada. `cicada ipod clean-foreign`
+ayuda a limpiar ese residuo (hoy solo cubre el archivo de autoridad, no los
+.backup ajenos).
+
+Este módulo persiste el consentimiento del usuario off-device
 en ~/.cicada/consent/<sha256(guid)[:16]>.json.
 
 Invariantes:

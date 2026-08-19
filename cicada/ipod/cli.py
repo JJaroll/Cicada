@@ -192,6 +192,11 @@ def _cmd_plan(args: argparse.Namespace) -> int:
     print(f"Write-safe    : {plan.write_safe}")
     print(f"Consentimiento: {'REQUERIDO' if plan.consent_needed else 'Ya otorgado'}")
     print(f"Staging dir   : {plan.staging_dir}")
+    if plan.artwork_touched:
+        print(f"Artwork       : {plan.artwork_tracks_count} pista(s) con carátula"
+              f"{f', {plan.artwork_skipped_count} sin decodificar' if plan.artwork_skipped_count else ''}")
+    else:
+        print("Artwork       : ninguna pista con fuente de imagen resoluble")
     print("\nArtefactos generados en staging:")
     for rel, (size, sha) in plan.artifacts.items():
         print(f"  - {rel:<55} {size:>8} bytes  ({sha[:12]}...)")
@@ -206,7 +211,15 @@ def _cmd_sync(args: argparse.Namespace) -> int:
     plan = create_plan(mount, tracks, device_info=dev)
 
     if plan.consent_needed and not args.ack_consent:
-        print("\nADVERTENCIA: La primera escritura en el iPod invalidará la compatibilidad con Music.app de Apple.", file=sys.stderr)
+        print(
+            "\nADVERTENCIA: Cicada firmará la base del iPod con una firma HASHAB propia, "
+            "no la de Apple. El dispositivo la acepta sin problema, y por sí sola esta "
+            "diferencia NO rompe la compatibilidad con Music.app (verificado). Pero si este "
+            "iPod ya tiene residuo de otra herramienta (iOpenPod u otra) de una sesión "
+            "previa, Music SÍ puede rechazarlo, sin relación con lo que escriba Cicada — "
+            "si pasa, prueba 'cicada ipod clean-foreign'.",
+            file=sys.stderr,
+        )
         print("Pasa --ack-consent (o -y) para confirmar y continuar.", file=sys.stderr)
         return 1
 
@@ -221,6 +234,9 @@ def _cmd_sync(args: argparse.Namespace) -> int:
         print("\nSincronización completada con éxito.")
         if res.backup_path:
             print(f"Backup de seguridad: {res.backup_path}")
+        if res.artwork_touched:
+            print(f"Artwork escrito: {res.artwork_tracks_count} pista(s)"
+                  f"{f', {res.artwork_skipped_count} sin decodificar' if res.artwork_skipped_count else ''}")
         return 0
     else:
         print(f"\nERROR: Falló la sincronización: {res.error}", file=sys.stderr)
@@ -274,9 +290,11 @@ def _cmd_clean_foreign(_args: argparse.Namespace) -> int:
     mount = resolve_mount()
     removed = clean_foreign_authority(mount)
     if removed:
-        print(f"Eliminado iOpenPodSysInfoAuthority de {mount}")
+        print("Eliminados del dispositivo (ajenos a Cicada):")
+        for rel in removed:
+            print(f"  {rel}")
     else:
-        print("No había iOpenPodSysInfoAuthority en el dispositivo.")
+        print("No había artefactos ajenos en el dispositivo.")
     return 0
 
 

@@ -17,6 +17,7 @@ from cicada.ipod.device.checksum import ChecksumType
 from cicada.ipod.device.device_info import DeviceInfo
 
 GUID_STR = "000A27002484DDFB"
+ART_MP3 = Path(__file__).resolve().parents[1] / "fixtures" / "audio" / "with_art.mp3"
 
 
 @pytest.fixture
@@ -130,6 +131,54 @@ def test_cli_sync_flow(mock_cli_ipod: Path, tmp_path: Path, capsys: pytest.Captu
     assert code_ok == 0
     out = capsys.readouterr().out
     assert "Sincronización completada con éxito" in out
+
+
+def test_cli_plan_and_sync_report_artwork_counts(
+    mock_cli_ipod: Path, tmp_path: Path, capsys: pytest.CaptureFixture
+):
+    """El contrato real del CLI: round-trip de un track YA en el iPod (audio
+    colocado en su `Location`), no un track nuevo por source_path (ver
+    docs/VENDORED.md, Paquete 7 — decisión (a), no ampliar el CLI)."""
+    music_path = mock_cli_ipod / "iPod_Control" / "Music" / "F09" / "ART.mp3"
+    music_path.parent.mkdir(parents=True, exist_ok=True)
+    music_path.write_bytes(ART_MP3.read_bytes())
+
+    tracks_file = tmp_path / "tracks_art.json"
+    tracks_file.write_text(json.dumps([
+        {
+            "Title": "Con Carátula",
+            "Artist": "Artista",
+            "Location": ":iPod_Control:Music:F09:ART.mp3",
+            "db_track_id": 401,
+        }
+    ]), encoding="utf-8")
+
+    code_plan = main(["plan", "--tracks-file", str(tracks_file)])
+    assert code_plan == 0
+    out_plan = capsys.readouterr().out
+    assert "Artwork       : 1 pista(s) con carátula" in out_plan
+
+    code_sync = main(["sync", "--tracks-file", str(tracks_file), "--ack-consent"])
+    assert code_sync == 0
+    out_sync = capsys.readouterr().out
+    assert "Artwork escrito: 1 pista(s)" in out_sync
+
+    from cicada.ipod.db.artwork.chunks import read_artworkdb
+    artworkdb_bytes = (mock_cli_ipod / "iPod_Control" / "Artwork" / "ArtworkDB").read_bytes()
+    entries = read_artworkdb(artworkdb_bytes)
+    assert len(entries) == 1
+
+
+def test_cli_plan_without_artwork_omits_artwork_line(
+    mock_cli_ipod: Path, tmp_path: Path, capsys: pytest.CaptureFixture
+):
+    """Sin fuente de imagen resoluble (caso de _write_sample_tracks_file:
+    ubicaciones sin audio real), el resumen lo dice explícitamente."""
+    tracks_file = _write_sample_tracks_file(tmp_path / "tracks.json")
+    code = main(["plan", "--tracks-file", str(tracks_file)])
+    assert code == 0
+    out = capsys.readouterr().out
+    assert "Artwork       : ninguna pista con fuente de imagen resoluble" in out
 
 
 def test_cli_consent_subcommands(mock_cli_ipod: Path, capsys: pytest.CaptureFixture):

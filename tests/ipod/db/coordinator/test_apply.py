@@ -27,28 +27,40 @@ from cicada.ipod.db.coordinator.consent import (
     record_music_app_consent,
 )
 from cicada.ipod.db.coordinator.plan import (
-    ARTWORK_TARGET_RELPATHS,
     DATABASE_TARGET_RELPATHS,
     Plan,
     PreStateFingerprint,
+    artwork_target_relpaths,
     create_plan,
 )
 from cicada.ipod.db.parser import load_ipod_library
 from cicada.ipod.db.writer.mhit_writer import TrackInfo
 from cicada.ipod.db.writer.verify import verify_hashab
+from cicada.ipod.device.artwork_presets import NANO_7G_COVER_ART_FORMATS
 from cicada.ipod.device.capabilities import capabilities_for_family_gen
 from cicada.ipod.device.checksum import ChecksumType
 from cicada.ipod.device.device_info import DeviceInfo
 
 GUID_STR = "000A27002484DDFB"
 GUID_BYTES = bytes.fromhex(GUID_STR)
+NANO_7G_ARTWORK_RELPATHS = artwork_target_relpaths(NANO_7G_COVER_ART_FORMATS)
 
 FIXTURES_AUDIO = Path(__file__).resolve().parents[3] / "fixtures" / "audio"
 ART_MP3 = FIXTURES_AUDIO / "with_art.mp3"
 
 
-def _setup_mock_ipod_environment(mount: Path) -> DeviceInfo:
-    """Crea una estructura completa de iPod con SysInfoExtended y bases iniciales."""
+def _setup_mock_ipod_environment(
+    mount: Path, *, family: str = "iPod Nano", generation: str = "7th Gen"
+) -> DeviceInfo:
+    """Crea una estructura completa de iPod con SysInfoExtended y bases iniciales.
+
+    ``family``/``generation`` (Etapa 4f-1) permiten reusar este fixture para
+    dispositivos distintos de Nano 7G. ``checksum=HASHAB`` se mantiene fijo
+    a propósito incluso para families cuyo esquema real es otro (p. ej.
+    Classic usa HASH58) — esta suite prueba la generalización de FORMATOS
+    de artwork, no el esquema de firma de cada family, que es un eje
+    ortogonal ya cubierto en otras partes de la suite.
+    """
     device_dir = mount / "iPod_Control" / "Device"
     device_dir.mkdir(parents=True, exist_ok=True)
     sie_data = plistlib.dumps({
@@ -63,12 +75,12 @@ def _setup_mock_ipod_environment(mount: Path) -> DeviceInfo:
     itlp_dir = itunes_dir / "iTunes Library.itlp"
     itlp_dir.mkdir(parents=True, exist_ok=True)
 
-    caps = capabilities_for_family_gen("iPod Nano", "7th Gen")
+    caps = capabilities_for_family_gen(family, generation)
     dev = DeviceInfo(
         mount=mount,
         firewire_guid=GUID_STR,
-        family="iPod Nano",
-        generation="7th Gen",
+        family=family,
+        generation=generation,
         family_id=18,
         checksum=ChecksumType.HASHAB,
         guid_provenance="disk",
@@ -366,7 +378,7 @@ def test_apply_installs_and_verifies_artwork(tmp_path: Path):
 
     artwork_dir = mount / "iPod_Control" / "Artwork"
     assert (artwork_dir / "ArtworkDB").is_file()
-    for rel in ARTWORK_TARGET_RELPATHS[1:]:  # los 4 .ithmb
+    for rel in NANO_7G_ARTWORK_RELPATHS[1:]:  # los 4 .ithmb
         assert (mount / rel).is_file()
 
     entries = read_artworkdb((artwork_dir / "ArtworkDB").read_bytes())
@@ -605,3 +617,109 @@ def test_apply_two_consecutive_syncs_preserve_artwork(tmp_path: Path):
         "— exactamente el bug de regresión que este test cierra."
     )
     assert entries_by_track[6001].img_id == img_id_after_sync2
+
+
+def test_apply_result_artwork_counts_match_plan(tmp_path: Path):
+    """ApplyResult.artwork_touched/tracks_count/skipped_count deben coincidir
+    exactamente con lo que Plan calculó — no solo estar presentes."""
+    mount = tmp_path / "ipod_mount"
+    dev = _setup_mock_ipod_environment(mount)
+    consent_dir = tmp_path / "consent"
+    backups_dir = tmp_path / "backups"
+    commit_dir = tmp_path / "commit"
+
+    with_art = TrackInfo(
+        title="Con arte", artist="A", album="Al",
+        location=":iPod_Control:Music:F00:ART.mp3", db_track_id=8001,
+        source_path=str(ART_MP3),
+    )
+    plan = create_plan(mount, [with_art], device_info=dev, consent_dir=consent_dir)
+
+    # Referencia independiente: lo que Plan calculó, ANTES de tocar apply().
+    expected_touched = plan.artwork_touched
+    expected_tracks_count = plan.artwork_tracks_count
+    expected_skipped_count = plan.artwork_skipped_count
+    assert expected_touched is True
+    assert expected_tracks_count == 1
+    assert expected_skipped_count == 0
+
+    res = apply(
+        plan, mount=mount, device_info=dev, consent_ack=True,
+        consent_dir=consent_dir, backups_dir=backups_dir, commit_dir=commit_dir,
+    )
+    assert res.success is True
+    assert res.artwork_touched == expected_touched
+    assert res.artwork_tracks_count == expected_tracks_count
+    assert res.artwork_skipped_count == expected_skipped_count
+
+
+def test_apply_result_artwork_counts_zero_when_not_touched(tmp_path: Path):
+    """Un apply sin artwork (todos los tests previos a 4d) reporta 0/False,
+    no un valor residual de algún plan anterior."""
+    mount = tmp_path / "ipod_mount"
+    dev = _setup_mock_ipod_environment(mount)
+    consent_dir = tmp_path / "consent"
+    backups_dir = tmp_path / "backups"
+    commit_dir = tmp_path / "commit"
+
+    plan = create_plan(mount, _new_tracks(), device_info=dev, consent_dir=consent_dir)
+    assert plan.artwork_touched is False
+
+    res = apply(
+        plan, mount=mount, device_info=dev, consent_ack=True,
+        consent_dir=consent_dir, backups_dir=backups_dir, commit_dir=commit_dir,
+    )
+    assert res.success is True
+    assert res.artwork_touched is False
+    assert res.artwork_tracks_count == 0
+    assert res.artwork_skipped_count == 0
+
+
+# --------------------------------------------------------------------------- #
+# Generalización más allá del Nano 7G (Fase 4, Etapa 4f-1)
+# --------------------------------------------------------------------------- #
+
+
+def test_apply_nano6g_round_trip_installs_own_format_ithmb_not_nano7g(tmp_path: Path):
+    """Round-trip completo de apply() para un dispositivo NO Nano 7G (Nano
+    6th Gen — mismo esquema HASHAB/CDB comprimida que Nano 7G, así que esto
+    prueba de forma aislada la generalización de FORMATOS de artwork, sin
+    mezclar el eje ortogonal de esquema de firma/DB de cada family) — mismo
+    rigor que el de Nano 7G en 4d: instalación, backup, verificación
+    referencial E4, y confirmación de que se instalaron los .ithmb REALES
+    de Nano 6G (no los de Nano 7G)."""
+    mount = tmp_path / "ipod_mount"
+    dev = _setup_mock_ipod_environment(mount, family="iPod Nano", generation="6th Gen")
+    consent_dir = tmp_path / "consent"
+    backups_dir = tmp_path / "backups"
+    commit_dir = tmp_path / "commit"
+
+    track = TrackInfo(
+        title="Con Carátula", artist="A", album="Al",
+        location=":iPod_Control:Music:F00:ART.mp3", db_track_id=9301,
+        source_path=str(ART_MP3),
+    )
+    plan = create_plan(mount, [track], device_info=dev, consent_dir=consent_dir)
+    assert plan.artwork_touched is True
+
+    res = apply(
+        plan, mount=mount, device_info=dev, consent_ack=True,
+        consent_dir=consent_dir, backups_dir=backups_dir, commit_dir=commit_dir,
+    )
+    assert res.success is True
+    assert res.artwork_touched is True
+    assert res.artwork_tracks_count == 1
+
+    artwork_dir = mount / "iPod_Control" / "Artwork"
+    nano6g_caps = capabilities_for_family_gen("iPod Nano", "6th Gen")
+    nano6g_relpaths = artwork_target_relpaths(nano6g_caps.cover_art_formats)
+    for rel in nano6g_relpaths[1:]:
+        assert (mount / rel).is_file(), f"falta el .ithmb real de Nano 6G: {rel}"
+    for rel in NANO_7G_ARTWORK_RELPATHS[1:]:
+        assert not (mount / rel).exists(), f"{rel} es de Nano 7G, no debería instalarse para Nano 6G"
+
+    entries = read_artworkdb((artwork_dir / "ArtworkDB").read_bytes())
+    assert len(entries) == 1
+    assert entries[0].db_track_id == 9301
+    assert entries[0].img_id == track.mhii_link
+    assert set(entries[0].formats.keys()) == {fmt.format_id for fmt in nano6g_caps.cover_art_formats}
