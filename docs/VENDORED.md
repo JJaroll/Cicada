@@ -1344,6 +1344,117 @@ completo de la vendorización original de `write_itunesdb`/`hash72` con
 llamada desde el día uno** ("Cicada no llama esas vías"); esta entrada
 registra que finalmente se eliminó, no que se descubrió.
 
+#### Etapa 6f — Chunks `mhba`/`mhia` + variante de `mhii`/`mhni` con semántica de Fotos, en `chunks.py`. **Estado: implementado y verificado.**
+
+Todo en `cicada/ipod/db/artwork/chunks.py` (mismo módulo que ArtworkDB,
+no uno nuevo — comparten contenedor, ver docstring del módulo actualizado
+en esta etapa) y `types.py` (nuevo `PhotoAlbumInput`, dataclass frozen
+igual que `EncodedFormatPayload`).
+
+**Nuevo, aditivo, cero cambio de comportamiento en cover art:**
+- `write_mhia(image_id) -> bytes` — MHIA de 40 bytes, solo `image_id`@16.
+- `write_mhba(album: PhotoAlbumInput) -> bytes` — MHBA de 148 bytes:
+  nombre (MHOD tipo `ALBUM_NAME`, valor nuevo en `ArtworkMhodType`, no
+  usado por cover art) + un `mhia` por miembro. Los 10 campos de
+  slideshow/reproducción (`album_type`/`playmusic`/`repeat`/`random`/
+  `show_titles`/`transition_direction`/`slide_duration`/
+  `transition_duration`/`song_id`/`prev_album_id`) van todos, con default
+  0 — son parte fija del layout binario, no una capacidad opcional.
+- `write_mhni_photo`/`write_mhii_photo` — variantes de `write_mhni`/
+  `write_mhii`, **funciones separadas, no una generalización de las
+  existentes**. Motivo, verificado con test de offset crudo
+  (`test_mhii_photo_offset_20_no_es_song_id`), no solo documentado: el
+  `MHII` de Fotos deja el offset 20 (donde cover art guarda `song_id`/
+  `db_track_id` como u64) sin usar, y guarda `created_at`/`digitized_at`/
+  `original_size` en 40/44/48 — mismo tamaño de header (152 bytes),
+  semántica incompatible. El `MHNI` de Fotos también difiere: la ruta del
+  archivo hijo (`MHOD` tipo `FILE_NAME`) es una ruta relativa completa con
+  convención HFS multi-segmento (`":Full Resolution:iOpenPod:foto.jpg"`,
+  vía nuevas `photo_rel_path_to_db_string`/`photo_db_string_to_rel_path`),
+  no un nombre de archivo plano como en cover art.
+- `write_mhla()` extendida con un parámetro opcional `mhba_blobs` (default
+  `None` → 0 álbumes, **byte a byte igual que antes** — verificado con
+  test de regresión dedicado). `write_mhfd()` extendida con `unknown2`
+  keyword-only, default `2` (cover art, sin cambio) — Fotos pasa `6`
+  (valor empírico de `_DEFAULT_MHFD_UNKNOWN2` en `sync/photos.py`,
+  "Empirical iTunes-written databases across Nano 2/6/7 all use 6").
+- `build_photo_db()` — assembler nuevo, paralelo a `build_artworkdb()`
+  (no lo reemplaza ni lo llama): mismo MHFD→3×MHSD, con álbumes reales en
+  el dataset `PHOTO_ALBUM_LIST` (que `build_artworkdb` siempre deja
+  vacío) y `unknown2=6`.
+- Lectura: `_parse_mhia`/`_parse_mhba`/`_parse_mhni_photo`/
+  `_parse_mhii_photo` + `read_photo_db(data) -> (images, albums)`,
+  paralelo a `read_artworkdb` sin tocarlo — reusar el parser de cover art
+  para Fotos leería `created_at` como parte de un `song_id` inexistente,
+  en silencio.
+
+**Rigor de test (mismo criterio que 4c, reforzado):** el hallazgo de la
+investigación de Fotos fue exactamente "mismo tamaño de header, semántica
+de campos incompatible" — un round-trip puramente interno (escribir con
+esta función, leer con su propio parser) no detectaría un bug simétrico
+en ambos lados. Por eso varios tests de
+`tests/ipod/db/artwork/test_chunks_photo.py` (14 nuevos) desempaquetan
+bytes crudos con `struct` directo contra los offsets documentados, en vez
+de pasar solo por las funciones del módulo — en particular
+`test_mhii_photo_offset_20_no_es_song_id` (offset 20 en cero, no
+interpretable como song_id) y `test_mhba_layout_exacto_todos_los_campos`
+(los 13 campos del MHBA, uno por uno, contra sus offsets exactos). Dos
+mutation checks reales por inyección de bug en el archivo fuente,
+confirmados y revertidos: (a) `created_at` escrito por error en offset 20
+(el slot de cover art) en vez de 40 — detectado; (b) `album_type`/
+`playmusic` con posiciones de byte intercambiadas en `write_mhba` —
+detectado. Suite completa: 550 tests verdes (536 + 14).
+
+#### Etapa 6g — Procesamiento de imagen: fit/pad/rotate de fotos, en `photo_fit.py` nuevo. **Estado: implementado y verificado.**
+
+`cicada/ipod/db/artwork/photo_fit.py` (nuevo, colocado junto a
+`rgb565.py` — comparten dominio de codificación, no orquestación).
+Bloque deliberadamente aislado del coordinador (Etapa 6h, todavía sin
+construir): esta es la lógica con superficie de error real (aspect
+ratio, padding simétrico, rotación condicional), decisión explícita del
+usuario de no mezclarla con el diseño del coordinador para poder aislar
+causas si algo falla más adelante.
+
+Portado de `_fit_dimensions`/`_fitted_area`/
+`_should_rotate_tall_photo_for_format`/`_fit_photo_to_format` en
+`sync/photos.py` de iOpenPod, prácticamente literal (mismos umbrales:
+aspecto 1.15, ganancia de rotación 1.2). **Confirma, con código real
+además de con la investigación previa, que `rgb888_to_rgb565_le` de
+`rgb565.py` (Etapa 4b) es reusable sin cambios** — el nuevo
+`encode_photo_for_format()` lo llama tal cual, ningún ajuste. Lo que
+faltaba era la política de fit/pad/rotate, no el codec — exactamente como
+se documentó en la investigación de Fotos.
+
+A diferencia de `resize_for_format()` (cover art, Etapa 4b, estira sin
+preservar aspecto porque una carátula tolera eso): `fit_photo_to_format()`
+**nunca estira** — fit preservando aspecto + padding negro simétrico
+(con ajuste de paridad para que el padding se pueda partir en mitades
+enteras por lado), salvo para roles de miniatura (`photo_thumb`/
+`photo_list`) sin `fit_thumbnails`, que usan zoom-and-crop-to-fill (igual
+que iTunes). `should_rotate_tall_photo_for_format()` decide rotar 270°
+una foto más alta que ancha solo cuando (a) el formato destino tiene un
+rol rotable, (b) el aspect ratio supera 1.15, y (c) rotar realmente gana
+al menos 20% más de área aprovechada — **no todo formato "vertical
+fuente" conviene rotarlo**: contra el `FULL_FMT` real del Nano 7G
+(480×864, vertical), rotar una foto alta la vuelve horizontal, que encaja
+peor en un target vertical — verificado con test dedicado
+(`test_formato_vertical_real_del_nano7g_no_gana_rotando`), no asumido.
+
+**Rigor de test**: 26 tests nuevos
+(`tests/ipod/db/artwork/test_photo_fit.py`), con los tres casos de aspect
+ratio pedidos (foto más ancha, más alta, exactamente cuadrada) verificados
+dimensión a dimensión (`fit_dimensions`/`fit_photo_to_format`) y píxel a
+píxel (decodificando el RGB565 real de vuelta con
+`rgb565_le_to_rgb888` y comprobando que las franjas de padding son negro
+exacto y el contenido reproduce el color original dentro del margen de
+cuantización RGB565 empírico — 7 en R/B de 5 bits, 3 en G de 6 bits,
+medido, no asumido en ±4 como un primer intento demasiado ajustado que
+falló). Dos mutation checks reales por inyección de bug en el archivo
+fuente, confirmados y revertidos: (a) se quitó el ajuste de paridad del
+padding — 4 tests lo detectaron; (b) se quitó el umbral de ganancia de
+`should_rotate_tall_photo_for_format` (rotaba con cualquier mejora, no
+solo ≥20%) — detectado. Suite completa: 576 tests verdes (550 + 26).
+
 #### Etapa 6a — `kind` de video en `/media/sync`. **Estado: implementado y verificado.**
 
 `MediaTrackInput.kind` extendido con `"movie"`, `"tv_show"`,

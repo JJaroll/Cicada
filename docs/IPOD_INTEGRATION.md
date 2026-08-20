@@ -533,10 +533,19 @@ para validar contra hardware real antes de la capa de API (mismo patrón que Fas
 - [x] **6e** — Infra de soporte: `path_safety.py`, `storage_safety.py` (reducido,
       sin portar la detección de filesystem cross-platform completa de iOpenPod),
       mapa off-device `photo_sync.json`→`~/.cicada/photos/` (patrón `authority.py`).
-- [ ] **6f** — Chunks `mhba`/`mhia` en `chunks.py` (faltaban a nivel de chunk;
-      el resto del formato de Fotos ya es el mismo de ArtworkDB).
-- [ ] **6g** — Procesamiento de imagen (fit/pad/rotate), reusa el codec RGB565_LE
-      de `rgb565.py` sin cambios.
+- [x] **6f** — Chunks `mhba`/`mhia` en `chunks.py` (faltaban a nivel de chunk;
+      el resto del formato de Fotos ya es el mismo de ArtworkDB). Más una
+      variante separada de `mhii`/`mhni` (`write_mhii_photo`/`write_mhni_photo`):
+      mismo tamaño de header que cover art, semántica de campos incompatible
+      (offset 20 vs 40/44/48) — verificado con tests de offset crudo, no solo
+      round-trip interno. `write_mhla`/`write_mhfd` extendidas de forma
+      retrocompatible (parámetros opcionales, cover art sin cambios).
+- [x] **6g** — Procesamiento de imagen (fit/pad/rotate) en `photo_fit.py` nuevo,
+      bloque aislado del coordinador a propósito. Reusa el codec RGB565_LE de
+      `rgb565.py` sin cambios — confirmado con código real, no solo en la
+      investigación. Nunca estira sin preservar aspecto (a diferencia de cover
+      art); rotación condicional solo cuando realmente gana área (no todo
+      formato "vertical fuente" conviene rotarlo).
 - [ ] **6h** — Coordinador `sync_photos_to_ipod()` (propio, no extiende `Plan`).
 - [ ] **6j** — Prueba de fuego con imágenes reales, antes de la API.
 - [ ] **6i** — API/CLI (`POST /photos/sync`, reemplazo del stub `GET /photos`).
