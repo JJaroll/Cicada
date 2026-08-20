@@ -514,7 +514,7 @@ paquete `podcasts/` de iOpenPod es 100% gestión de feeds, excluido en bloque sa
 la extracción de capítulos. Detalle completo en `docs/VENDORED.md` Paquete 8.
 
 ### Fase 6 — Fotos y video (video cerrado 2026-08-19, confirmado en hardware
-real 2026-08-20; fotos en construcción por etapas)
+real 2026-08-20; fotos en pausa 2026-08-20 tras 6e-6h, diagnóstico avanzado en 6j)
 
 **Video**: mismo patrón que podcasts — `kind: "movie"|"tv_show"|"music_video"|
 "video_podcast"` en `POST /media/sync` (6a), arte embebido reutiliza el pipeline de
@@ -527,9 +527,11 @@ H.264 documentado para Nano 7G en `capabilities.py`, 720×576) confirmada en las
 capas del dispositivo (iTunesCDB binario y SQLite `Library.itdb`) y reproducción
 real confirmada por el usuario en el propio iPod.
 
-**Fotos**: investigación profunda y troceado cerrados 2026-08-20 (detalle completo
-en `docs/VENDORED.md`, Paquete 9). En construcción, etapa por etapa, orden ajustado
-para validar contra hardware real antes de la capa de API (mismo patrón que Fase 2):
+**Fotos**: investigación profunda y troceado cerrados 2026-08-20; 6e-6h
+implementadas y verificadas en software; 6j (prueba de fuego en hardware) en
+pausa deliberada tras 4 intentos, diagnóstico avanzado (detalle completo en
+`docs/VENDORED.md`, Paquete 9). Orden ajustado para validar contra hardware
+real antes de la capa de API (mismo patrón que Fase 2):
 - [x] **6e** — Infra de soporte: `path_safety.py`, `storage_safety.py` (reducido,
       sin portar la detección de filesystem cross-platform completa de iOpenPod),
       mapa off-device `photo_sync.json`→`~/.cicada/photos/` (patrón `authority.py`).
@@ -546,29 +548,56 @@ para validar contra hardware real antes de la capa de API (mismo patrón que Fas
       investigación. Nunca estira sin preservar aspecto (a diferencia de cover
       art); rotación condicional solo cuando realmente gana área (no todo
       formato "vertical fuente" conviene rotarlo).
-- [ ] **6h** — Coordinador `sync_photos_to_ipod()` (propio, no extiende `Plan`).
-- [ ] **6j** — Prueba de fuego con imágenes reales, antes de la API.
+- [x] **6h** — Coordinador `sync_photos_to_ipod()` (propio, no extiende `Plan`),
+      calcado de la disciplina de `apply.py` (backup verificado → staging con
+      fsync → commit por renames → verificación post-commit releyendo lo
+      instalado → rollback ante cualquier fallo). Hallazgo arquitectónico real
+      (no supuesto): `Photos/` vive a nivel de volumen, fuera de
+      `iPod_Control/` — rompía `write_guard.py`/`safe_write.py`/`backup.py`,
+      los tres corregidos con una segunda raíz segura explícita (`root=
+      PHOTOS_DIRNAME`), decisión del usuario de extender la autoridad única en
+      vez de duplicarla. Detalle completo en `docs/VENDORED.md`, Paquete 9.
+- [~] **6j** — Prueba de fuego con imágenes reales contra el Nano 7G conectado.
+      **PAUSADA 2026-08-20, en progreso con diagnóstico avanzado — no cerrada,
+      no descartada.** Cuatro intentos en hardware, cada uno con un fix
+      estructural correcto y verificado (época Mac/1904, chunk `mhaf` +
+      `persistent_id`=`image_id+2`), `success=True` y Photo Database
+      releído del dispositivo real confirmando la escritura en todos los
+      casos — pero la app de Fotos del Nano sigue mostrándose vacía tras
+      los cuatro. Diff binario completo contra un `Photo Database` real
+      de Apple/Música (61 fotos, sync real vía Finder) surgió 6
+      discrepancias (A-F, detalle en `docs/VENDORED.md` Paquete 9); tras
+      aplicar las dos más plausibles (A, B) sin resultado, comparación de
+      árbol completo (no solo `Photos/`) encontró un formato hermano sin
+      documentar (`frpd`/`PhotosFolder*` en `iPod_Control/iTunes/`, 5
+      archivos nuevos que ni iOpenPod ni Cicada modelan) — con al menos un
+      campo que parece un checksum sin algoritmo identificable. Se pausa
+      porque el trabajo restante cambió de naturaleza: de "encontrar el
+      campo que falta" a "reconstruir un formato binario legado sin
+      especificación", que no conviene forzar al final de una sesión
+      larga. Los dos backups reales (antes/después del sync de Música) y
+      todo el material de diffing quedan preservados en
+      `~/.cicada/photo_sync_forensics/` (fuera del repo por tamaño) para
+      retomar sin repetir el trabajo. Hallazgo no bloqueante de esta
+      etapa: fotos de 95-96MP disparan `DecompressionBombWarning` de
+      Pillow (solo aviso).
 - [ ] **6i** — API/CLI (`POST /photos/sync`, reemplazo del stub `GET /photos`).
+      Bloqueada por 6j: no tiene sentido exponer un sync que, verificado en
+      hardware real, todavía no logra que la app de Fotos muestre nada.
 
 HEIC/HEIF diferido explícitamente (requiere `pillow-heif`, no instalado) — caso
 real fuera de alcance hoy, no descartado.
 
-**Fotos — diferida, con motivo preciso: dimensión del trabajo, no falta de
-referencia.** El Nano 7G sí tiene app de Fotos (confirmado por hardware). **Sí
-existe** una referencia Python vendorizable: `src/iopenpod/sync/photos.py`
-(2706 líneas, MIT, parser y escritor completos, con tests de seguridad reales) —
-la investigación inicial de esta fase no la encontró por buscar solo paquetes de
-dominio nombrados "photo", no dentro de `sync/`; corregido el mismo día con
-evidencia del usuario. El formato "Photo Database" comparte el árbol de chunks
-con ArtworkDB (`mhfd→mhsd→{mhli,mhla,mhlf}→mhii→{mhod,mhni}`, ya vendorizado en
-4c, headers idénticos byte a byte) — solo faltan `mhba`/`mhia` (entrada de álbum)
-a nivel de chunk. El pixel format sigue siendo `RGB565_LE`, mismo códec que cover
-art. Se difiere por **dimensión**: ~2700 líneas de dominio nuevo por adaptar,
-comparable a toda la Fase 4 junta, sin plan de troceado todavía — se define
-cuando se abra una sesión dedicada. Diferido con motivo registrado, no
-descartado — mismo tratamiento que el hueco de Nano 6G en 4f-2. Detalle
-completo, incluida la corrección de la investigación inicial, en
-`docs/VENDORED.md` Paquete 9.
+**Fotos — en pausa, con motivo preciso: reconstrucción de formato binario sin
+especificación, no falta de referencia ni de esfuerzo.** El Nano 7G sí tiene
+app de Fotos (confirmado por hardware). La referencia inicial
+(`src/iopenpod/sync/photos.py`, MIT) y el formato compartido con ArtworkDB
+(`mhfd→mhsd→{mhli,mhla,mhlf}→mhii→{mhod,mhni}`, ya vendorizado en 4c) permitieron
+construir 6e-6h completos y verificados en software (608 tests). Lo que quedó
+sin resolver en 6j no es código de Cicada sino un formato adicional (`frpd`)
+que **ninguna referencia disponible documenta** — ni iOpenPod, ni ningún otro
+proyecto consultado. Detalle completo, incluidos los 6 diffs A-F y el hallazgo
+de `frpd`, en `docs/VENDORED.md` Paquete 9.
 
 > Con Fase 6 (video) cerrada, lo único que sigue con el placeholder honesto original
 > es `/photos` (lista vacía, `DELETE` responde `501`) y `POST /playlists/{create,import}`

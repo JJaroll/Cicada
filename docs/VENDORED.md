@@ -1455,6 +1455,489 @@ padding — 4 tests lo detectaron; (b) se quitó el umbral de ganancia de
 `should_rotate_tall_photo_for_format` (rotaba con cualquier mejora, no
 solo ≥20%) — detectado. Suite completa: 576 tests verdes (550 + 26).
 
+#### Etapa 6h — Coordinador `sync_photos_to_ipod()`, en `cicada/ipod/db/coordinator/photos.py` nuevo. **Estado: implementado y verificado.**
+
+Análogo a `media.py` (Fase 3), NO extensión de `Plan`/`apply()` — Fotos
+no tiene relación con tracks/playlists, así que tiene su propia secuencia
+de backup/stage/commit/verificación-post-commit/rollback, calcada de la
+disciplina de `apply.py` (Etapa 2c): precondiciones → backup verificado →
+staging con fsync (`.cicada-new`) → commit por renames (full-res/thumbs
+antes que la DB, mismo criterio que ArtworkDB-antes-que-iTunesCDB en
+4d) → verificación post-commit releyendo lo instalado (no lo que el
+código dice haber escrito) → rollback inmediato ante cualquier fallo
+desde el backup en adelante. Sin gate de consentimiento de Music.app:
+ese gate existe porque reescribir el iTunesCDB re-firma HASHAB (§0.3);
+Fotos nunca toca el iTunesCDB, no hay riesgo análogo que gatear —
+decisión de diseño explícita, no un descuido.
+
+**Hallazgo arquitectónico real, encontrado por ejecución real, no
+supuesto** (Fase 6h, 2026-08-20): `write_guard.py` confina TODO a
+`<mount>/iPod_Control/` desde Fase 0 — pero `Photos/` vive a **nivel de
+volumen**, fuera de `iPod_Control/` (confirmado contra `sync/photos.py`
+de iOpenPod, `_PHOTO_DB_RELATIVE = Path("Photos")/"Photo Database"`, sin
+prefijo `iPod_Control`, y reproducido en vivo:
+`PathOutsideIpodControlError` real al intentar escribir el primer
+archivo de prueba). Esto rompía tres módulos a la vez: `write_guard.py`
+(`assert_within_ipod_control`), `safe_write.py` (sus wrappers `guarded_*`
+llaman a ese mismo assert) y `backup.py` (`_scope_roots` anidaba
+`Photos/` bajo `iPod_Control/`, que tampoco es donde vive en un
+dispositivo real). Todo lo que Cicada había escrito hasta ahora — Music/,
+iTunes/, Artwork/, Device/ — vive bajo `iPod_Control/`, así que este
+supuesto nunca se había puesto a prueba; Fotos es lo primero que lo
+rompe. Presentado al usuario con dos opciones (generalizar
+`write_guard.py` con una segunda raíz segura explícita vs. una capa
+paralela solo para Fotos reusando `path_safety.py`); **elegida la
+primera** — una sola autoridad de "qué es seguro escribir" para todo el
+proyecto, no dos.
+
+**Extensión de `write_guard.py`** (mismo invariante central, no
+reemplazado): `assert_within_ipod_control`/`assert_deletable`/
+`safe_rmtree` ganan un parámetro `root: str = IPOD_CONTROL_DIRNAME`
+keyword-only — default preserva el comportamiento exacto de antes de 6h
+para **todo** el resto del proyecto (nadie más pasa `root=`), y
+`root=PHOTOS_DIRNAME` (nueva constante exportada) confina a `Photos/`
+explícitamente, nunca por default — ampliar la raíz segura es una
+decisión consciente en cada call site. `Photos/` se agregó a
+`_protected_dirs()`: nunca se puede `rmtree` completa, mismo trato que
+`iPod_Control/`/`iPod_Control/iTunes/`. `safe_write.py` (`guarded_durable_
+replace`/`guarded_durable_publish_new`/`guarded_durable_unlink`) recibió
+el mismo parámetro, delegando sin más lógica propia.
+
+**Corrección de `backup.py`** (el `include_photos` añadido en 6e estaba
+mal — asumía `Photos/` anidada bajo `iPod_Control/`, corregido aquí
+antes de que se usara en producción): `_scope_roots()` trata `Photos/`
+como raíz de volumen independiente, no como subdirectorio de `control`.
+`BackupMode.FULL` ahora también cubre `Photos/` siempre que exista (sin
+necesitar `include_photos`, igual que ya cubre `Music/` sin flag
+especial — FULL es "todo el dispositivo"). `restore_backup()` reescrita
+para resolver la raíz de guardia correcta (`iPod_Control` o `Photos`)
+por cada miembro del tar (`_guard_root_for_member()`), incluida la
+poda de directorios sobrantes y el `safe_rmtree` de directorios no
+vacíos — antes estos habrían fallado con `PathOutsideIpodControlError`
+al intentar reconciliar cualquier cosa bajo `Photos/`.
+
+**Resto del coordinador** (`photos.py`): `image_id` estable entre syncs
+por hash visual, resuelto contra el mapa off-device (`photo_mapping.py`,
+6e) — nunca contra el dispositivo. Álbum maestro "Photo Library" siempre
+presente con todas las fotos; álbumes nombrados desde el nombre del
+subdirectorio de origen (mismo criterio que `scan_pc_photos` de
+iOpenPod). Optimización: si el diff (agregadas/removidas) es vacío
+contra la última sync, no se crea backup ni se escribe nada — mismo
+criterio que `artwork_touched=False` en `create_plan()`.
+
+**No implementado en este bloque, gap documentado, no descubierto por
+accidente**: sin equivalente de `PreStateFingerprint` (Etapa 2c/4f-1)
+para Fotos — no se detecta si algo modificó `Photos/` por fuera de
+Cicada entre dos syncs. Fuera del alcance pedido para 6h (backup +
+verificación post-commit + rollback, no detección de deriva de
+pre-estado); candidato para una etapa futura si se vuelve necesario.
+
+**Tests** (30 nuevos, 604 en total): 6 en `test_write_guard.py` para
+`root=` (incluye que el default no cambió para nadie más, que
+`root=PHOTOS_DIRNAME` no es un bypass general — sigue rechazando
+`iPod_Control/` —, y que `Photos/` está protegida de `rmtree` completo);
+9 en `test_backup.py` (`include_photos` no anida bajo `iPod_Control/`,
+`FULL` cubre `Photos/` sin flag, round-trip real de backup/restore sobre
+`Photos/`, que restore de Fotos no toca `iPod_Control/` y viceversa, el
+mismo bug de "backup tomado antes de que la carpeta existiera" que se
+corrigió para Artwork/ en 4d, y que restore nunca hace `rmtree` de
+`Photos/` completa — vía monkeypatch de `shutil.rmtree`, mismo patrón que
+el test ya existente para `iPod_Control/`); 15 en
+`tests/ipod/db/coordinator/test_photos.py` (dedup por hash visual real —
+no por ruta —, álbumes desde subdirectorio, round-trip completo
+releyendo `read_photo_db()` de lo instalado en disco, `image_id` estable
+entre dos syncs reales, borrado de full-res al remover una foto, sync
+sin cambios es no-op sin backup nuevo, rollback real ante fallo de
+verificación post-commit con el estado del dispositivo verificado byte a
+byte igual al previo, sin temporales `.cicada-new` huérfanos tras el
+rollback). Cuatro mutation checks reales por inyección de bug en el
+archivo fuente, confirmados y revertidos: (a) enrutamiento de raíz de
+`backup.py` roto (siempre `iPod_Control`, ignora `Photos/`) — 3 tests lo
+detectan; (b) optimización de no-op quitada — detectado; (c) estabilidad
+de `image_id` deshabilitada — 2 tests lo detectan.
+
+**Verificado con ejecución real, no solo con la suite**: se corrió
+`sync_photos_to_ipod()` a mano contra un árbol de iPod simulado con
+fotos sintéticas reales (PIL) antes de escribir los tests formales —
+así se encontró el hallazgo arquitectónico de arriba, que ningún mock
+habría revelado.
+
+**Revisión del usuario (2026-08-20) antes de dar 6h por cerrada — mismo
+escrutinio que el fingerprint de `PreStateFingerprint` en 4f-1, por
+tratarse de un cambio a un mecanismo de seguridad central.** Encontró un
+hueco real en la primera versión: `root: str` en `assert_within_ipod_control`/
+`assert_deletable`/`safe_rmtree` no tenía whitelist — cualquier caller
+podía pasar `root="lo-que-sea"` y la función confinaría a esa raíz
+arbitraria sin objetar, degradando el confinador central de "dos raíces
+conocidas y auditadas" a "cualquier nombre que alguien pase". Corregido
+con `_ALLOWED_ROOTS = frozenset({IPOD_CONTROL_DIRNAME, PHOTOS_DIRNAME})`,
+verificado en `_control_dir()` antes de tocar el filesystem — un tercer
+valor lanza `ValueError` de inmediato. Confirmado con mutation check real
+(quitar la whitelist, ver el test fallar, revertir) y con grep exhaustivo
+de que ningún caller pre-6h (`plan.py`/`media.py`/`apply.py`/
+`authority.py`) pasa `root=` — todos usan el default, byte a byte el
+mismo valor que antes de esta etapa. 1 test nuevo
+(`test_root_arbitrario_no_conocido_es_rechazado`). 605 tests verdes.
+
+#### Etapa 6j — Prueba de fuego en hardware real (Nano 7G), con las dos imágenes reales de Magallanes 120. **Estado: verificado en el dispositivo.**
+
+Antes de construir la API/CLI (6i), tal como quedó reordenado: mismo
+protocolo que las pruebas de fuego anteriores (Fase 4, video en 6c).
+`sync_photos_to_ipod()` invocado directo (sin API, todavía no existe)
+contra el Nano 7G real conectado (`read_device_info()` real, sin mocks:
+`iPod Nano 7th Gen`, GUID `000A27002484DDFB`, `guid_is_write_safe=True`),
+con `img20260322_14485213.jpg` (69.8 MB, 11376×8480) e
+`img20260322_15243486.jpg` (46.7 MB, 11392×8368) — las dos imágenes
+exactas que el usuario indicó, aisladas en un directorio aparte (symlinks)
+para no sincronizar sin querer el resto de la carpeta `Magallanes 120/`
+(64 archivos).
+
+**Resultado**: `success=True`, 2 fotos, 1 álbum ("Photo Library"), backup
+verificado creado, ~14s de principio a fin. Verificado releyendo lo
+REALMENTE instalado en el dispositivo, no solo el resultado del código:
+`read_photo_db()` sobre el `Photo Database` real — 2 imágenes, tamaños
+originales exactos, offsets de miniatura secuenciales sin solape
+(`F1005_1.ithmb`: 12800/12800 bytes; `F1007_1.ithmb`: 829440/829440
+bytes, ambos exactos para 80×80 y 480×864 en RGB565_LE sin padding de
+stride). Los dos JPEG de "Full Resolution" reabiertos y verificados con
+PIL (`Image.verify()`), dimensiones íntegras. Expulsión limpia
+(`cicada ipod eject`) al final.
+
+**Hallazgo real, no bloqueante**: ambas fotos (96.5MP y 95.3MP — cámara
+profesional real, no una foto de teléfono) superan el límite por
+default de PIL para el aviso de "decompression bomb"
+(`Image.MAX_IMAGE_PIXELS`, ~89.5MP) — sale un `DecompressionBombWarning`
+en el log, la imagen se decodifica igual, no bloquea el sync. Ningún test
+sintético lo había ejercitado (las imágenes de prueba son chicas a
+propósito). No se tocó `MAX_IMAGE_PIXELS` ni se agregó manejo especial —
+es una advertencia, no un error, y el caso real (fotos de 60-100MP) es
+minoritario; queda registrado por si en el futuro justifica ajustar el
+límite explícitamente en vez de dejarlo en el default de Pillow.
+
+Verificación visual del resultado en el propio dispositivo: **la app de
+Fotos apareció vacía pese al Photo Database bien formado** — ver
+diagnóstico y fix abajo.
+
+#### Diagnóstico post-6j — Fotos vacía en el dispositivo pese a un Photo Database bien formado (2026-08-20)
+
+Tres hipótesis planteadas por el usuario, en orden barato→caro,
+diagnosticadas **sin escribir nada al dispositivo** (mismo backup de 6j
+reutilizado para inspección offline):
+
+1. **¿Archivo de índice/contador separado?** Extraídos `iTunesPrefs.plist`
+   e `iPodSettings.xml` reales del backup de 6j. Ninguno tiene un conteo
+   de fotos separado del propio Photo Database — `iTunesPrefs.plist` no
+   tiene `EstimatedDeviceTotals` en absoluto en este dispositivo (ni para
+   música/video, que sí funcionan sin que Cicada haya escrito nunca ese
+   archivo — descarta que sea requisito de visibilidad); `iPodSettings.xml`
+   solo tiene preferencias de slideshow (`Repeat`/`Shuffle`/`TimePerSlide`/
+   `Music`/`Transitions`), no un conteo. Sí se rastreó dónde lo escribe
+   iOpenPod (`sync_executor.py` → `apply_itunes_protections_from_tracks`
+   → `itunes_prefs.py`, un archivo real que Cicada nunca toca para ningún
+   tipo de medio) — descartado como causa principal, no como gap a
+   registrar.
+2. **¿Reinicio necesario?** Descartado por el usuario — probó reiniciar
+   el iPod, la app de Fotos siguió vacía.
+3. **¿Discrepancia de chunk?** **Confirmado — bug real.** Auditoría byte
+   a byte de `write_mhfd()`/`write_mhsd()` contra los DOS escritores
+   originales de iOpenPod (`artworkdb_writer/artworkdb_chunks.py` para
+   cover art, `sync/photos.py` para Fotos):
+   - **MHFD offset 48 (u32) = 2** — fijado de forma incondicional por
+     AMBOS escritores originales. `write_mhfd()` de Cicada nunca lo
+     escribía (quedaba en 0 desde el buffer inicializado en cero), para
+     cover art **y** para Fotos. Nunca rompió cover art visiblemente en
+     hardware (esa app tolera un 0 ahí) — mismo principio que
+     `mhbd[0x30]`: un campo que "no importa" para un caso puede ser
+     justo el que importa para el siguiente. Significado exacto
+     desconocido (no documentado en iOpenPod ni en libgpod) — se replica
+     el valor observado, no se inventa uno.
+   - **MHSD offset 12 (`ds_type`)**: ancho de empaquetado distinto entre
+     los dos escritores originales — ArtworkDB usa `<H` (u16), Fotos usa
+     `<I` (u32). `write_mhsd()` de Cicada usa `<H` (como ArtworkDB). Con
+     los valores reales de `ds_type` (1/2/3, caben en 16 bits) y el
+     buffer siempre inicializado en cero, el resultado en bytes es
+     **idéntico** entre ambos anchos — confirmado por análisis directo,
+     no es un gap funcional. Registrado igual porque el usuario pidió la
+     auditoría completa, no solo lo que "sí importa".
+   - **MHFD offsets 32-48/60-68**: en `artworkdb_chunks.py`, se copian
+     condicionalmente de un `reference_mhfd` (preservación incremental
+     entre syncs) — feature que la versión de Fotos de iOpenPod ni
+     siquiera tiene, y que Cicada tampoco implementa para ningún caso
+     (decisión ya aprobada: reescritura completa). No es un gap: ni
+     siquiera el escritor original de Fotos lo hace.
+   - **MHLI/MHLA/MHLF**: estructura idéntica en ambos escritores
+     originales, y ya coincidía exactamente con lo que Cicada tenía. Sin
+     hallazgos.
+
+   **Fix**: `write_mhfd()` ahora fija el offset 48 = 2 siempre
+   (`_MHFD_OFFSET_48_CONSTANT`), para cover art y Fotos por igual —
+   mismo builder compartido, un solo punto de corrección. 2 tests nuevos
+   (uno en `test_chunks.py` verificando ambas variantes de `write_mhfd()`
+   directamente, uno en `test_chunks_photo.py` verificando que
+   `build_photo_db()` lo hereda) — offsets exactos vía `struct.unpack_from`,
+   no solo "no lanza excepción". Mutation check real (quitar la escritura
+   del offset, confirmar que ambos tests fallan, revertir) confirmado.
+
+   **Verificado que el fix no rompe cover art**: suite completa (607
+   tests) incluyendo los tests de `apply.py`/Fase 4d que ejercitan
+   `build_artworkdb()` con HASHAB real de punta a punta — todos verdes,
+   sin cambios de comportamiento. El campo es aditivo (antes 0, ahora 2)
+   y ningún test ni código de lectura de Cicada (`read_artworkdb()`)
+   depende del valor anterior.
+
+   **Segundo intento en hardware ejecutado (2026-08-20): fix del offset
+   48 confirmado byte a byte en el `Photo Database` real instalado
+   (offset 48 = 2, offset 16 = 6), pero la app de Fotos siguió vacía.**
+   Dos hipótesis descartadas con evidencia real: reinicio del dispositivo
+   (probado por el usuario, sin cambios) y estructura de header
+   MHFD/MHSD (auditada, corregida, verificada en hardware — no era la
+   causa).
+
+#### Comparación contra un Photo Database REAL escrito por Música/iTunes (2026-08-20)
+
+Hasta acá toda comparación fue contra **reimplementaciones** (iOpenPod,
+Cicada) — nunca contra la fuente primaria. El usuario sincronizó 61 fotos
+reales al mismo Nano 7G usando Música (sucesor de iTunes en macOS actual,
+vía selección de carpeta completa por Finder — no fotos sueltas desde la
+librería de Fotos.app), produciendo el primer `Photo Database` genuino
+del proyecto. Auditoría byte a byte completa contra ese archivo (copiado
+off-device para análisis, dispositivo sin más escrituras hasta terminar):
+
+- **Hallazgo principal — `created_at`/`digitized_at` usan época Mac de
+  1904 (HFS+), no Unix.** Valor real observado: `3862860232`. Decodificado
+  como Unix epoch da el año 2092 (absurdo). Decodificado como época 1904
+  (offset 2082844800s) da 2026-05-29 — coincide exactamente con la
+  carpeta real donde Apple guardó el archivo
+  (`Full Resolution/2026/05/29/`). Cicada escribía `int(stat.st_mtime)`
+  (Unix) directo, sin conversión. Mismo patrón de bug que ya mordió 3
+  veces en el proyecto con fechas del iTunesCDB (época Cocoa/2001) — una
+  cuarta vez, con una época distinta (1904), en el único subsistema de
+  Fotos sin respaldo SQLite. Candidato de causa raíz más fuerte
+  encontrado, con mecanismo claro: una fecha que decodifica a un año sin
+  sentido es exactamente lo que una app de Fotos descartaría en
+  silencio de su índice visible.
+- **MHFD offset 48 = 1 en el archivo real, no 2.** El "fix" aplicado en
+  la etapa anterior (copiado del valor incondicional que usan ambos
+  escritores de iOpenPod) no coincide con lo que realmente escribe
+  Apple. Además offset 52 = 2 (ninguna referencia lo esperaba) y 24
+  bytes opacos sin patrón simple en 32-48/60-68. Todo apunta a un
+  contador de generación/sesión o checksum, no una constante fija.
+  **Revertido a 0** (ver Etapa 6h arriba) — escribir "1" en vez de "2"
+  habría sido el mismo error de raíz, copiar un valor de una fuente que
+  tampoco lo entendía. Queda pendiente de investigar aparte, aislado del
+  fix de época para poder atribuir la causa con certeza.
+- **Full-res MHNI tiene width/height reales** (10612×8086 en la muestra),
+  no 0/0 como escriben tanto iOpenPod como Cicada. Registrado, no
+  bloqueante por ahora (podría importar para cómo la app pre-calcula
+  aspect ratio antes de decodificar el JPEG, pero es menos sospechoso
+  que la época).
+- **Un chunk completamente nuevo, en ninguna de las dos referencias**:
+  cada MHII real tiene 4 hijos, no 3 — el cuarto es `MHOD` tipo 6
+  envolviendo un chunk `mhaf` (60 bytes, contenido íntegramente en cero
+  en la muestra real). Ni iOpenPod ni Cicada lo modelan. Registrado como
+  hueco conocido, no bloqueante por estar vacío en esta muestra
+  (probablemente un campo opcional/reservado — caras, GPS, algo que
+  Apple soporta pero no pobló acá).
+- **MHSD/MHLI/MHLA/MHBA/MHLF/MHIF**: tamaños de header y campos que
+  Cicada sí modela coinciden exactamente con el archivo real
+  (`MHSD`=96, `MHLI`=92, `MHBA`=148 con `offset12=1`, `MHLA`=92,
+  `MHLF`=92, `MHIF`=124). `MIN_PHOTO_ID`=100 confirmado — el primer
+  `image_id` real de Apple también es 100.
+- **Hipótesis del archivo de índice separado — descartada de forma
+  PREMATURA, corregido más abajo (Etapa 6j, cuarto intento).** Esta
+  primera comprobación solo diffeó `iTunesPrefs.plist`/`iPodSettings.xml`
+  (archivos que ya existían antes del sync real) — bloque `<Photos>`
+  idéntico, sin claves de fotos nuevas. Pero un diff limitado a archivos
+  preexistentes no puede detectar archivos **nuevos**. La comprobación
+  completa del árbol (ver más abajo) sí encontró uno: `frpd`/
+  `PhotosFolder*`.
+- Cosmético, no funcional: Apple organiza `Full Resolution/` por fecha
+  (`año/mes/día`), Cicada (e iOpenPod) usan una subcarpeta plana fija.
+
+**Fix de época aplicado, aislado del offset 48/52 a propósito** (para
+poder atribuir causa con certeza si el próximo intento en hardware
+funciona): `_build_photo_db_contents()` ahora recibe
+`time_context: DeviceTimeContext` (mismo mecanismo ya probado que usa
+`build_itunescdb()` desde Etapa 2a — no una conversión nueva de un solo
+uso) y convierte con `time_context.unix_to_mac(item.mtime)` antes de
+pasarlo a `write_mhii_photo()`. `sync_photos_to_ipod()` obtiene el
+contexto real del dispositivo con `read_device_time_context(mount)` (lee
+`Device/Preferences`), mismo patrón que `ipod_library.py`/
+`bidirectional.py`. Verificación estructural exacta, no solo "compila":
+con un mtime de origen controlado, el valor instalado en el dispositivo
+simulado coincide exactamente con
+`DeviceTimeContext.utc().unix_to_mac(mtime_conocido)` calculado por
+separado. Reproducido también contra el valor REAL observado en el
+dispositivo: `unix_to_mac()` del mtime real del archivo fuente (bajo el
+contexto UTC que `read_device_time_context()` resuelve para este
+dispositivo) da `3864323252` — coincide exacto con el `digitized_at`
+real leído del `Photo Database` de Apple para esa misma foto. 1 test
+nuevo con verificación exacta + reproducción del valor real, mutation
+check real confirmado (quitar la conversión, ver el test fallar,
+revertir). Suite completa: 608 tests verdes.
+
+**Tercer intento en hardware (2026-08-20): fix de época aplicado y
+verificado, síntoma sin cambios.** `read_photo_db()` sobre el
+dispositivo real sigue confirmando 2 imágenes estructuralmente
+correctas; la app de Fotos del Nano sigue mostrándose vacía. El
+candidato más fuerte hasta ese momento (una fecha que decodifica a un
+año absurdo, motivo plausible para que una app descarte una entrada en
+silencio) no era, solo, la causa.
+
+#### Diff binario completo MHII real vs. Cicada — mismo archivo fuente (2026-08-20)
+
+Tras el tercer intento fallido, en vez de seguir infiriendo campo por
+campo, se construyó — con las mismas piezas que usa
+`_build_photo_db_contents()` (`encode_photo_for_format()`,
+`write_mhii_photo()`, `DeviceTimeContext`) pero invocadas directo, sin
+pasar por el coordinador completo — el MHII que Cicada produciría para
+la MISMA foto fuente que una entrada real del `Photo Database` de
+Música (`img20260322_13455148.jpg`, `image_id=100`). Identidad del
+archivo confirmada por partida doble: el `digitized_at` calculado por
+Cicada coincide exacto con el real (`3864323252`), y las dimensiones
+leídas por PIL (10612×8086) coinciden con las que Apple grabó. Diff
+byte a byte de ambos MHII, más verificación de que cada patrón se
+sostiene sin excepción en las 61 entradas reales (no solo en la
+primera inspeccionada):
+
+| # | Campo | Real (Apple) | Cicada (antes) | ¿Uniforme en las 61 entradas? |
+|---|---|---|---|---|
+| **A** | `child_count`/4º hijo `MHOD` tipo 6 (`mhaf`) | Presente, contenido estático (96 bytes idénticos) | Ausente (3 hijos) | Sí, 61/61 |
+| **B** | Offset 20 del header MHII (u32) — **sin documentar hasta este diff** | `image_id + 2` | `0` | Sí, 61/61, `image_id` 100→160 consecutivos |
+| **C** | width/height del MHNI full-res | Poblado (10612×8086) | `0`/`0` | Sí, 61/61 |
+| **D** | Offset 48 del header MHII (`original_size`) | `0` | Tamaño del archivo fuente en la PC | Sí, 61/61 en cero |
+| **E** | Orden de los MHOD de thumbnail | Formato grande primero (1007, luego 1005) | Ascendente por `format_id` (1005, luego 1007) | Sí |
+| **F** | `created_at` vs `digitized_at` | Distintos (EXIF vs. fecha de import) | Iguales (mismo mtime para ambos) | — |
+
+**Cuarto intento en hardware (2026-08-20): A + B aplicados juntos
+(ambos cambios estructurales/de header, no de contenido de imagen —
+combinables sin perder atribución si el intento funciona), C/D/E/F
+deliberadamente sin tocar.**
+
+- `ArtworkMhodType.UNKNOWN_MHAF = 6` agregado; `MHAF_STATIC_BLOB`
+  (constante de 96 bytes, `bytes.fromhex(...)`, extraída directo del
+  `Photo Database` real y verificada — con un script de comparación
+  independiente, no contra sí misma — byte a byte idéntica en las 61
+  entradas) se agrega como 4º hijo incondicional de
+  `write_mhii_photo()`.
+- Offset 20 del header MHII ahora escribe `image_id + 2` — patrón
+  empírico, no ley entendida (ver advertencia de una sola sesión de
+  sync, igual que offset 48 de MHFD).
+- `ParsedPhotoImageEntry` ganó `persistent_id`/`has_mhaf_marker` para
+  poder verificar ambos campos por round-trip, no solo por inspección
+  manual de bytes.
+- Mutation checks reales confirmados y revertidos para ambos campos
+  (fórmula de offset 20 y contenido de `MHAF_STATIC_BLOB`, este último
+  verificado contra la extracción cruda del archivo real, no contra la
+  propia constante). Suite completa: 604 tests verdes.
+- Verificado en el dispositivo real tras el sync: `persistent_id=102`/
+  `103` y `has_mhaf_marker=True` en ambas fotos, backup previo
+  (`include_photos=True`) completado y verificado, archivos de
+  thumbnail/full-res presentes en disco con los tamaños esperados.
+
+**Resultado: la app de Fotos del Nano sigue mostrándose vacía.** Dos
+hipótesis mecánicamente más plausibles que cualquiera de las anteriores
+(A: fallo de forma fija en un parser rígido; B: colisión de un id que
+debería ser único), estructuralmente verificadas como correctas en el
+propio dispositivo, y el síntoma no cambió. Esto baja de forma real la
+confianza en que la causa esté en un campo individual del `Photo
+Database` — cuatro rondas, cuatro fixes correctos y verificados, mismo
+síntoma.
+
+#### Hallazgo nuevo: `frpd`/`PhotosFolder*` — fuera del Photo Database por completo (2026-08-20)
+
+Comparación de un backup COMPLETO (no solo `Photos/`) tomado
+inmediatamente antes del sync real de Música contra otro tomado
+inmediatamente después — la comprobación de "archivo de índice
+separado" de más arriba se había limitado a diffear archivos
+preexistentes; esta vez se listó el árbol completo. Música creó **5
+archivos nuevos en `iPod_Control/iTunes/`** (fuera de `Photos/` del
+todo), con un formato de chunk (`frpd`) que ni iOpenPod ni ninguna
+referencia usada hasta ahora documenta:
+
+- `PhotosFolderName` (512 B): string UTF-16LE `"Pictures"` — el nombre
+  de la carpeta de origen en la Mac.
+- `PhotosFolderAlbums` (3196 B): contiene el string `"Adobe
+  Lightroom"` — parece un índice de álbumes/carpetas independiente del
+  `mhba` que ya vive dentro del `Photo Database`.
+- `PhotosFolderPrefs` (764 B): estructura compleja — un
+  *security-scoped bookmark* de macOS (ruta `Users/jjaroll/Pictures`,
+  volumen `Macintosh HD`, un UUID), más ~30 bytes que tienen la forma de
+  un hash/checksum sin algoritmo identificable a simple vista.
+- `PSAlbumAlbums`, `PSElementsAlbums` (100 B cada uno): casi vacíos,
+  solo header `frpd` — el nombre sugiere integraciones legado con
+  Photoshop Album/Elements (apps de importación de fotos que iTunes
+  soportó en versiones antiguas), probablemente plantillas que iTunes
+  escribe siempre, poblado o no.
+
+Confirmado que Cicada nunca toca ni borra estos archivos (idénticos
+byte a byte después de los intentos 2°, 3° y 4° — `write_guard.py`
+funciona como debe), pero eso también significa que después del sync
+real quedaron apuntando a la carpeta/álbum de Música (`Pictures`/`Adobe
+Lightroom`), sin ninguna relación con lo que Cicada sincroniza.
+
+**Confianza: sin determinar, honesta.** Dos lecturas igual de
+plausibles con la evidencia disponible: (1) son índices que el
+firmware SÍ lee en paralelo al `Photo Database` para navegar
+álbumes/carpetas — mecanismo plausible para "datos estructuralmente
+válidos pero la app no muestra nada", pero sin evidencia directa de que
+el firmware los lea; (2) son bookkeeping exclusivo de Música/iTunes en
+la PC (el *bookmark* de macOS en `PhotosFolderPrefs` solo tiene sentido
+para que iTunes vuelva a localizar la carpeta en el próximo sync, no
+para el propio iPod), caso en el cual es un hallazgo real pero
+irrelevante para este bug. A diferencia de `mhaf` (bytes estáticos,
+copiables sin entenderlos), este contenido depende de la
+carpeta/álbumes de origen reales y no se puede copiar a ciegas —
+`PhotosFolderPrefs` en particular tiene un campo que parece un checksum
+sin algoritmo conocido.
+
+**Decisión (2026-08-20): pausa deliberada de la Etapa 6j, no
+diferimiento sin investigar.** Cuatro rondas de hardware (15-20+ min
+cada una) con 6 discrepancias reales encontradas y corregidas o
+registradas (época, offset 48 de MHFD, `mhaf`, offset 20/
+`persistent_id`, más C/D/E/F pendientes) no resolvieron el síntoma, y
+el hallazgo de `frpd` cambia la naturaleza del trabajo restante: dejó
+de ser "encontrar el campo que falta" para pasar a ser reconstruir por
+ingeniería inversa un formato binario legado sin especificación
+pública, con al menos un campo (el posible checksum de
+`PhotosFolderPrefs`) que no se puede derivar por prueba y error. Se
+pausa explícitamente en vez de seguir insistiendo con más rondas de
+hardware al final de una sesión larga — mismas condiciones bajo las
+que ya se cometió el error del offset 48 de MHFD (copiar sin entender).
+
+**Estado del código al pausar**: A y B (mhaf + persistent_id) quedan
+aplicados en `chunks.py` — verificados correctos y necesarios en
+principio (coinciden con lo que escribe Apple), aunque no demostrados
+suficientes por sí solos. C/D/E/F quedan sin aplicar, documentados
+arriba con su confianza relativa.
+
+**Para retomar sin repetir el trabajo de hoy**, todo preservado en
+`~/.cicada/photo_sync_forensics/` (fuera del repo — 2 GB, no apto para
+git; fuera también de la rotación de `~/.cicada/backups/`, que ya
+estaba en 20/20 y habría empezado a borrar estos backups en el próximo
+sync de cualquier tipo):
+
+- `before_musica_real_sync_20260820T220243Z.tar.zst` /
+  `after_musica_real_sync_20260820T223432Z.tar.zst` — los dos backups
+  completos (`Photos/` + `iPod_Control/`) que hacen posible cualquier
+  comparación futura contra un sync real de Apple, incluida la que
+  encontró `frpd`.
+- `backup_extracted_before_after/{before,after}/` — ambos ya
+  descomprimidos, listos para inspección sin repetir la extracción.
+- `Photo_Database_real` — el `Photo Database` real de 61 fotos,
+  extraído suelto.
+- `real_mhii_photo1.bin` / `cicada_mhii_photo1.bin` /
+  `build_cicada_mhii.py` — el par de MHII usados para el diff A-F y el
+  script que los generó, reproducible contra cualquier otra foto de la
+  muestra real.
+
+Primer paso sugerido al retomar (barato, no necesita el dispositivo):
+buscar si hay evidencia pública de que el firmware de un Nano 7G lee
+`frpd`/`PhotosFolder*` (herramientas open source de sync de fotos más
+allá de iOpenPod, foros, ingeniería inversa previa de terceros) antes
+de invertir tiempo en diseccionar el checksum de `PhotosFolderPrefs`
+a ciegas.
+
 #### Etapa 6a — `kind` de video en `/media/sync`. **Estado: implementado y verificado.**
 
 `MediaTrackInput.kind` extendido con `"movie"`, `"tv_show"`,

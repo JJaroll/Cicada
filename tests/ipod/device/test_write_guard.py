@@ -9,6 +9,7 @@ import pytest
 
 from cicada.ipod.device import write_guard as wg
 from cicada.ipod.device.write_guard import (
+    PHOTOS_DIRNAME,
     AmbiguousMountError,
     MountNotFoundError,
     PathOutsideIpodControlError,
@@ -242,3 +243,71 @@ def test_se_puede_distinguir_desmontaje_de_ruta_invalida(ipod, tmp_path):
     # ...vs ruta inválida es otra rama del árbol de excepciones.
     assert not issubclass(PathOutsideIpodControlError, MountNotFoundError)
     assert not issubclass(MountNotFoundError, PathOutsideIpodControlError)
+
+
+# --------------------------------------------------------------------------- #
+# root= (Etapa 6h) — Photos/ vive a nivel de volumen, fuera de iPod_Control/
+# --------------------------------------------------------------------------- #
+def test_root_default_sigue_siendo_ipod_control(ipod):
+    """Sin root=, el comportamiento es idéntico al de antes de 6h (nada
+    regresó para el resto del proyecto, que nunca pasa root=)."""
+    target = ipod / "iPod_Control" / "iTunes" / "iTunesCDB"
+    assert assert_within_ipod_control(target, ipod) == target.resolve()
+    outside = ipod / "Photos" / "Photo Database"
+    with pytest.raises(PathOutsideIpodControlError):
+        assert_within_ipod_control(outside, ipod)
+
+
+def test_root_arbitrario_no_conocido_es_rechazado(ipod):
+    """root= NO es un confinador genérico a cualquier subdirectorio — está
+    cerrado a las dos raíces conocidas. Un tercer valor debe fallar ANTES
+    de tocar el filesystem, sin importar si esa ruta existe o es válida
+    en sí misma."""
+    (ipod / "Music").mkdir()
+    target = ipod / "Music" / "song.mp3"
+    with pytest.raises(ValueError, match="no es una raíz segura conocida"):
+        assert_within_ipod_control(target, ipod, root="Music")
+    with pytest.raises(ValueError):
+        assert_within_ipod_control(target, ipod, root="../../etc")
+    with pytest.raises(ValueError):
+        assert_within_ipod_control(target, ipod, root="")
+
+
+def test_root_photos_permite_photos_fuera_de_ipod_control(ipod):
+    (ipod / "Photos" / "Thumbs").mkdir(parents=True)
+    target = ipod / "Photos" / "Photo Database"
+    assert assert_within_ipod_control(target, ipod, root=PHOTOS_DIRNAME) == target.resolve()
+
+
+def test_root_photos_rechaza_ipod_control(ipod):
+    """root=Photos no es un bypass general — sigue confinando a ESA raíz."""
+    target = ipod / "iPod_Control" / "iTunes" / "iTunesCDB"
+    with pytest.raises(PathOutsideIpodControlError):
+        assert_within_ipod_control(target, ipod, root=PHOTOS_DIRNAME)
+
+
+def test_root_photos_rechaza_traversal_fuera_del_volumen(ipod):
+    outside = ipod / "Photos" / ".." / ".." / "etc" / "passwd"
+    with pytest.raises(PathOutsideIpodControlError):
+        assert_within_ipod_control(outside, ipod, root=PHOTOS_DIRNAME)
+
+
+def test_photos_root_esta_protegida_de_borrado_recursivo_completo(ipod):
+    (ipod / "Photos").mkdir()
+    assert is_protected_path(ipod / "Photos", ipod)
+    with pytest.raises(ProtectedPathError):
+        assert_deletable(ipod / "Photos", ipod, root=PHOTOS_DIRNAME)
+
+
+def test_safe_rmtree_con_root_photos_borra_subdirectorio_no_protegido(ipod):
+    stale = ipod / "Photos" / "Thumbs" / "stale_dir"
+    stale.mkdir(parents=True)
+    (stale / "leftover.bin").write_bytes(b"x")
+    safe_rmtree(stale, ipod, root=PHOTOS_DIRNAME)
+    assert not stale.exists()
+
+
+# --------------------------------------------------------------------------- #
+# Sanity check de mutación (aplicado manualmente sobre write_guard.py,
+# resultado registrado en docs/VENDORED.md Paquete 9 Etapa 6h)
+# --------------------------------------------------------------------------- #

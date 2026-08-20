@@ -3,6 +3,7 @@ from cicada.ipod.db.artwork.chunks import (
     build_artworkdb,
     ithmb_filename,
     read_artworkdb,
+    write_mhfd,
     write_mhii,
 )
 from cicada.ipod.db.artwork.types import EncodedFormatPayload
@@ -114,3 +115,21 @@ def test_build_artworkdb_has_three_datasets():
     import struct
     num_datasets = struct.unpack_from("<I", db, 20)[0]
     assert num_datasets == 3
+
+
+def test_write_mhfd_offset_48_deliberadamente_en_cero():
+    """Auditoría byte a byte (2026-08-20): un primer intento fijó el
+    offset 48 (u32) a 2, copiado de que ambos escritores originales de
+    iOpenPod lo hacen así de forma incondicional. Comparado luego contra
+    un Photo Database REAL escrito por Música/iTunes: el valor real ahí
+    es 1, no 2 — y hay más bytes no-cero alrededor sin patrón simple
+    (probablemente un contador de generación/checksum, no una
+    constante). Revertido a 0 a propósito hasta entender qué es
+    realmente — escribir "1" sería el mismo error de raíz (copiar un
+    valor de una fuente que tampoco lo entendía). Este test protege ese
+    estado deliberado, no lo da por definitivo."""
+    import struct
+    blob_cover_art = write_mhfd([], next_img_id=100)  # unknown2 default = 2
+    blob_photos = write_mhfd([], next_img_id=100, unknown2=6)
+    assert struct.unpack_from("<I", blob_cover_art, 48)[0] == 0
+    assert struct.unpack_from("<I", blob_photos, 48)[0] == 0

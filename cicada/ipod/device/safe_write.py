@@ -13,7 +13,7 @@ from __future__ import annotations
 import os
 
 from cicada.ipod.device import durability
-from cicada.ipod.device.write_guard import assert_within_ipod_control
+from cicada.ipod.device.write_guard import IPOD_CONTROL_DIRNAME, assert_within_ipod_control
 
 __all__ = [
     "guarded_durable_replace",
@@ -26,15 +26,19 @@ def guarded_durable_replace(
     source: str | os.PathLike,
     target: str | os.PathLike,
     mount: str | os.PathLike,
+    *,
+    root: str = IPOD_CONTROL_DIRNAME,
 ) -> None:
-    """`durable_replace` confinado: rechaza un ``target`` fuera de iPod_Control.
+    """`durable_replace` confinado: rechaza un ``target`` fuera de ``<mount>/root/``.
 
     Resuelve symlinks y ``..`` (vía ``assert_within_ipod_control``) antes de
-    delegar en :func:`durability.durable_replace`.
+    delegar en :func:`durability.durable_replace`. ``root`` default
+    ``iPod_Control`` — pasar ``write_guard.PHOTOS_DIRNAME`` explícitamente
+    para escrituras a ``Photos/`` (Etapa 6h, fuera de ``iPod_Control/``).
 
     :raises PathOutsideIpodControlError: si el destino cae fuera del árbol.
     """
-    assert_within_ipod_control(target, mount)
+    assert_within_ipod_control(target, mount, root=root)
     durability.durable_replace(source, target)
 
 
@@ -42,9 +46,11 @@ def guarded_durable_publish_new(
     source: str | os.PathLike,
     target: str | os.PathLike,
     mount: str | os.PathLike,
+    *,
+    root: str = IPOD_CONTROL_DIRNAME,
 ) -> bool:
     """`durable_publish_new` confinado (publica sin sobrescribir un existente)."""
-    assert_within_ipod_control(target, mount)
+    assert_within_ipod_control(target, mount, root=root)
     return durability.durable_publish_new(source, target)
 
 
@@ -53,7 +59,8 @@ def guarded_durable_unlink(
     mount: str | os.PathLike,
     *,
     missing_ok: bool = False,
+    root: str = IPOD_CONTROL_DIRNAME,
 ) -> None:
-    """`durable_unlink` confinado: rechaza borrar fuera de iPod_Control."""
-    assert_within_ipod_control(path, mount)
+    """`durable_unlink` confinado: rechaza borrar fuera de ``<mount>/root/``."""
+    assert_within_ipod_control(path, mount, root=root)
     durability.durable_unlink(path, missing_ok=missing_ok)

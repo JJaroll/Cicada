@@ -66,6 +66,25 @@ class ArtworkMhodType(IntEnum):
     THUMBNAIL_IMAGE = 2
     FILE_NAME = 3
     FULL_RESOLUTION = 5
+    UNKNOWN_MHAF = 6
+
+
+#: Payload crudo (96 bytes, tag "mhaf" + 2 u32 + relleno cero) del 4º hijo
+#: que Música/iTunes agrega a TODO MHII de Fotos (MHOD tipo 6), ausente en
+#: iOpenPod y en Cicada hasta ahora. Confirmado idéntico byte a byte en las
+#: 61 entradas de un Photo Database real escrito por Música (Etapa 6j,
+#: 2026-08-20) — nunca varía con la foto, por eso se copia tal cual en vez
+#: de reconstruirse: no se entiende su semántica interna, pero su
+#: contenido no depende de nada que Cicada pueda calcular. Ver
+#: docs/VENDORED.md, Paquete 9, para el detalle de la auditoría.
+MHAF_STATIC_BLOB = bytes.fromhex(
+    "6d686166600000003c00000000000000"
+    "00000000000000000000000000000000"
+    "00000000000000000000000000000000"
+    "00000000000000000000000000000000"
+    "00000000000000000000000000000000"
+    "00000000000000000000000000000000"
+)
 
 
 def ithmb_filename(format_id: int, index: int = 1) -> str:
@@ -249,9 +268,22 @@ def write_mhii_photo(
 
     El primer hijo siempre es el MHOD tipo FULL_RESOLUTION (5) envolviendo
     el MHNI de la imagen completa (``format_id`` centinela
-    :data:`PHOTO_FULL_RESOLUTION_FORMAT_ID`); el resto son MHOD tipo
+    :data:`PHOTO_FULL_RESOLUTION_FORMAT_ID`); siguen los MHOD tipo
     THUMBNAIL_IMAGE (2), uno por formato de miniatura, en orden de
-    ``format_id`` ascendente (mismo criterio de orden que ``write_mhii``).
+    ``format_id`` ascendente (mismo criterio de orden que ``write_mhii``);
+    el último es un MHOD tipo UNKNOWN_MHAF (6) con :data:`MHAF_STATIC_BLOB`
+    — presente en las 61 entradas de un Photo Database real de referencia
+    pero ausente en toda escritura previa de Cicada/iOpenPod (Etapa 6j).
+
+    Offset 20 del header (u32, sin uso documentado hasta ahora): se
+    escribe ``image_id + 2``, patrón empírico confirmado sin excepción en
+    las 61 entradas de esa misma referencia real (rango de image_id
+    100-160). No se conoce su semántica — podría ser un id persistente
+    distinto del índice, un contador de sesión, u otra cosa — solo que la
+    fórmula reproduce exactamente lo observado en una única sesión de
+    sync real; ver docs/VENDORED.md, Paquete 9, para el detalle completo
+    y la advertencia de que una sola sesión no basta para probar que es
+    una ley general (mismo tipo de cautela que offset 48 de MHFD).
     """
     children = [
         _write_mhod_container(
@@ -266,6 +298,7 @@ def write_mhii_photo(
         )
         for fmt_id in sorted(thumb_formats.keys())
     )
+    children.append(_write_mhod_container(ArtworkMhodType.UNKNOWN_MHAF, MHAF_STATIC_BLOB))
     children_data = b"".join(children)
     total_len = MHII_HEADER_SIZE + len(children_data)
 
@@ -275,6 +308,7 @@ def write_mhii_photo(
     struct.pack_into("<I", header, 8, total_len)
     struct.pack_into("<I", header, 12, len(children))
     struct.pack_into("<I", header, 16, image_id)
+    struct.pack_into("<I", header, 20, image_id + 2)
     struct.pack_into("<I", header, 40, created_at)
     struct.pack_into("<I", header, 44, digitized_at)
     struct.pack_into("<I", header, 48, original_size)
@@ -368,6 +402,20 @@ def write_mhsd(ds_type: int, child_data: bytes) -> bytes:
     struct.pack_into("<I", header, 8, total_len)
     struct.pack_into("<H", header, 12, ds_type)
     return bytes(header) + child_data
+
+
+#: Offset 48 (u32) del header MHFD: DELIBERADAMENTE sin escribir por ahora.
+#: Un intento anterior lo fijó a 2, copiado sin más de que ambos
+#: escritores originales de iOpenPod lo hacen así de forma incondicional.
+#: Comparado luego contra un Photo Database REAL escrito por Música/iTunes
+#: (Etapa 6h, 2026-08-20): el valor real ahí es 1, no 2 — y hay más bytes
+#: no-cero alrededor (offset 52 = 2, más 24 bytes opacos en 32-48/60-68)
+#: sin ningún patrón simple. Todo apunta a un contador de
+#: generación/sesión o checksum, no una constante fija — escribir "1" en
+#: vez de "2" sería el mismo error de raíz (copiar un valor de una fuente
+#: que tampoco lo entendía). Se deja en 0 (el estado de antes de ese
+#: intento) hasta entender qué es realmente. Ver docs/VENDORED.md,
+#: Paquete 9, para el detalle completo de la auditoría.
 
 
 def write_mhfd(datasets: List[bytes], next_img_id: int, *, unknown2: int = 2) -> bytes:
@@ -584,6 +632,8 @@ class ParsedPhotoImageEntry:
     original_size: int
     full_res: Optional[ParsedPhotoFormatRef]
     thumbs: Dict[int, ParsedPhotoFormatRef] = field(default_factory=dict)
+    persistent_id: int = 0  #: offset 20 del header MHII — ver docstring de write_mhii_photo
+    has_mhaf_marker: bool = False  #: True si el MHII trae el 4º hijo MHOD tipo UNKNOWN_MHAF
 
 
 @dataclass(frozen=True)
@@ -639,12 +689,14 @@ def _parse_mhii_photo(data: bytes, mhii_offset: int) -> ParsedPhotoImageEntry:
     total_len = _u32(data, mhii_offset + 8)
     child_count = _u32(data, mhii_offset + 12)
     image_id = _u32(data, mhii_offset + 16)
+    persistent_id = _u32(data, mhii_offset + 20)
     created_at = _u32(data, mhii_offset + 40)
     digitized_at = _u32(data, mhii_offset + 44)
     original_size = _u32(data, mhii_offset + 48)
 
     full_res: Optional[ParsedPhotoFormatRef] = None
     thumbs: Dict[int, ParsedPhotoFormatRef] = {}
+    has_mhaf_marker = False
     child_offset = mhii_offset + header_size
     mhii_end = mhii_offset + total_len
     for _ in range(child_count):
@@ -657,11 +709,16 @@ def _parse_mhii_photo(data: bytes, mhii_offset: int) -> ParsedPhotoImageEntry:
         elif mhod_type == ArtworkMhodType.THUMBNAIL_IMAGE:
             ref = _parse_mhni_photo(data, child_offset + mhod_header_size)
             thumbs[ref.format_id] = ref
+        elif mhod_type == ArtworkMhodType.UNKNOWN_MHAF:
+            has_mhaf_marker = True
         child_offset += mhod_total
         if child_offset > mhii_end:
             raise ValueError(f"MHII (foto) en {mhii_offset}: hijo desbordó el chunk")
 
-    return ParsedPhotoImageEntry(image_id, created_at, digitized_at, original_size, full_res, thumbs)
+    return ParsedPhotoImageEntry(
+        image_id, created_at, digitized_at, original_size, full_res, thumbs,
+        persistent_id=persistent_id, has_mhaf_marker=has_mhaf_marker,
+    )
 
 
 def _parse_mhia(data: bytes, mhia_offset: int) -> int:

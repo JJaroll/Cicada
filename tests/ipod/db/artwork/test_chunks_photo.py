@@ -143,18 +143,23 @@ def test_mhii_photo_mismo_tamano_de_header_que_cover_art():
     assert struct.unpack_from("<I", blob_cover, 4)[0] == struct.unpack_from("<I", blob_photo, 4)[0] == MHII_HEADER_SIZE
 
 
-def test_mhii_photo_offset_20_no_es_song_id():
+def test_mhii_photo_offset_20_no_es_song_id_sino_image_id_mas_2():
     """Si write_mhii_photo reusara por error el layout de cover art, offset
     20 (u64) tendría basura interpretada como song_id. Confirmamos que el
-    escritor de Fotos deja ese rango en cero — no escribe nada ahí — en vez
-    de, por accidente, heredar semántica de cover art."""
+    escritor de Fotos NO hereda esa semántica: offset 20 (u32) guarda
+    ``image_id + 2`` — patrón empírico confirmado sin excepción en las 61
+    entradas de un Photo Database real escrito por Música/iTunes (Etapa
+    6j, 2026-08-20; ver docs/VENDORED.md Paquete 9) — y offset 24 en
+    adelante (resto del u64 que ocuparía song_id en cover art) sigue en
+    cero, confirmando que no es un campo de 8 bytes reinterpretado."""
     blob = write_mhii_photo(
         image_id=42, created_at=1700000000, digitized_at=1700000001, original_size=999999,
         full_res_payload=_payload(size=10), full_res_storage_path="Full Resolution/iOpenPod/x.jpg",
         thumb_formats={}, thumb_offsets={}, thumb_storage_paths={},
     )
-    assert struct.unpack_from("<Q", blob, 20)[0] == 0
-    # Los campos reales de Fotos SÍ están en 40/44/48, no en 20.
+    assert struct.unpack_from("<I", blob, 20)[0] == 44  # image_id + 2
+    assert struct.unpack_from("<I", blob, 24)[0] == 0
+    # Los demás campos reales de Fotos SÍ están en 40/44/48.
     assert struct.unpack_from("<I", blob, 40)[0] == 1700000000
     assert struct.unpack_from("<I", blob, 44)[0] == 1700000001
     assert struct.unpack_from("<I", blob, 48)[0] == 999999
@@ -202,6 +207,8 @@ class TestMhiiPhotoRoundTrip:
         assert entry.created_at == 1755000000
         assert entry.digitized_at == 1755000000
         assert entry.original_size == 1234567
+        assert entry.persistent_id == 152  # image_id + 2
+        assert entry.has_mhaf_marker is True
 
         assert entry.full_res is not None
         assert entry.full_res.format_id == PHOTO_FULL_RESOLUTION_FORMAT_ID
@@ -214,6 +221,42 @@ class TestMhiiPhotoRoundTrip:
         assert entry.thumbs[1089].ithmb_offset == thumb_medium.size
         assert entry.thumbs[1089].hpad == 2
         assert entry.thumbs[1089].storage_path == "Thumbs/F1089_1.ithmb"
+
+
+class TestMhiiPhotoMhafMarker:
+    """Etapa 6j (2026-08-20): el 4º hijo (MHOD tipo 6, "mhaf") y offset 20
+    ("persistent_id" = image_id + 2) que un Photo Database real de
+    Música/iTunes escribe en TODAS sus entradas y que Cicada nunca había
+    modelado. Ver docs/VENDORED.md, Paquete 9."""
+
+    def test_child_count_y_total_len_incluyen_el_mhaf(self):
+        blob = write_mhii_photo(
+            image_id=42, created_at=1700000000, digitized_at=1700000001, original_size=999999,
+            full_res_payload=_payload(size=10), full_res_storage_path="Full Resolution/iOpenPod/x.jpg",
+            thumb_formats={}, thumb_offsets={}, thumb_storage_paths={},
+        )
+        assert struct.unpack_from("<I", blob, 12)[0] == 2  # full-res + mhaf, sin thumbs
+
+        pos = MHII_HEADER_SIZE
+        mhod_total_0 = struct.unpack_from("<I", blob, pos + 8)[0]
+        pos += mhod_total_0
+        assert blob[pos:pos + 4] == b"mhod"
+        mhod_type = struct.unpack_from("<H", blob, pos + 12)[0]
+        assert mhod_type == 6
+        mhod_header_len = struct.unpack_from("<I", blob, pos + 4)[0]
+        mhod_total = struct.unpack_from("<I", blob, pos + 8)[0]
+        assert mhod_total - mhod_header_len == 96
+
+    def test_contenido_del_mhaf_es_byte_identico_al_extraido_del_real(self):
+        from cicada.ipod.db.artwork.chunks import MHAF_STATIC_BLOB
+        blob = write_mhii_photo(
+            image_id=42, created_at=0, digitized_at=0, original_size=0,
+            full_res_payload=_payload(size=10), full_res_storage_path="Full Resolution/iOpenPod/x.jpg",
+            thumb_formats={}, thumb_offsets={}, thumb_storage_paths={},
+        )
+        assert blob[-96:] == MHAF_STATIC_BLOB
+        assert MHAF_STATIC_BLOB[0:4] == b"mhaf"
+        assert len(MHAF_STATIC_BLOB) == 96
 
 
 class TestBuildPhotoDbFull:
@@ -252,6 +295,14 @@ class TestBuildPhotoDbFull:
         confirmado leyendo el byte crudo, no solo confiando en el default."""
         db = build_photo_db([], mhba_blobs=[], format_ids=[], image_sizes={}, next_img_id=100)
         assert struct.unpack_from("<I", db, 16)[0] == 6
+
+    def test_mhfd_offset_48_sigue_en_cero_en_build_photo_db(self):
+        """build_photo_db() hereda el offset 48 de write_mhfd() — que
+        deliberadamente sigue en 0 (ver test_write_mhfd_offset_48_
+        deliberadamente_en_cero en test_chunks.py) hasta entender qué
+        representa realmente ese campo contra un Photo Database real."""
+        db = build_photo_db([], mhba_blobs=[], format_ids=[], image_sizes={}, next_img_id=100)
+        assert struct.unpack_from("<I", db, 48)[0] == 0
 
 
 # ── Regresión: cover art no debe cambiar de comportamiento ──────────────────
