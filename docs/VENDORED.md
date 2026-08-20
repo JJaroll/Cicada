@@ -668,17 +668,27 @@ diferida.
   `hydrate_track_artwork_refs` (`itunesdb_parser/artwork_links.py`)
   tampoco — solo relevante para reconciliar DBs legadas.
 
-  **Esquema de verificación de tres niveles** (sin hardware de otros
+  **Esquema de verificación de cuatro niveles** (sin hardware de otros
   modelos disponible): (1) *verificado por construcción* — mismo código ya
   probado exhaustivamente en 4c/4d, solo parametrizado con otro
   `ArtworkFormat`; (2) *auditado contra la fuente, no contra runtime* — la
   tabla de dimensiones se transcribió de libgpod (`src/itdb_device.c`,
   citado en el docstring de `artwork_presets.py`), así que se audita por
-  diff contra esa fuente, no se re-verifica en ejecución; (3) *marcado
-  explícitamente como no verificado en hardware real*, por family, sin
+  diff contra esa fuente, no se re-verifica en ejecución; (3)
+  **`hardware_claimed`** — un tercero (iOpenPod) cita una fuente primaria
+  de hardware real (no libgpod, no un documento) para un valor que Cicada
+  adoptó, con corroboración interna consistente en el propio código del
+  tercero, pero sin el dump/fixture original disponible para que Cicada lo
+  re-verifique de forma independiente. Más fuerte que "sin fuente" — no es
+  una adivinanza ni una copia sin respaldo — pero no equivalente a
+  "auditado": no hay nada citable y re-chequeable por diff, solo la
+  palabra corroborada de quien sí (afirma) tener el hardware. Nivel
+  reutilizable para cualquier caso futuro con esta misma forma (Fotos,
+  cuando se retome, es candidato — ver Paquete 9); (4) *marcado
+  explícitamente como no verificado en absoluto*, por family, sin
   eufemismos. Se rechazó bit-exactitud contra los codecs de iOpenPod como
-  sustituto — sería circular, ya sabemos que coinciden porque es la misma
-  reimplementación ya verificada en 4b.
+  sustituto del nivel 2 — sería circular, ya sabemos que coinciden porque
+  es la misma reimplementación ya verificada en 4b.
 
   - **Etapa 4f-1 — Activar RGB565_LE para las 23 device families restantes
     (además de Nano 7G). Estado: implementado y verificado.**
@@ -765,17 +775,59 @@ diferida.
       pero es la family con MÁS verificación de todas, contra hardware
       real (4a-4d, fixtures HASHAB reales, prueba de fuego dos veces). No
       necesita auditoría de libgpod, ya tiene algo mejor.
-    - **Nano 6G**: **sin poder auditar** — `1085`/`1089` no aparecen en
-      libgpod en absoluto (grep sobre el archivo completo, cero
-      resultados), y no existe ningún array `nano6g` real en esta fuente
-      (confirmado también en el fork `fadingred/libgpod`, idéntico). La
-      tabla de Cicada para Nano 6G viene de alguna de las otras fuentes
-      citadas en el docstring de `artwork_presets.py` (Keith's photo
-      database reader README / cyianor's ithmbrdr README / volcado propio
-      de Nano 7G), no de libgpod. **Queda explícitamente en el nivel 3
-      (no verificado contra fuente ni hardware)** — el resto de families
-      con `supports_artwork` suben a nivel 2 (Classic/Nano1-5G/iPod
-      Video/4G photo-color) o ya tenían nivel de hardware real (Nano 7G).
+    - **Nano 6G**: `1085`/`1089` no aparecen en libgpod en absoluto (grep
+      sobre el archivo completo, cero resultados, confirmado también en el
+      fork `fadingred/libgpod`, idéntico) — **descartado el nivel 2**. Los
+      otros dos formatos de la misma tupla, `1073` y `1074`, sí están
+      auditados: son reuso literal de Nano 5G/Nano 4G, ya confirmados
+      arriba.
+
+      **Investigación de la fuente real (2026-08-20)**, motivada por
+      evitar repetir "adoptamos porque iOpenPod lo tiene" sin verificar qué
+      tiene realmente iOpenPod: se clonó su repo completo (`git clone`, no
+      `WebFetch`) y se buscó el commit que introdujo estos valores. Es
+      `8348aa8` (`feat: full iTunesCDB support — artist list, compilation
+      fix, Nano 6G`, 2026-03-03, antes de la reorganización a
+      `device/artwork_presets.py`), con esta nota original junto al array
+      `_ART_NANO_6G`:
+
+      > *"Nano 6G uses different format IDs than Nano 5G. Dimensions
+      > extracted from a real Nano 6G ArtworkDB (written by iTunes).
+      > libgpod has no hardcoded table for Nano 6G and relies on
+      > SysInfoExtended; these match the device."*
+
+      No es una cita aislada: el resto de la base de iOpenPod tiene
+      múltiples referencias independientes y específicas a hardware Nano
+      6G real, en archivos sin relación con artwork —
+      `sqlitedb_writer/library_writer.py` ("*Values from a real
+      iTunes-synced Nano 6G database: major=1, minor=111,
+      device_update_level=1104, platform=2*", "*match a real Nano 6G
+      Library.itdb exactly*"), `sqlitedb_writer/locations_writer.py`
+      ("*IDs from real iTunes-written databases on Nano 6G*"),
+      `itunesdb_writer/mhbd_writer.py` ("*iTunes on Nano 6G writes only
+      [4,8,1,3,5]*"). Son detalles numéricos demasiado específicos para
+      ser adivinados, y el patrón es consistente entre archivos —
+      distinto del incidente de fabricación de Nano 6G de `WebFetch`
+      (Etapa 4f-2, arriba), donde la señal de alarma era un array
+      *idéntico* a otro ya existente. Acá cada cita es distinta y aporta
+      un dato nuevo.
+
+      Lo que **no** se encontró: el dump/backup original. No hay ningún
+      fixture de Nano 6G en `tests/fixtures/` de iOpenPod (búsqueda
+      explícita, cero resultados) — la fuente vive solo como afirmación en
+      comentarios de código, no como archivo verificable.
+
+      **Nivel asignado: `hardware_claimed`.** Se adoptan `1085`/`1089` con
+      ese nivel — no "auditado" (nadie, ni iOpenPod ni Cicada, tiene un
+      documento fuente citable y re-chequeable por diff, a diferencia de
+      libgpod) ni "sin fuente" (hay una afirmación de hardware real,
+      corroborada internamente, no una adivinanza). **Sigue sin ser
+      verificable de forma independiente por Cicada** hasta que alguien
+      con un Nano 6G real pueda confirmarlo contra el dispositivo — el
+      resto de families con `supports_artwork` suben a nivel 2
+      (Classic/Nano1-5G/iPod Video/4G photo-color) o ya tenían nivel de
+      hardware real propio (Nano 7G); Nano 6G queda en su nivel propio,
+      por debajo de ambos.
   - **Etapa 4f-3 — RGB565_BE/RGB555 para iPod touch/"Mobile". Sin soporte,
     sin plan de extensión incremental.** No se construye sin que exista
     primero soporte real de Cicada para esa familia de dispositivo (hoy no
@@ -1103,11 +1155,172 @@ inerte hasta que se construya el escritor — nada las consume todavía
 falta de referencia.** Existe una referencia Python completa, probada,
 MIT (`sync/photos.py`), que reutiliza infraestructura y formato ya
 vendorizados. Lo que falta es ~2700 líneas de dominio nuevo por adaptar —
-comparable en tamaño a toda la Fase 4 (4a-4f) junta — que no estaba
-dimensionado en el alcance de esta sesión. **No hay plan de troceado
-todavía**: se investiga cuando se abra una sesión dedicada a construirlo,
-no ahora. El primer punto a resolver en esa sesión es el residuo
-on-device de `photo_sync.json` descrito arriba.
+comparable en tamaño a toda la Fase 4 (4a-4f) junta. Investigación
+profunda y troceado completo cerrados el 2026-08-20 (ver más abajo);
+implementación en curso, etapa por etapa, con el mismo rigor que cada
+fase anterior.
+
+#### Investigación profunda de Fotos (2026-08-20)
+
+Lectura completa de `sync/photos.py` (2706 líneas), comparada byte a byte
+contra `chunks.py`/`rgb565.py` de Cicada.
+
+**Chunks que faltan — layout exacto extraído del propio `photos.py`:**
+`MHBA` (148 bytes: `album_id`@20, `album_type`@30, `playmusic`@31,
+`repeat`@32, `random`@33, `show_titles`@34, `transition_direction`@35,
+`slide_duration`@36 u32, `transition_duration`@40 u32, `song_id`@52 u64,
+`prev_album_id`@60, más `MHOD` tipo 1 con el nombre e hijos `MHIA`) y
+`MHIA` (40 bytes: solo `image_id`@16). `write_mhla()` de Cicada hoy es un
+stub de 0 álbumes (cover art no los necesita); Fotos necesita álbumes
+reales. **Matiz no visto antes**: el `MHII` de Fotos usa offsets 40/44/48
+para `created_at`/`digitized_at`/`original_size`, mientras el `MHII` de
+cover art usa offset 20 para `song_id`/`db_track_id` — mismo tamaño de
+header (152 bytes), semántica de campos distinta. `write_mhii()` de
+Cicada no es reusable tal cual para Fotos, hace falta una variante
+paralela.
+
+**Pixel format — corrección de lo asumido en la investigación anterior.**
+No es un solo "adaptador delgado": `rgb888_to_rgb565_le()` (el
+empaquetado de píxeles puro, en `rgb565.py`) sí es directamente reusable,
+cero cambios — ya es agnóstico a width/height/stride. Pero
+`resize_for_format()` (mismo archivo) **no sirve para Fotos**: hace
+`resize` directo sin preservar aspect ratio ("la carátula es cuadrada por
+convención, está bien estirarla"), comportamiento que Fotos nunca puede
+usar. Fotos necesita la política de `_fit_photo_to_format()`/
+`_should_rotate_tall_photo_for_format()` de `photos.py` — fit + padding
+simétrico + rotación condicional de fotos verticales — que no existe en
+Cicada hoy, y hay que portarla como lógica nueva.
+
+**Residuo on-device confirmado**: `_PHOTO_MAPPING_RELATIVE =
+"iPod_Control/iOpenPod/photo_sync.json"` — mismo patrón que
+`iOpenPodSysInfoAuthority` (Etapa 2b). Rediseño off-device: Etapa 6e.
+
+**Infraestructura adicional necesaria, no registrada en la investigación
+inicial** — `photos.py` importa de tres módulos de iOpenPod que Cicada no
+tenía: `path_safety.py` (140 líneas, `resolve_device_path()`/
+`UnsafeDevicePathError`), `storage_safety.py` (104 líneas,
+`require_file_size_supported()`) y `filesystem_profile.py` (**633
+líneas**, detección de filesystem cross-platform). Decisión: portar
+`path_safety.py` casi tal cual y una versión reducida de
+`storage_safety.py` (solo `require_file_size_supported` + una tabla
+estática de techos por tipo de filesystem), **sin** portar
+`filesystem_profile.py` completo — para el único dato que hace falta
+(techo de tamaño de archivo), alcanza con reusar la llamada a `diskutil
+info -plist` que `volume_id.py` ya hace para `VolumeUUID`, leyendo
+también su campo `FilesystemType` (verificado contra el Nano 7G real
+conectado: `FilesystemType`=`"msdos"`, `FilesystemName`=`"MS-DOS
+FAT32"`). 633 líneas de detección cross-platform para ese único chequeo
+habría sido sobre-alcance.
+
+**Dependencia diferida, no descartada: HEIC/HEIF.**
+`PHOTO_EXTENSIONS` de iOpenPod incluye `.heic`/`.heif` (fotos de iPhone).
+Pillow estándar no los decodifica sin el plugin `pillow-heif`, que Cicada
+no tiene instalado. Caso real fuera de alcance hoy, no "innecesario" —
+las imágenes de prueba disponibles (`Magallanes 120/*.jpg`) son JPEG, así
+que no bloquea el troceado aprobado; si se retoma, requiere agregar
+`pillow-heif` a `requirements.txt`.
+
+**Coordinación con `create_plan()`/`apply()`: coordinador propio, no
+extensión del `Plan`.** Verificado en `sync_executor.py` de iOpenPod:
+fotos corre como un paso separado del pipeline, gateado por
+`supports_photo`, con su propia base de datos, sin relación
+`track_id`↔foto. Traducido a Cicada: un coordinador nuevo
+(`cicada/ipod/db/coordinator/photos.py`, análogo a `media.py`), no una
+extensión de `Plan`/`apply()` — Fotos no tiene nada que fusionar con el
+iTunesDB/SQLite de música, así que no hace falta tocar
+`PreStateFingerprint` ni el `Plan` dataclass.
+
+**Recorte de alcance deliberado, el más grande disponible**: `photos.py`
+implementa dos caminos de escritura — reescritura completa desde cero
+(`_write_photo_db_snapshot`, ~150 líneas) e **incremental con
+compactación in-place de los `.ithmb`**
+(`_apply_photo_sync_plan_incremental` + `_compact_photo_thumb_payloads`,
+~600 líneas). `chunks.py` (Fase 4c) ya declaró la filosofía de "reescribe
+completo en cada sync, sin preservación" para ArtworkDB — la misma
+filosofía aplicada a Fotos descarta esas ~600 líneas de complejidad de
+compactación. Coherente con el resto de Cicada, no una concesión.
+
+**Troceado aprobado (orden ajustado explícitamente: validar contra
+hardware real antes de construir la capa de API, mismo patrón que Fase
+2):**
+- **6e** — Infra de soporte: `path_safety.py`, `storage_safety.py`
+  reducido, mapa off-device de fotos (patrón `authority.py`).
+- **6f** — Chunks nuevos en `chunks.py`: `write_mhba`/`write_mhia`,
+  variante de `write_mhii` con semántica de Fotos, lectura.
+- **6g** — Procesamiento de imagen: fit/pad/rotate portado, reusando
+  `rgb888_to_rgb565_le` sin cambios.
+- **6h** — Coordinador `sync_photos_to_ipod()`.
+- **6j** — Prueba de fuego con las dos imágenes reales de Magallanes 120
+  (antes de la API, no después).
+- **6i** — API/CLI: `POST /photos/sync`, reemplazo del stub `GET
+  /photos`, `DELETE /photos/{id}`.
+
+#### Etapa 6e — Infra de soporte para Fotos (`path_safety.py`, `storage_safety.py`, mapa off-device). **Estado: implementado y verificado.**
+
+**`cicada/ipod/device/path_safety.py`** (nuevo) — `resolve_device_path()`/
+`UnsafeDevicePathError`, adaptado casi tal cual de iOpenPod. Solo se
+portó lo que `photos.py` (futuro) necesita: se omitió
+`resolve_host_path`/`UnsafeHostPathError` de iOpenPod (valida rutas de
+host absolutas contra una raíz) por no tener caso de uso hoy en Cicada.
+Doble capa contra symlinks: rechazo explícito por componente
+(`_reject_link_or_reparse_components`, walk con `os.lstat`) más el
+chequeo final basado en `Path.resolve()` — confirmado con un mutation
+check que intentar romper solo la primera capa no hace fallar el
+resultado agregado (la segunda lo sigue atrapando), así que el sanity
+check de mutación se probó contra `_reject_link_or_reparse_components()`
+en aislamiento, no contra el wrapper completo.
+
+**`cicada/ipod/device/storage_safety.py`** (nuevo, reducido respecto a
+iOpenPod) — `require_file_size_supported()` + `FileSizeLimitError`
+(subclase de `WriteGuardError`, no de un `DeviceWriteSafetyError` que
+Cicada no tiene) + `max_file_size_bytes_for_mount()` con la misma tabla
+de techos por filesystem que iOpenPod (`msdos`/`fat32`/`vfat`→4GiB-1,
+`fat`/`fat16`→2GiB-1).
+
+**`cicada/ipod/device/volume_id.py`** (extendido) — nueva función
+`filesystem_type(mount)`, que reusa la llamada existente a `diskutil info
+-plist` de `volume_fingerprint()` (un campo más del mismo plist,
+`FilesystemType`, no un segundo proceso). Verificado contra hardware
+real, no una fixture: el Nano 7G conectado reporta `"msdos"`
+(2026-08-20). Solo macOS, igual que el resto del módulo.
+
+**`cicada/ipod/device/photo_mapping.py`** (nuevo) — reimplementación
+off-device de `photo_sync.json`, mismo patrón que `authority.py` pero
+usando el helper centralizado `cicada.ipod.paths.guid_hash()` (que
+`authority.py` predata y no usa — no se tocó, fuera de alcance de esta
+etapa) en vez de una duplicación local del hash. Persiste en
+`~/.cicada/photos/<guid_hash>/mapping.json`, indexado por FireWireGUID,
+reemplazo atómico simple (`tmp` + `os.replace`) — no la maquinaria
+pesada de `durability.py` (fsync agresivo, pensada para escrituras al
+propio volumen del iPod con riesgo de eject a mitad de escritura; este
+mapa vive en el filesystem del host). Falla cerrado
+(`PhotoMappingSafetyError`) ante JSON malformado o con forma inesperada,
+mismo criterio que `_load_photo_mapping` de iOpenPod.
+
+**Tests** (36 nuevos, 536 en total): `test_path_safety.py` (10, incluye
+symlink-escape con mutation check en aislamiento), `test_storage_safety.py`
+(9, incluye mutation check real por inyección de bug — comparación
+`size < limit` en vez de `size <= limit`, confirmado que falla, revertido),
+`test_photo_mapping.py` (12, round-trip real de entradas y de settings,
+indexado por GUID no por montaje, atomicidad, fallo cerrado ante datos
+corruptos — mutation check real por inyección de bug, quitando la
+validación de forma de entrada, confirmado que falla, revertido), 5
+nuevos en `test_vpd_2d.py` para `filesystem_type()` (incluye un test
+`skipif` que corre contra el Nano 7G real cuando está montado, sin mock,
+en vez de solo contra una fixture — round-trip real donde el dispositivo
+puede verificar).
+
+**Hallazgo colateral, no corregido en esta etapa (fuera de alcance,
+reportado aparte)**: `mhbd_writer.py` tiene un bloque de import con
+fallback (`try: from iopenpod.device.path_safety import ... except
+ImportError: ... = None`) que asumía que estos módulos algún día se
+importarían del paquete `iopenpod` real — nunca ocurre en Cicada, así que
+siempre cae al fallback `None`. La función que los usa,
+`write_itunesdb()`, y sus helpers privados (`_preflight_database_install`,
+etc.) **no tienen ningún caller en el código activo de Cicada**
+(`build.py` reimplementó la entrada de escritura por su cuenta) —
+confirmado por grep. Es código muerto de una vendorización temprana,
+nunca limpiada. No se tocó aquí porque no era parte de esta etapa.
 
 #### Etapa 6a — `kind` de video en `/media/sync`. **Estado: implementado y verificado.**
 

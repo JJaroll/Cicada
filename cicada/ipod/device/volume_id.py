@@ -27,7 +27,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["VolumeFingerprint", "volume_fingerprint"]
+__all__ = ["VolumeFingerprint", "volume_fingerprint", "filesystem_type"]
 
 _ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 
@@ -93,3 +93,20 @@ def volume_fingerprint(mount: str | Path) -> Optional[VolumeFingerprint]:
     except OSError:
         pass
     return None
+
+
+def filesystem_type(mount: str | Path) -> Optional[str]:
+    """Código corto de filesystem de ``mount`` (p. ej. ``"msdos"``, ``"exfat"``,
+    ``"hfs"``), o ``None`` si no se puede determinar.
+
+    Reusa la misma llamada a ``diskutil info -plist`` de :func:`volume_fingerprint`
+    (clave ``FilesystemType`` del plist) en vez de invocar un segundo proceso.
+    Verificado contra un Nano 7G real montado: ``FilesystemType`` = ``"msdos"``,
+    ``FilesystemName`` = ``"MS-DOS FAT32"`` (2026-08-20). Solo macOS por ahora,
+    igual que el resto de este módulo — en otras plataformas devuelve ``None``.
+    """
+    if sys.platform != "darwin":
+        return None
+    info = _diskutil_info(Path(mount))
+    value = str(info.get("FilesystemType") or "").strip().lower()
+    return value or None

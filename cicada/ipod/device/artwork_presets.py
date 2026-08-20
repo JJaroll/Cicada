@@ -68,8 +68,19 @@ ARTWORK_FORMATS_BY_ID: dict[int, ArtworkFormat] = {
     1083: ArtworkFormat(1083, 240, 320, 480, "RGB565_LE", "photo_full", "Nano 4G photo full screen (portrait)"),
     1084: ArtworkFormat(1084, 240, 240, 480, "RGB565_LE", "cover_large_alt", "Nano 4G album art (alt)"),
     # Newer iPod-only formats beyond libgpod's older hardcoded tables.
+    # 1085/1089 (Nano 6G-only, unlike 1073/1074 above which are reused from
+    # Nano 5G/4G and libgpod-audited): confidence level `hardware_claimed`
+    # (see docs/VENDORED.md, Paquete 7, Etapa 4f-2). Not in libgpod at all.
+    # Traced to iOpenPod commit 8348aa8 ("feat: full iTunesCDB support —
+    # artist list, compilation fix, Nano 6G", 2026-03-03), which introduced
+    # them with this note: "Dimensions extracted from a real Nano 6G
+    # ArtworkDB (written by iTunes). libgpod has no hardcoded table for
+    # Nano 6G and relies on SysInfoExtended; these match the device." No
+    # dump/fixture of that ArtworkDB exists in iOpenPod's repo — not
+    # independently re-verifiable by Cicada.
     1085: ArtworkFormat(1085, 88, 88, 176, "RGB565_LE", "cover_medium", "Nano 6G album art medium"),
     1087: ArtworkFormat(1087, 384, 384, 768, "RGB565_LE", "photo_large", "Nano 5G photo large"),
+    # 1089: same hardware_claimed source as 1085 above.
     1089: ArtworkFormat(1089, 58, 58, 116, "RGB565_LE", "cover_small", "Nano 6G album art small"),
     1092: ArtworkFormat(1092, 80, 80, 160, "RGB565_LE", "photo_thumb", "Nano 6G photo thumbnail"),
     1093: ArtworkFormat(1093, 512, 512, 1024, "RGB565_LE", "photo_full", "Nano 6G photo full screen"),

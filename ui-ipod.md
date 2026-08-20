@@ -271,26 +271,29 @@ miniaturas por HTTP (`GET /artwork/{track_id}` tampoco existe todavía para
 música — queda fuera del alcance de esta fase, mismo criterio que con el
 arte de podcasts en 5c).
 
-**Fotos — diferido (Fase 6, 2026-08-19), con motivo preciso.** El iPod
-Nano 7G **sí tiene** app de Fotos — confirmado por hardware. **Sí existe**
-una referencia Python vendorizable: `src/iopenpod/sync/photos.py`
+**Fotos — en construcción por etapas (investigación y troceado cerrados
+2026-08-20).** El iPod Nano 7G **sí tiene** app de Fotos — confirmado por
+hardware. La referencia vendorizable es `src/iopenpod/sync/photos.py`
 (2706 líneas, MIT, parser y escritor completos, con tests de seguridad
 reales). El formato "Photo Database" usa el mismo árbol de chunks que
 ArtworkDB (`mhfd→mhsd→{mhli,mhla,mhlf}→mhii→{mhod,mhni}`, ya vendorizado
 en la Etapa 4c) — headers idénticos byte a byte; solo faltan `mhba`/`mhia`
 (entrada de álbum) a nivel de chunk. El pixel format del Nano 7G sigue
-siendo `RGB565_LE`, igual que cover art. La razón real de diferir es
-**dimensión del trabajo** — ~2700 líneas de dominio nuevo por adaptar,
-comparable a toda la Fase 4 junta — no falta de referencia. Detalle
-completo, incluida la investigación inicial incompleta y su corrección,
-en `docs/VENDORED.md` Paquete 9. Diferido con motivo registrado, no
-descartado — mismo tratamiento que el hueco de Nano 6G en la Etapa 4f-2.
-Sin plan de troceado todavía: se define cuando se abra una sesión
-dedicada a construirlo.
+siendo `RGB565_LE` para el empaquetado en sí, aunque el redimensionado de
+`rgb565.py` (pensado para carátulas cuadradas) no sirve para fotos —
+Fotos necesita su propia política de fit/pad/rotate. Alcance real:
+~2700 líneas de dominio nuevo, comparable a toda la Fase 4 junta.
+Troceado en 6 etapas (6e-6j, ver `docs/VENDORED.md` Paquete 9 y
+`docs/IPOD_INTEGRATION.md`), validando contra hardware real antes de
+construir la capa de API — **6e (infra de soporte) ya está implementada
+y verificada**; el resto sigue etapa por etapa. HEIC/HEIF diferido
+explícitamente (necesita `pillow-heif`, no instalado) — caso real fuera
+de alcance hoy, no descartado.
 
 #### `GET /api/ipod/photos`
-🟡 Placeholder — lista vacía (Fotos diferida, ver arriba). El contrato de
-más abajo es el **diseño objetivo**, no lo que responde hoy.
+🟡 Placeholder — lista vacía (endpoint aún sin implementar, ver arriba —
+6e-6h todavía no tocan la API). El contrato de más abajo es el **diseño
+objetivo**, no lo que responde hoy.
 
 - **Response (200 OK)**:
 ```json
@@ -516,5 +519,5 @@ Aplica el plan dry-run sobre el iPod mediante la siguiente secuencia protegida:
 
 1. **Artwork (Fase 4)**: Vincular el endpoint `/api/ipod/artwork/{track_id}` con la generación de bloques `mhni`/`mhii` en `iPod_Control/Artwork/ArtworkDB`.
 2. **Podcasts y Audiolibros (Fase 5) — hecho, 2026-08-19.** No hubo feed parser que conectar: Cicada no gestiona feeds RSS (decisión de alcance explícita, ver §2.5 y `docs/VENDORED.md` Paquete 8). Se implementó `kind`/`category` en `POST /media/sync` (5a), extracción de capítulos embebidos de archivos ya locales (5b), y lectura real agrupada en `GET /podcasts`/`/audiobooks` (5c) — los tipos MHOD 15/16/17 (`cicada/ipod/db/writer/mhod_writer.py`) ya estaban vendorizados desde antes de Fase 5 y no necesitaron cambios.
-3. **Video (Fase 6a-6c) — hecho, 2026-08-19.** Sin transcodificador: Cicada no transcodifica nada, ni audio ni video (el `transcoder.py` que sugería el código muerto de Fase 5 no existe en el repo) — el archivo ya debe ser H.264 compatible, misma filosofía que audio. `kind` extendido a `movie`/`tv_show`/`music_video`/`video_podcast` en `POST /media/sync` (6a); el arte embebido de video reutiliza el pipeline de artwork de Fase 4a-4d sin cambios (6b, verificado, no construido); `GET /videos`/`DELETE /videos/{id}` reales (6c). **Fotos diferida** — por dimensión del trabajo (~2700 líneas de dominio nuevo, comparable a toda la Fase 4 junta), no por falta de referencia: `src/iopenpod/sync/photos.py` existe, es MIT, completo y probado, y comparte el mismo formato de chunk que ArtworkDB (Etapa 4c) y el mismo pixel format `RGB565_LE` que cover art. El Nano 7G sí tiene app de Fotos (confirmado por hardware). Detalle completo, incluida la investigación inicial incompleta y su corrección, en `docs/VENDORED.md` Paquete 9.
+3. **Video (Fase 6a-6c) — hecho, 2026-08-19; confirmado en hardware real, 2026-08-20.** Sin transcodificador: Cicada no transcodifica nada, ni audio ni video (el `transcoder.py` que sugería el código muerto de Fase 5 no existe en el repo) — el archivo ya debe ser H.264 compatible, misma filosofía que audio. `kind` extendido a `movie`/`tv_show`/`music_video`/`video_podcast` en `POST /media/sync` (6a); el arte embebido de video reutiliza el pipeline de artwork de Fase 4a-4d sin cambios (6b, verificado, no construido); `GET /videos`/`DELETE /videos/{id}` reales (6c). Prueba de fuego con archivo real, round-trip verificado en ambas capas del dispositivo (iTunesCDB + SQLite `Library.itdb`) y reproducción confirmada por el usuario en el iPod. **Fotos en construcción por etapas** (6e-6j, investigación y troceado cerrados 2026-08-20) — por dimensión del trabajo (~2700 líneas de dominio nuevo, comparable a toda la Fase 4 junta), no por falta de referencia: `src/iopenpod/sync/photos.py` existe, es MIT, completo y probado, y comparte el mismo formato de chunk que ArtworkDB (Etapa 4c). Etapa 6e (infra de soporte: `path_safety.py`, `storage_safety.py`, mapa off-device de fotos) implementada y verificada. El Nano 7G sí tiene app de Fotos (confirmado por hardware). Detalle completo en `docs/VENDORED.md` Paquete 9.
 4. **Cache-Busting Frontend**: Todos los archivos de script y estilos en `cicada/core/main.py` emplean el parámetro de versión `?v=2.0.0` para garantizar recargas instantáneas sin retención de caché obsoleta en el cliente.

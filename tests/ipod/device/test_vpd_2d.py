@@ -197,3 +197,44 @@ def test_volume_fingerprint_debil_si_no_hay_uuid(monkeypatch, tmp_path):
                                         "DeviceNode": "/dev/disk4s1", "VolumeName": "iPod"})
     fp = vol_mod.volume_fingerprint(tmp_path)
     assert fp.strength == "weak" and fp.source == "devicenode+volumename"
+
+
+# --------------------------------------------------------------------------- #
+# filesystem_type (Etapa 6e, infra de storage_safety para Fotos)
+# --------------------------------------------------------------------------- #
+def test_filesystem_type_lee_de_diskutil(monkeypatch, tmp_path):
+    monkeypatch.setattr(vol_mod.sys, "platform", "darwin")
+    monkeypatch.setattr(vol_mod, "_diskutil_info",
+                        lambda m, **k: {"FilesystemType": "msdos", "FilesystemName": "MS-DOS FAT32"})
+    assert vol_mod.filesystem_type(tmp_path) == "msdos"
+
+
+def test_filesystem_type_normaliza_a_minusculas(monkeypatch, tmp_path):
+    monkeypatch.setattr(vol_mod.sys, "platform", "darwin")
+    monkeypatch.setattr(vol_mod, "_diskutil_info", lambda m, **k: {"FilesystemType": "MSDOS"})
+    assert vol_mod.filesystem_type(tmp_path) == "msdos"
+
+
+def test_filesystem_type_none_si_diskutil_no_da_nada(monkeypatch, tmp_path):
+    monkeypatch.setattr(vol_mod.sys, "platform", "darwin")
+    monkeypatch.setattr(vol_mod, "_diskutil_info", lambda m, **k: {})
+    assert vol_mod.filesystem_type(tmp_path) is None
+
+
+def test_filesystem_type_none_fuera_de_macos(monkeypatch, tmp_path):
+    monkeypatch.setattr(vol_mod.sys, "platform", "linux")
+    monkeypatch.setattr(
+        vol_mod, "_diskutil_info",
+        lambda m, **k: (_ for _ in ()).throw(AssertionError("no debería llamar a diskutil fuera de macOS")),
+    )
+    assert vol_mod.filesystem_type(tmp_path) is None
+
+
+@pytest.mark.skipif(
+    vol_mod.sys.platform != "darwin" or not Path("/Volumes/IPOD DE JAR").is_dir(),
+    reason="requiere macOS con el Nano 7G real montado en /Volumes/IPOD DE JAR",
+)
+def test_filesystem_type_contra_nano7g_real():
+    """Round-trip sin mockear: contra el dispositivo real, no una fixture
+    hardcodeada — confirma que diskutil realmente reporta FAT32 en hardware."""
+    assert vol_mod.filesystem_type("/Volumes/IPOD DE JAR") == "msdos"

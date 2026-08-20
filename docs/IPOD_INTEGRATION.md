@@ -513,14 +513,36 @@ de iTunes/iOpenPod). El soporte de formato binario (MHOD 15/16/17, campos de
 paquete `podcasts/` de iOpenPod es 100% gestión de feeds, excluido en bloque salvo
 la extracción de capítulos. Detalle completo en `docs/VENDORED.md` Paquete 8.
 
-### Fase 6 — Fotos y video (video cerrado 2026-08-19; fotos diferida)
+### Fase 6 — Fotos y video (video cerrado 2026-08-19, confirmado en hardware
+real 2026-08-20; fotos en construcción por etapas)
 
 **Video**: mismo patrón que podcasts — `kind: "movie"|"tv_show"|"music_video"|
 "video_podcast"` en `POST /media/sync` (6a), arte embebido reutiliza el pipeline de
 Fase 4a-4d sin cambios (6b, verificado no construido), `GET /videos`/
 `DELETE /videos/{id}` reales (6c, este último reusa `POST /track/remove` de Fase 3).
 Sin transcodificación (Cicada no transcodifica nada, ni audio ni video) ni servido de
-miniaturas por HTTP (no existe ni para música todavía).
+miniaturas por HTTP (no existe ni para música todavía). Prueba de fuego con un
+archivo real (`I-am-alive-SD2.mp4`, 640×360 — dentro del techo de decodificación
+H.264 documentado para Nano 7G en `capabilities.py`, 720×576) confirmada en las dos
+capas del dispositivo (iTunesCDB binario y SQLite `Library.itdb`) y reproducción
+real confirmada por el usuario en el propio iPod.
+
+**Fotos**: investigación profunda y troceado cerrados 2026-08-20 (detalle completo
+en `docs/VENDORED.md`, Paquete 9). En construcción, etapa por etapa, orden ajustado
+para validar contra hardware real antes de la capa de API (mismo patrón que Fase 2):
+- [x] **6e** — Infra de soporte: `path_safety.py`, `storage_safety.py` (reducido,
+      sin portar la detección de filesystem cross-platform completa de iOpenPod),
+      mapa off-device `photo_sync.json`→`~/.cicada/photos/` (patrón `authority.py`).
+- [ ] **6f** — Chunks `mhba`/`mhia` en `chunks.py` (faltaban a nivel de chunk;
+      el resto del formato de Fotos ya es el mismo de ArtworkDB).
+- [ ] **6g** — Procesamiento de imagen (fit/pad/rotate), reusa el codec RGB565_LE
+      de `rgb565.py` sin cambios.
+- [ ] **6h** — Coordinador `sync_photos_to_ipod()` (propio, no extiende `Plan`).
+- [ ] **6j** — Prueba de fuego con imágenes reales, antes de la API.
+- [ ] **6i** — API/CLI (`POST /photos/sync`, reemplazo del stub `GET /photos`).
+
+HEIC/HEIF diferido explícitamente (requiere `pillow-heif`, no instalado) — caso
+real fuera de alcance hoy, no descartado.
 
 **Fotos — diferida, con motivo preciso: dimensión del trabajo, no falta de
 referencia.** El Nano 7G sí tiene app de Fotos (confirmado por hardware). **Sí
