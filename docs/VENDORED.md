@@ -327,6 +327,15 @@ top-level en `mhbd_writer`/`hash72` se envolvieron en `try/except ImportError` (
 a `None`); Cicada no llama esas vías. `ChecksumType`/`DeviceCapabilities` desde
 `cicada.ipod.device`.
 
+**Actualización (2026-08-20):** la función vendorizada-pero-nunca-llamada que
+dependía de ese `try/except` (`write_itunesdb()`, el punto de entrada de
+iOpenPod que combinaba build+firma+instalación en uno, superseded por
+`build.py` desde esta misma etapa) se eliminó de `mhbd_writer.py`, junto con
+sus helpers privados exclusivos y el bloque de import muerto — hallazgo
+colateral de la investigación de Fotos (Etapa 6e), resuelto aparte. Detalle
+en Paquete 9. `write_mhbd()` (el builder puro que sí usa `build.py`) sin
+cambios.
+
 **`build.py` (propio)** — `build_itunescdb(tracks, *, firewire_id, checksum, time_context, …)
 -> bytes`: reimplementa la entrada de escritura (que estaba enredada con el stack de
 dispositivo). Hace `write_mhbd` (builder) → comprimir zlib → **firmar sobre el comprimido**
@@ -1310,17 +1319,30 @@ nuevos en `test_vpd_2d.py` para `filesystem_type()` (incluye un test
 en vez de solo contra una fixture — round-trip real donde el dispositivo
 puede verificar).
 
-**Hallazgo colateral, no corregido en esta etapa (fuera de alcance,
-reportado aparte)**: `mhbd_writer.py` tiene un bloque de import con
-fallback (`try: from iopenpod.device.path_safety import ... except
-ImportError: ... = None`) que asumía que estos módulos algún día se
-importarían del paquete `iopenpod` real — nunca ocurre en Cicada, así que
-siempre cae al fallback `None`. La función que los usa,
-`write_itunesdb()`, y sus helpers privados (`_preflight_database_install`,
-etc.) **no tienen ningún caller en el código activo de Cicada**
-(`build.py` reimplementó la entrada de escritura por su cuenta) —
-confirmado por grep. Es código muerto de una vendorización temprana,
-nunca limpiada. No se tocó aquí porque no era parte de esta etapa.
+**Hallazgo colateral, resuelto aparte (2026-08-20, no como parte de 6e):**
+`mhbd_writer.py` tenía un bloque de import con fallback (`try: from
+iopenpod.device.path_safety import ... except ImportError: ... = None`)
+que asumía que estos módulos algún día se importarían del paquete
+`iopenpod` real — nunca ocurre en Cicada, así que siempre caía al
+fallback `None`. La función que los usaba, `write_itunesdb()`, y sus
+helpers privados (`_preflight_database_install`, `_database_filename_for_
+capabilities`, `_resolve_existing_itdb_for_write`, `_copy_device_file_
+durably`, `_run_before_mutation`, `_cleanup_device_temp`) **no tenían
+ningún caller en el código activo de Cicada** (`build.py` reimplementó la
+entrada de escritura por su cuenta) — confirmado por grep antes y después
+del cambio. Eliminados junto con los imports que quedaban exclusivamente
+a su servicio (`durability.py` completo, `hash58`/`hashab` de este
+módulo, `MHBD_OFFSET_HASHING_SCHEME`, `Callable`/`Path`/`os`/`shutil`/
+`stat` — cada uno verificado individualmente por grep de que su único
+uso caía dentro del bloque muerto antes de tocarlo). `write_mhbd()` (el
+builder puro que sí usa `build.py`) y el resto de `mhbd_writer.py`
+intactos. Verificado con `pyflakes` (cero imports sin usar tras el
+cambio) y suite completa (536 tests, mismo piso que antes). Detalle
+completo de la vendorización original de `write_itunesdb`/`hash72` con
+`try/except ImportError` deliberado: Paquete 4, Etapa 2a, arriba —
+**esa función ya estaba documentada ahí como vendorizada-pero-nunca-
+llamada desde el día uno** ("Cicada no llama esas vías"); esta entrada
+registra que finalmente se eliminó, no que se descubrió.
 
 #### Etapa 6a — `kind` de video en `/media/sync`. **Estado: implementado y verificado.**
 
