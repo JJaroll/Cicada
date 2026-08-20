@@ -1165,8 +1165,8 @@ function _mockAddPodcast() {
     ipodState.podcasts.push({
         name: name,
         episodes: [
-            { title: "Episodio 1: Introducción", date: new Date().toLocaleDateString(), duration_ms: 1200000 },
-            { title: "Episodio 2: Especial", date: new Date().toLocaleDateString(), duration_ms: 1850000 }
+            { title: "Episodio 1: Introducción", date_added: Math.floor(Date.now() / 1000), duration_ms: 1200000 },
+            { title: "Episodio 2: Especial", date_added: Math.floor(Date.now() / 1000), duration_ms: 1850000 }
         ]
     });
     updateIpodCategoryCounts();

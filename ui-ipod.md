@@ -29,7 +29,7 @@ Este documento define la arquitectura técnica, catálogo de endpoints REST, con
 
 ---
 
-## 1.1 Estado de implementación (a 2026-08-16)
+## 1.1 Estado de implementación (a 2026-08-19)
 
 Este documento describe el **diseño objetivo**. El estado real del backend hoy:
 
@@ -38,14 +38,17 @@ Este documento describe el **diseño objetivo**. El estado real del backend hoy:
 | `GET /status`, `GET /scan` | ✅ Real — incluyen `image_url` + `storage` |
 | `GET /storage` | ✅ Real — con caché de 60 s (no recorre el FS en cada llamada) |
 | `GET /tracks`, `GET /playlists` | ✅ Real — lectura de la base |
+| `GET /podcasts`, `GET /audiobooks` | ✅ Real (Fase 5c/6c) — lectura y agrupamiento de lo que ya hay en el dispositivo; incluye episodios de video-podcast; **no** gestión de feeds/suscripciones (ver §2.5) |
+| `GET /videos` | ✅ Real (Fase 6c) — lista plana, sin `resolution` ni `thumb` (ver §2.4) |
+| `DELETE /videos/{id}` | ✅ Real (Fase 6c) — mismo mecanismo genérico que `POST /track/remove` (Fase 3) |
+| `POST /media/sync` | ✅ Real — `kind: "music"\|"podcast"\|"audiobook"\|"movie"\|"tv_show"\|"music_video"\|"video_podcast"` (Fase 5a/6a), extracción automática de capítulos embebidos (Fase 5b) |
 | `POST /plan`, `POST /apply` | ✅ Real — coordinador transaccional (dry-run, backup, rollback) |
 | `POST /backup`, `POST /restore`, `POST /eject` | ✅ Real |
 | `GET/POST/DELETE /consent/{guid}` | ✅ Real |
 | `POST /playlists/create`, `POST /playlists/import` | 🔴 **501 Not Implemented** — se harán vía `plan`/`apply` |
-| `DELETE /photos/{id}`, `DELETE /videos/{id}` | 🔴 **501 Not Implemented** — Fase 6 |
-| `GET /photos`, `/videos`, `/podcasts`, `/audiobooks` | 🟡 Placeholder — devuelven lista vacía (Fases 5/6) |
+| `GET /photos`, `DELETE /photos/{id}` | 🟡 Placeholder / 🔴 **501** — Fotos diferida (ver §2.4 y `docs/VENDORED.md` Paquete 9) |
 
-**Regla de honestidad:** ningún endpoint devuelve éxito falso. Lo no implementado responde **`501`** con `{"detail": {"code": "NOT_IMPLEMENTED"}}`; los placeholders de lectura devuelven `[]`. Los ejemplos de respuesta de más abajo para esos endpoints son el **contrato futuro**, no lo que responden hoy.
+**Regla de honestidad:** ningún endpoint devuelve éxito falso. Lo no implementado responde **`501`** con `{"detail": {"code": "NOT_IMPLEMENTED"}}`; los placeholders de lectura devuelven `[]`. Los ejemplos de respuesta de más abajo para `/photos`/`/videos` son el **contrato futuro**, no lo que responden hoy — `/podcasts`/`/audiobooks` ya no son placeholder, ver §2.5 para el contrato real (distinto del que tenía este documento).
 
 ---
 
@@ -262,8 +265,32 @@ Importa una playlist desde la biblioteca local de Cicada o Spotify.
 
 ### 2.4 Multimedia: Fotos y Videos
 
+**Alcance (igual que §2.5):** "ya tengo el video, ponlo en el iPod" — sin
+transcodificación (el archivo ya debe ser H.264 compatible) ni servido de
+miniaturas por HTTP (`GET /artwork/{track_id}` tampoco existe todavía para
+música — queda fuera del alcance de esta fase, mismo criterio que con el
+arte de podcasts en 5c).
+
+**Fotos — diferido (Fase 6, 2026-08-19), con motivo preciso.** El iPod
+Nano 7G **sí tiene** app de Fotos — confirmado por hardware. **Sí existe**
+una referencia Python vendorizable: `src/iopenpod/sync/photos.py`
+(2706 líneas, MIT, parser y escritor completos, con tests de seguridad
+reales). El formato "Photo Database" usa el mismo árbol de chunks que
+ArtworkDB (`mhfd→mhsd→{mhli,mhla,mhlf}→mhii→{mhod,mhni}`, ya vendorizado
+en la Etapa 4c) — headers idénticos byte a byte; solo faltan `mhba`/`mhia`
+(entrada de álbum) a nivel de chunk. El pixel format del Nano 7G sigue
+siendo `RGB565_LE`, igual que cover art. La razón real de diferir es
+**dimensión del trabajo** — ~2700 líneas de dominio nuevo por adaptar,
+comparable a toda la Fase 4 junta — no falta de referencia. Detalle
+completo, incluida la investigación inicial incompleta y su corrección,
+en `docs/VENDORED.md` Paquete 9. Diferido con motivo registrado, no
+descartado — mismo tratamiento que el hueco de Nano 6G en la Etapa 4f-2.
+Sin plan de troceado todavía: se define cuando se abra una sesión
+dedicada a construirlo.
+
 #### `GET /api/ipod/photos`
-Lista los álbumes y fotografías sincronizadas en el iPod.
+🟡 Placeholder — lista vacía (Fotos diferida, ver arriba). El contrato de
+más abajo es el **diseño objetivo**, no lo que responde hoy.
 
 - **Response (200 OK)**:
 ```json
@@ -282,44 +309,53 @@ Lista los álbumes y fotografías sincronizadas en el iPod.
 ```
 
 #### `DELETE /api/ipod/photos/{photo_id}`
-Elimina una foto de la base de datos y del almacenamiento del iPod.
-
-- **Response (200 OK)**:
-```json
-{
-  "success": true,
-  "id": "photo_1"
-}
-```
+🔴 **501 Not Implemented** — Fotos diferida.
 
 #### `GET /api/ipod/videos`
-Lista los videos (películas, videos musicales) presentes en el iPod.
+✅ Real (Fase 6c). Lista **plana** (sin agrupar por película/serie) de
+todo lo que ya está en el dispositivo con `media_type` de video
+(`movie`/`tv_show`/`music_video`) — `video_podcast` no aparece aquí, ver
+`GET /podcasts` en §2.5. Sin `resolution` (no hay forma de derivarla sin
+`ffprobe`, dependencia que Cicada no tiene) ni `thumb` (necesitaría un
+endpoint de servido de ArtworkDB inexistente hoy).
 
 - **Response (200 OK)**:
 ```json
 {
   "videos": [
     {
-      "id": "video_1",
-      "title": "Concierto en Vivo",
-      "resolution": "720x480",
-      "duration_ms": 360000,
-      "size": 85000000,
-      "thumb": "/api/ipod/videos/video_1/thumb"
+      "id": "8043271996812345678",
+      "title": "Piloto",
+      "kind": "tv_show",
+      "duration_ms": 1500000,
+      "size_bytes": 85000000,
+      "show_name": "Mi Serie",
+      "season_number": 1,
+      "episode_number": 1
     }
   ],
   "count": 1
 }
 ```
+`id` es el `db_track_id` (64 bits) como string — mismo motivo que en
+`GET /tracks`: como `Number` de JS pierde precisión en la mayoría de los
+valores.
 
 #### `DELETE /api/ipod/videos/{video_id}`
-Elimina un video del dispositivo.
+✅ Real (Fase 6c). Borra la pista de la base y su archivo de audio —
+mismo mecanismo genérico que `POST /track/remove` (Fase 3), sin importar
+`media_type`; este endpoint solo traduce el `id` de la URL.
 
-- **Response (200 OK)**:
+- **Response (200 OK)**: forma de `ApplyResponse` (igual que el resto de
+  operaciones transaccionales, no un `{"success", "id"}` reducido):
 ```json
 {
   "success": true,
-  "id": "video_1"
+  "backup_path": "/Users/.../Backups/...",
+  "restored_from_backup": false,
+  "first_write_committed": false,
+  "tracks_written": 3,
+  "error": null
 }
 ```
 
@@ -327,21 +363,35 @@ Elimina un video del dispositivo.
 
 ### 2.5 Spoken Word: Podcasts y Audiolibros
 
+**Alcance (Fase 5, corregido 2026-08-19):** Cicada no gestiona feeds RSS ni
+suscripciones — es un gestor de biblioteca que además escribe al iPod, no
+un cliente de podcasts. Estos endpoints leen lo que **ya está en el
+dispositivo** (agrupado por programa/título) tras haberse añadido vía
+`POST /media/sync` con `kind: "podcast"`/`"audiobook"`, o por haber
+llegado con el dispositivo desde otra herramienta (iTunes/iOpenPod). No
+hay concepto de suscripción, `feed_url`, ni descarga de episodios nuevos
+— si el usuario quiere un episodio nuevo, lo agrega como cualquier otro
+archivo de su biblioteca. Ver `docs/VENDORED.md` Paquete 8 para el
+detalle de qué se excluyó de iOpenPod y por qué.
+
 #### `GET /api/ipod/podcasts`
-Lista los podcasts suscritos y sus episodios asociados.
+Lista los podcasts ya presentes en el dispositivo, agrupados por programa
+(`Album`, con fallback a `Artist`). Incluye episodios `video_podcast`
+(cerrado en Fase 6a) junto con los de audio — son episodios del mismo
+programa; un video-podcast no aparece en `GET /videos` (§2.4) para no
+duplicar la pista en dos categorías del frontend.
 
 - **Response (200 OK)**:
 ```json
 {
   "podcasts": [
     {
-      "id": "pod_1",
+      "id": "radio-ambulante",
       "name": "Radio Ambulante",
-      "feed_url": "https://feeds.example.com/radioambulante",
       "episodes": [
         {
           "title": "El rescate",
-          "date": "10/08/2026",
+          "date_added": 1786406400,
           "duration_ms": 2400000,
           "file_size": 28000000
         }
@@ -351,16 +401,29 @@ Lista los podcasts suscritos y sus episodios asociados.
   "count": 1
 }
 ```
+`date_added` es un timestamp Unix crudo (igual que el resto de campos de
+fecha en `TrackSchema`) — el frontend lo formatea con
+`toLocaleDateString()`, no hay un formato de fecha fijo en el backend.
 
 #### `GET /api/ipod/audiobooks`
-Lista los audiolibros organizados con sus capítulos.
+Lista los audiolibros ya presentes en el dispositivo, agrupados por título
+(`Album`, con fallback a `Artist`). Un audiolibro real puede existir de
+dos formas en un iTunesDB, y ambas se soportan:
+- **Un solo archivo con capítulos embebidos** (MHOD 17 — lo que produce
+  Cicada al añadir un `.m4b`/`.mp3` con capítulos, Fase 5b): los
+  capítulos se expanden a partir de `chapter_data`, con la duración de
+  cada uno calculada por diferencia entre `startpos` consecutivos (el
+  formato del iTunesDB solo guarda la posición de inicio).
+- **Varias pistas bajo el mismo álbum** (formato multi-pista de
+  iTunes/iOpenPod): cada pista es un capítulo, ordenadas por
+  `track_number`.
 
 - **Response (200 OK)**:
 ```json
 {
   "audiobooks": [
     {
-      "id": "ab_1",
+      "id": "cien-anos-de-soledad",
       "title": "Cien Años de Soledad",
       "author": "Gabriel García Márquez",
       "chapters": [
@@ -452,6 +515,6 @@ Aplica el plan dry-run sobre el iPod mediante la siguiente secuencia protegida:
 ## 4. Guía de Conexión para Próximas Fases
 
 1. **Artwork (Fase 4)**: Vincular el endpoint `/api/ipod/artwork/{track_id}` con la generación de bloques `mhni`/`mhii` en `iPod_Control/Artwork/ArtworkDB`.
-2. **Podcasts y Audiolibros (Fase 5)**: Conectar los módulos `cicada/ipod/db/writer/mhod_writer.py` (tipos MHOD 15 y 16) con el feed parser de podcasts.
-3. **Fotos y Videos (Fase 6)**: Implementar el transcodificador y generador de thumbnails `Photo Database` para visualización en pantalla color del iPod.
+2. **Podcasts y Audiolibros (Fase 5) — hecho, 2026-08-19.** No hubo feed parser que conectar: Cicada no gestiona feeds RSS (decisión de alcance explícita, ver §2.5 y `docs/VENDORED.md` Paquete 8). Se implementó `kind`/`category` en `POST /media/sync` (5a), extracción de capítulos embebidos de archivos ya locales (5b), y lectura real agrupada en `GET /podcasts`/`/audiobooks` (5c) — los tipos MHOD 15/16/17 (`cicada/ipod/db/writer/mhod_writer.py`) ya estaban vendorizados desde antes de Fase 5 y no necesitaron cambios.
+3. **Video (Fase 6a-6c) — hecho, 2026-08-19.** Sin transcodificador: Cicada no transcodifica nada, ni audio ni video (el `transcoder.py` que sugería el código muerto de Fase 5 no existe en el repo) — el archivo ya debe ser H.264 compatible, misma filosofía que audio. `kind` extendido a `movie`/`tv_show`/`music_video`/`video_podcast` en `POST /media/sync` (6a); el arte embebido de video reutiliza el pipeline de artwork de Fase 4a-4d sin cambios (6b, verificado, no construido); `GET /videos`/`DELETE /videos/{id}` reales (6c). **Fotos diferida** — por dimensión del trabajo (~2700 líneas de dominio nuevo, comparable a toda la Fase 4 junta), no por falta de referencia: `src/iopenpod/sync/photos.py` existe, es MIT, completo y probado, y comparte el mismo formato de chunk que ArtworkDB (Etapa 4c) y el mismo pixel format `RGB565_LE` que cover art. El Nano 7G sí tiene app de Fotos (confirmado por hardware). Detalle completo, incluida la investigación inicial incompleta y su corrección, en `docs/VENDORED.md` Paquete 9.
 4. **Cache-Busting Frontend**: Todos los archivos de script y estilos en `cicada/core/main.py` emplean el parámetro de versión `?v=2.0.0` para garantizar recargas instantáneas sin retención de caché obsoleta en el cliente.

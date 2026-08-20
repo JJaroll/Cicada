@@ -459,12 +459,12 @@ def test_pre_state_fingerprint_uses_classic_formats_not_nano7g(tmp_path: Path):
 
 
 # --------------------------------------------------------------------------- #
-# Garantía para clean_foreign_authority() (Fase 4f, autoridad ajena/§0.3)
+# Garantía para clean_foreign_artifacts() (Fase 4f, autoridad ajena/§0.3)
 # --------------------------------------------------------------------------- #
 
 
 def test_create_plan_never_produces_foreign_backup_filenames(tmp_path: Path):
-    """clean_foreign_authority() ahora borra los 7 nombres .backup que deja
+    """clean_foreign_artifacts() ahora borra los 7 nombres .backup que deja
     write_itunesdb/write_sqlite_databases de iOpenPod en sitio
     (FOREIGN_BACKUP_RELPATHS). Eso solo es seguro si el camino ACTIVO de
     escritura de Cicada (build_itunescdb/build_sqlite_databases, vía
@@ -495,7 +495,7 @@ def test_create_plan_never_produces_foreign_backup_filenames(tmp_path: Path):
     overlap = produced_names & foreign_names
     assert not overlap, (
         f"El camino activo de create_plan() produjo nombres que "
-        f"clean_foreign_authority() trataría como ajenos: {overlap}. "
+        f"clean_foreign_artifacts() trataría como ajenos: {overlap}. "
         f"Esto volvería inseguro borrarlos automáticamente."
     )
 

@@ -155,6 +155,22 @@ opciones. (La instalación es editable a propósito: los archivos estáticos de 
 app se resuelven en runtime relativos al checkout del repositorio, no se
 empaquetan — por eso no se recomienda una instalación no-editable.)
 
+### Compatibilidad de dispositivos
+
+Cicada soporta iPods de rueda de clic (click-wheel) y Nano de pantalla táctil
+hasta la 7ª generación — Shuffle, Classic, Nano 1G-7G, iPod Video/Photo/Color, etc.
+
+**El iPod touch (y el "iPod Mobile" de los Motorola ROKR/SLVR/RAZR) NO está
+soportado, y no está planeado como extensión incremental.** No hay
+identificación de dispositivo, sync, artwork ni ningún otro punto de
+integración para esa familia. Es un dispositivo con SO propio (iOS) que
+sincroniza por un protocolo distinto al de los iPods de esta lista — muy
+probablemente sin el par FireWireGUID/HASHAB en el que se apoya toda la
+identificación y firma de Cicada hoy. Soportarlo sería un proyecto aparte,
+no una generalización del código existente. Detalle técnico en
+[`docs/IPOD_INTEGRATION.md`](docs/IPOD_INTEGRATION.md) y la decisión
+registrada (Etapa 4f-3) en [`docs/VENDORED.md`](docs/VENDORED.md).
+
 ---
 
 ## 📁 Estructura del Proyecto

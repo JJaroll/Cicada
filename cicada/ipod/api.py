@@ -44,7 +44,15 @@ from cicada.ipod.db.coordinator.plan import (
 )
 from cicada.ipod.db.parser import load_ipod_library
 from cicada.ipod.db.models import TrackInfo
-from cicada.ipod.db.shared.constants import MEDIA_TYPE_AUDIOBOOK, MEDIA_TYPE_PODCAST
+from cicada.ipod.db.shared.constants import (
+    MEDIA_TYPE_AUDIOBOOK,
+    MEDIA_TYPE_MUSIC_VIDEO,
+    MEDIA_TYPE_PODCAST,
+    MEDIA_TYPE_TV_SHOW,
+    MEDIA_TYPE_TV_SHOW_ALT,
+    MEDIA_TYPE_VIDEO,
+    MEDIA_TYPE_VIDEO_PODCAST,
+)
 from cicada.ipod.db.coordinator.media import (
     preserve_existing_playlists,
     remove_track_from_ipod,
@@ -146,6 +154,57 @@ class TracksResponse(BaseModel):
     guid: Optional[str] = None
     tracks_count: int
     tracks: List[TrackSchema] = []
+
+
+class PodcastEpisodeSchema(BaseModel):
+    title: str
+    date_added: Optional[int] = None  # unix ts; sin formatear, igual que TrackSchema
+    duration_ms: Optional[int] = None
+    file_size: Optional[int] = None
+
+
+class PodcastSchema(BaseModel):
+    id: str
+    name: str
+    episodes: List[PodcastEpisodeSchema] = []
+
+
+class PodcastsResponse(BaseModel):
+    podcasts: List[PodcastSchema] = []
+    count: int
+
+
+class AudiobookChapterSchema(BaseModel):
+    title: str
+    duration_ms: Optional[int] = None
+
+
+class AudiobookSchema(BaseModel):
+    id: str
+    title: str
+    author: Optional[str] = None
+    chapters: List[AudiobookChapterSchema] = []
+
+
+class AudiobooksResponse(BaseModel):
+    audiobooks: List[AudiobookSchema] = []
+    count: int
+
+
+class VideoSchema(BaseModel):
+    id: str  # str(db_track_id) — mismo motivo que TrackSchema.db_track_id
+    title: str
+    kind: str  # "movie" | "tv_show" | "music_video", derivado de media_type
+    duration_ms: Optional[int] = None
+    size_bytes: Optional[int] = None
+    show_name: Optional[str] = None
+    season_number: Optional[int] = None
+    episode_number: Optional[int] = None
+
+
+class VideosResponse(BaseModel):
+    videos: List[VideoSchema] = []
+    count: int
 
 
 class PlanRequest(BaseModel):
@@ -269,6 +328,66 @@ def _track_dict_to_schema(d: dict) -> TrackSchema:
         location=d.get("Location") or d.get("location") or "",
         db_track_id=str(d.get("db_track_id") or d.get("dbid") or "") or None,
     )
+
+
+def _load_current_library(mount: Path) -> Optional[dict]:
+    """Carga la biblioteca actual del iPod (iTunesCDB/iTunesDB), o ``None``
+    si el dispositivo todavía no tiene una base escrita."""
+    itunes_dir = mount / "iPod_Control" / "iTunes"
+    cdb_file = itunes_dir / "iTunesCDB"
+    db_file = itunes_dir / "iTunesDB"
+    target_file = cdb_file if cdb_file.is_file() else db_file
+    if not target_file.is_file():
+        return None
+    return load_ipod_library(str(target_file), mount=str(mount)) or None
+
+
+def _slugify(name: str) -> str:
+    import re
+    s = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-")
+    return s or "sin-titulo"
+
+
+def _group_tracks_by(tracks: List[dict], media_types: int | frozenset[int]) -> Dict[str, List[dict]]:
+    """Agrupa pistas de uno o más ``media_type`` por Album (nombre del
+    programa/libro), con fallback a Artist y luego a un cajón único si
+    ninguno está presente."""
+    wanted = {media_types} if isinstance(media_types, int) else media_types
+    groups: Dict[str, List[dict]] = {}
+    for t in tracks:
+        if t.get("media_type") not in wanted:
+            continue
+        name = (t.get("Album") or t.get("Artist") or "").strip() or "Sin título"
+        groups.setdefault(name, []).append(t)
+    return groups
+
+
+_VIDEO_MEDIA_TYPES = frozenset({
+    MEDIA_TYPE_VIDEO, MEDIA_TYPE_MUSIC_VIDEO, MEDIA_TYPE_TV_SHOW, MEDIA_TYPE_TV_SHOW_ALT,
+})
+
+_VIDEO_KIND_LABELS = {
+    MEDIA_TYPE_VIDEO: "movie",
+    MEDIA_TYPE_MUSIC_VIDEO: "music_video",
+    MEDIA_TYPE_TV_SHOW: "tv_show",
+    MEDIA_TYPE_TV_SHOW_ALT: "tv_show",
+}
+
+
+def _video_kind_label(media_type: int) -> str:
+    return _VIDEO_KIND_LABELS.get(media_type, "movie")
+
+
+def _chapter_durations_ms(chapters: List[dict], track_length_ms: int) -> List[int]:
+    """Duración de cada capítulo a partir de los ``startpos`` consecutivos
+    (chapter_data solo trae posición de inicio, no duración) — el último
+    capítulo dura hasta el final de la pista."""
+    durations = []
+    for i, ch in enumerate(chapters):
+        start = ch.get("startpos", 0)
+        end = chapters[i + 1].get("startpos", start) if i + 1 < len(chapters) else track_length_ms
+        durations.append(max(0, end - start))
+    return durations
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -454,15 +573,7 @@ def get_ipod_tracks() -> TracksResponse:
             detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"},
         ) from exc
 
-    itunes_dir = mount / "iPod_Control" / "iTunes"
-    cdb_file = itunes_dir / "iTunesCDB"
-    db_file = itunes_dir / "iTunesDB"
-    target_file = cdb_file if cdb_file.is_file() else db_file
-
-    if not target_file.is_file():
-        return TracksResponse(guid=None, tracks_count=0, tracks=[])
-
-    lib = load_ipod_library(str(target_file), mount=str(mount))
+    lib = _load_current_library(mount)
     if not lib:
         return TracksResponse(guid=None, tracks_count=0, tracks=[])
 
@@ -841,31 +952,189 @@ def delete_photo(photo_id: str) -> Dict[str, Any]:
     )
 
 
-@router.get("/videos")
-def get_videos() -> Dict[str, Any]:
-    """Lista los videos del iPod. Fase 6 (fotos/video) no implementada: lista vacía."""
-    return {"videos": [], "count": 0}
+@router.get("/videos", response_model=VideosResponse)
+def get_videos() -> VideosResponse:
+    """Lista los videos (películas, series, videoclips) YA PRESENTES en el
+    iPod — lista plana, sin agrupar (así la consume el frontend hoy).
+    ``video_podcast`` no se incluye: ver ``/podcasts``."""
+    try:
+        mount = resolve_mount()
+    except MountNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"},
+        ) from exc
+    except WriteGuardError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"},
+        ) from exc
+
+    lib = _load_current_library(mount)
+    if not lib:
+        return VideosResponse(videos=[], count=0)
+
+    videos = [
+        VideoSchema(
+            id=str(t.get("db_track_id") or ""),
+            title=t.get("Title") or "",
+            kind=_video_kind_label(t.get("media_type")),
+            duration_ms=t.get("length") or None,
+            size_bytes=t.get("size") or None,
+            show_name=t.get("Show") or None,
+            season_number=t.get("season_number") or None,
+            episode_number=t.get("episode_number") or None,
+        )
+        for t in lib.get("mhlt", [])
+        if t.get("media_type") in _VIDEO_MEDIA_TYPES
+    ]
+    return VideosResponse(videos=videos, count=len(videos))
 
 
-@router.delete("/videos/{video_id}")
-def delete_video(video_id: str) -> Dict[str, Any]:
-    """Eliminar un video del iPod. Fase 6 no implementada."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail={"error": "La gestión de videos del iPod aún no está disponible.", "code": "NOT_IMPLEMENTED"},
-    )
+@router.delete("/videos/{video_id}", response_model=ApplyResponse)
+def delete_video(video_id: str) -> ApplyResponse:
+    """Elimina un video del iPod (base + archivo). Sin caso especial: es la
+    misma pista genérica que ``POST /track/remove`` ya borra para
+    cualquier media_type — este endpoint solo traduce el ``id`` de la URL."""
+    try:
+        mount = resolve_mount()
+        dev = read_device_info(mount)
+        res = remove_track_from_ipod(mount, video_id, device_info=dev, consent_ack=False)
+        return ApplyResponse(
+            success=res.success,
+            backup_path=str(res.backup_path) if res.backup_path else None,
+            restored_from_backup=res.restored_from_backup,
+            first_write_committed=res.first_write_committed,
+            tracks_written=res.tracks_written,
+            error=res.error,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": str(exc), "code": "TRACK_NOT_FOUND"},
+        ) from exc
+    except ConsentRequiredError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"error": str(exc), "code": "CONSENT_REQUIRED"},
+        ) from exc
+    except UnsafeDeviceError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": str(exc), "code": "UNSAFE_DEVICE"},
+        ) from exc
+    except MountNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"},
+        ) from exc
+    except WriteGuardError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"},
+        ) from exc
 
 
-@router.get("/podcasts")
-def get_podcasts() -> Dict[str, Any]:
-    """Lista los programas y episodios de podcast en el iPod."""
-    return {"podcasts": [], "count": 0}
+@router.get("/podcasts", response_model=PodcastsResponse)
+def get_podcasts() -> PodcastsResponse:
+    """Lista los podcasts YA PRESENTES en el iPod, agrupados por programa
+    (Album, con fallback a Artist). Solo lectura de lo que hay en el
+    dispositivo — Cicada no gestiona feeds RSS ni suscripciones (ver
+    docs/VENDORED.md Paquete 8). Incluye ``video_podcast`` (cerrado en Fase
+    6a) junto con podcasts de audio — son episodios del mismo programa
+    conceptualmente, no pertenecen a ``/videos``."""
+    try:
+        mount = resolve_mount()
+    except MountNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"},
+        ) from exc
+    except WriteGuardError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"},
+        ) from exc
+
+    lib = _load_current_library(mount)
+    if not lib:
+        return PodcastsResponse(podcasts=[], count=0)
+
+    groups = _group_tracks_by(lib.get("mhlt", []), frozenset({MEDIA_TYPE_PODCAST, MEDIA_TYPE_VIDEO_PODCAST}))
+    podcasts = [
+        PodcastSchema(
+            id=_slugify(name),
+            name=name,
+            episodes=[
+                PodcastEpisodeSchema(
+                    title=t.get("Title") or "",
+                    date_added=t.get("date_added") or None,
+                    duration_ms=t.get("length") or None,
+                    file_size=t.get("size") or None,
+                )
+                for t in tracks
+            ],
+        )
+        for name, tracks in sorted(groups.items())
+    ]
+    return PodcastsResponse(podcasts=podcasts, count=len(podcasts))
 
 
-@router.get("/audiobooks")
-def get_audiobooks() -> Dict[str, Any]:
-    """Lista los audiolibros en el iPod."""
-    return {"audiobooks": [], "count": 0}
+@router.get("/audiobooks", response_model=AudiobooksResponse)
+def get_audiobooks() -> AudiobooksResponse:
+    """Lista los audiolibros YA PRESENTES en el iPod, agrupados por título
+    (Album, con fallback a Artist). Un audiolibro puede existir de dos
+    formas reales en un iTunesDB, y ambas se soportan:
+      - Un solo archivo con capítulos embebidos (MHOD 17, chapter_data) —
+        el camino que produce Cicada hoy (Fase 5b).
+      - Varias pistas bajo el mismo Album, cada una una parte/capítulo —
+        el formato que usan iTunes/iOpenPod para audiolibros multi-pista.
+        Si el grupo tiene más de una pista, cada pista ES un capítulo
+        (ordenadas por track_number); chapter_data embebido se ignora en
+        ese caso (no debería coexistir con el split multi-pista)."""
+    try:
+        mount = resolve_mount()
+    except MountNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"},
+        ) from exc
+    except WriteGuardError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"},
+        ) from exc
+
+    lib = _load_current_library(mount)
+    if not lib:
+        return AudiobooksResponse(audiobooks=[], count=0)
+
+    groups = _group_tracks_by(lib.get("mhlt", []), MEDIA_TYPE_AUDIOBOOK)
+    audiobooks = []
+    for name, tracks in sorted(groups.items()):
+        author = tracks[0].get("Artist") or None
+        if len(tracks) > 1:
+            ordered = sorted(tracks, key=lambda t: t.get("track_number") or 0)
+            chapters = [
+                AudiobookChapterSchema(title=t.get("Title") or "", duration_ms=t.get("length") or None)
+                for t in ordered
+            ]
+        else:
+            track = tracks[0]
+            raw_chapters = ((track.get("chapter_data") or {}).get("chapters")) or []
+            if raw_chapters:
+                durations = _chapter_durations_ms(raw_chapters, track.get("length") or 0)
+                chapters = [
+                    AudiobookChapterSchema(title=ch.get("title") or "", duration_ms=dur)
+                    for ch, dur in zip(raw_chapters, durations)
+                ]
+            else:
+                chapters = [AudiobookChapterSchema(
+                    title=track.get("Title") or "", duration_ms=track.get("length") or None,
+                )]
+        audiobooks.append(AudiobookSchema(id=_slugify(name), title=name, author=author, chapters=chapters))
+
+    return AudiobooksResponse(audiobooks=audiobooks, count=len(audiobooks))
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -883,13 +1152,19 @@ class MediaTrackInput(BaseModel):
     track_number: Optional[int] = None
     length_ms: Optional[int] = None
     filetype: Optional[str] = None
-    # Fase 5: variante de medio. "music" no cambia el comportamiento previo.
-    # "podcast"/"audiobook" solo setean media_type y las flags de reproducción
-    # asociadas (skip_when_shuffling, remember_position) — mismo camino de
+    # Fase 5/6: variante de medio. "music" no cambia el comportamiento previo.
+    # El resto solo setea media_type y las flags asociadas — mismo camino de
     # escritura que música, sin chunk binario nuevo (ver docs/IPOD_INTEGRATION.md
-    # Fase 5). video_podcast excluido: requiere el pipeline de video de Fase 6.
-    kind: Literal["music", "podcast", "audiobook"] = "music"
+    # Fase 5/6). "movie"/"tv_show"/"music_video"/"video_podcast" no
+    # transcodifican: el archivo ya debe ser un H.264 compatible con el iPod.
+    kind: Literal[
+        "music", "podcast", "audiobook",
+        "movie", "tv_show", "music_video", "video_podcast",
+    ] = "music"
     category: Optional[str] = None
+    season_number: Optional[int] = None
+    episode_number: Optional[int] = None
+    show_name: Optional[str] = None
 
 
 class MediaPlaylistInput(BaseModel):
@@ -939,6 +1214,9 @@ def sync_media(req: MediaSyncRequest) -> ApplyResponse:
                 length=t.length_ms or 0,
                 filetype=(t.filetype or src.suffix.lstrip(".")).lower(),
                 category=t.category,
+                season_number=t.season_number or 0,
+                episode_number=t.episode_number or 0,
+                show_name=t.show_name,
             )
             if t.kind == "podcast":
                 ti.media_type = MEDIA_TYPE_PODCAST
@@ -947,6 +1225,21 @@ def sync_media(req: MediaSyncRequest) -> ApplyResponse:
                 ti.remember_position = True
             elif t.kind == "audiobook":
                 ti.media_type = MEDIA_TYPE_AUDIOBOOK
+                ti.skip_when_shuffling = True
+                ti.remember_position = True
+            elif t.kind == "movie":
+                ti.media_type = MEDIA_TYPE_VIDEO
+                # movie_file_flag: no hace falta setearlo — write_mhit()
+                # ya lo deriva de media_type vía _resolve_movie_flag()
+                # cuando el campo explícito queda en 0 (infra genérica de
+                # Fase 2, confirmado leyendo mhit_writer.py).
+            elif t.kind == "tv_show":
+                ti.media_type = MEDIA_TYPE_TV_SHOW
+            elif t.kind == "music_video":
+                ti.media_type = MEDIA_TYPE_MUSIC_VIDEO
+            elif t.kind == "video_podcast":
+                ti.media_type = MEDIA_TYPE_VIDEO_PODCAST
+                ti.podcast_flag = 1
                 ti.skip_when_shuffling = True
                 ti.remember_position = True
             ti.source_path = str(src)

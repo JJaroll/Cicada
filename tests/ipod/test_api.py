@@ -25,6 +25,7 @@ from cicada.ipod.device.device_info import DeviceInfo
 
 GUID_STR = "000A27002484DDFB"
 ART_MP3 = Path(__file__).resolve().parents[1] / "fixtures" / "audio" / "with_art.mp3"
+ART_M4A = Path(__file__).resolve().parents[1] / "fixtures" / "audio" / "with_art.m4a"
 
 
 @pytest.fixture
@@ -615,9 +616,10 @@ async def test_api_playlist_writes_no_implementadas(async_client: httpx.AsyncCli
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path", ["/api/ipod/photos/p1", "/api/ipod/videos/v1"])
-async def test_api_delete_media_no_implementado(async_client: httpx.AsyncClient, path):
-    resp = await async_client.delete(path)
+async def test_api_delete_photo_no_implementado(async_client: httpx.AsyncClient):
+    """Fotos sigue diferida (Fase 6, ver docs/VENDORED.md Paquete 9) — videos
+    ya es real, ver test_api_video_delete_* más abajo."""
+    resp = await async_client.delete("/api/ipod/photos/p1")
     assert resp.status_code == 501
     assert resp.json()["detail"]["code"] == "NOT_IMPLEMENTED"
 
@@ -625,15 +627,28 @@ async def test_api_delete_media_no_implementado(async_client: httpx.AsyncClient,
 @pytest.mark.asyncio
 @pytest.mark.parametrize("path,key", [
     ("/api/ipod/photos", "photos"),
-    ("/api/ipod/videos", "videos"),
-    ("/api/ipod/podcasts", "podcasts"),
-    ("/api/ipod/audiobooks", "audiobooks"),
 ])
 async def test_api_media_placeholders_vacios(async_client: httpx.AsyncClient, path, key):
+    """Fotos sigue diferida (Fase 6, ver docs/VENDORED.md Paquete 9) —
+    placeholder honesto sin tocar el dispositivo. podcasts/audiobooks/
+    videos ya son reales (test_api_podcasts_* / test_api_audiobooks_* /
+    test_api_video_* más abajo)."""
     resp = await async_client.get(path)
     assert resp.status_code == 200
     data = resp.json()
     assert data[key] == [] and data["count"] == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["/api/ipod/podcasts", "/api/ipod/audiobooks", "/api/ipod/videos"])
+async def test_api_podcasts_audiobooks_videos_sin_dispositivo_404(async_client: httpx.AsyncClient, monkeypatch, path):
+    """Fase 5c/6c: a diferencia del placeholder anterior (siempre 200), ahora
+    leen el dispositivo real — mismo comportamiento que /tracks si no hay
+    ninguno montado."""
+    monkeypatch.setattr("cicada.ipod.device.write_guard._candidate_mounts", lambda: [])
+    resp = await async_client.get(path)
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["code"] == "MOUNT_NOT_FOUND"
 
 
 @pytest.mark.asyncio
@@ -754,6 +769,190 @@ async def test_api_media_sync_kind_escribe_media_type_y_flags_reales(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("kind,expected_media_type,expect_podcast_flags", [
+    ("movie", 0x02, False),
+    ("tv_show", 0x40, False),
+    ("music_video", 0x20, False),
+    ("video_podcast", 0x06, True),
+])
+async def test_api_media_sync_kind_video_escribe_media_type_y_flags_reales(
+    async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path,
+    kind, expected_media_type, expect_podcast_flags,
+):
+    """Fase 6a: mismo rigor que 5a — round-trip real parseando el iTunesCDB
+    escrito en disco, no la respuesta HTTP."""
+    src = tmp_path / f"{kind}.m4v"
+    src.write_bytes(b"VIDEO-BYTES" * 50)
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [{"source_path": str(src), "title": f"Un {kind}", "kind": kind}],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["success"] is True
+
+    lib = load_ipod_library(
+        str(mock_ipod / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mock_ipod),
+    )
+    track = next(t for t in lib["mhlt"] if t.get("Title") == f"Un {kind}")
+    assert track.get("media_type") == expected_media_type
+    assert track.get("movie_flag") == 1
+    if expect_podcast_flags:
+        assert track.get("use_podcast_now_playing_flag") == 1
+        assert track.get("skip_when_shuffling") == 1
+        assert track.get("remember_position") == 1
+    else:
+        assert track.get("use_podcast_now_playing_flag", 0) == 0
+        assert track.get("skip_when_shuffling", 0) == 0
+        assert track.get("remember_position", 0) == 0
+
+
+@pytest.mark.asyncio
+async def test_api_media_sync_tv_show_escribe_season_episode_show_name(
+    async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path,
+):
+    src = tmp_path / "episodio.m4v"
+    src.write_bytes(b"VIDEO-BYTES" * 50)
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [{
+            "source_path": str(src), "title": "Piloto", "kind": "tv_show",
+            "show_name": "Mi Serie", "season_number": 1, "episode_number": 3,
+        }],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["success"] is True
+
+    lib = load_ipod_library(
+        str(mock_ipod / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mock_ipod),
+    )
+    track = next(t for t in lib["mhlt"] if t.get("Title") == "Piloto")
+    assert track.get("media_type") == 0x40
+    assert track.get("season_number") == 1
+    assert track.get("episode_number") == 3
+    assert track.get("Show") == "Mi Serie"
+
+
+@pytest.mark.asyncio
+async def test_api_media_sync_video_reusa_pipeline_de_artwork_existente(
+    async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path,
+):
+    """Fase 6b: verificar (no construir) que un video con carátula embebida
+    (covr atom, mismo contenedor MP4 que .m4a) reutiliza el pipeline de
+    artwork de Fase 4a-4d sin ningún cambio de código — create_plan() no
+    filtra por media_type al resolver fuentes de arte."""
+    import shutil
+    src = tmp_path / "pelicula.m4v"
+    shutil.copyfile(ART_M4A, src)
+
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [{"source_path": str(src), "title": "Con Arte De Video", "kind": "movie"}],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    data = resp.json()
+    assert data["success"] is True
+    assert data["artwork_touched"] is True
+    assert data["artwork_tracks_count"] == 1
+
+    from cicada.ipod.db.artwork.chunks import read_artworkdb
+    artworkdb_bytes = (mock_ipod / "iPod_Control" / "Artwork" / "ArtworkDB").read_bytes()
+    entries = read_artworkdb(artworkdb_bytes)
+    assert len(entries) == 1
+
+
+@pytest.mark.asyncio
+async def test_api_videos_lista_plana_con_metadata_de_serie(async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path):
+    """Fase 6c: /videos debe reflejar una biblioteca REAL escrita por
+    apply() (no un fixture a mano) — película + episodio de serie, en
+    lista plana (sin agrupar, así lo consume el frontend)."""
+    movie = tmp_path / "pelicula.m4v"
+    movie.write_bytes(b"VIDEO" * 40)
+    episode = tmp_path / "episodio.m4v"
+    episode.write_bytes(b"VIDEO" * 40)
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [
+            {"source_path": str(movie), "title": "Una Pelicula", "kind": "movie", "length_ms": 5400000},
+            {"source_path": str(episode), "title": "Piloto", "kind": "tv_show",
+             "show_name": "Mi Serie", "season_number": 1, "episode_number": 1, "length_ms": 1500000},
+        ],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["success"] is True
+
+    resp = await async_client.get("/api/ipod/videos")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] == 2
+    by_title = {v["title"]: v for v in data["videos"]}
+    assert by_title["Una Pelicula"]["kind"] == "movie"
+    assert by_title["Una Pelicula"]["duration_ms"] == 5400000
+    assert by_title["Piloto"]["kind"] == "tv_show"
+    assert by_title["Piloto"]["show_name"] == "Mi Serie"
+    assert by_title["Piloto"]["season_number"] == 1
+    assert by_title["Piloto"]["episode_number"] == 1
+
+
+@pytest.mark.asyncio
+async def test_api_videos_no_incluye_video_podcast(async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path):
+    """video_podcast pertenece a /podcasts, no a /videos — evita que la
+    misma pista aparezca duplicada en dos categorías del frontend."""
+    src = tmp_path / "episodio_video.m4v"
+    src.write_bytes(b"VIDEO" * 40)
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [{"source_path": str(src), "title": "Episodio En Video",
+                    "album": "Mi Video Podcast", "kind": "video_podcast"}],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["success"] is True
+
+    resp = await async_client.get("/api/ipod/videos")
+    assert resp.json() == {"videos": [], "count": 0}
+
+    resp = await async_client.get("/api/ipod/podcasts")
+    data = resp.json()
+    assert data["count"] == 1
+    assert data["podcasts"][0]["name"] == "Mi Video Podcast"
+    assert data["podcasts"][0]["episodes"][0]["title"] == "Episodio En Video"
+
+
+@pytest.mark.asyncio
+async def test_api_video_delete_real_borra_pista_y_audio(async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path):
+    """Fase 6c: DELETE /videos/{id} debe borrar de verdad (base + audio),
+    no un mock local — mismo mecanismo genérico que POST /track/remove
+    (Fase 3), aquí solo se traduce el id de la URL."""
+    src = tmp_path / "para_borrar.m4v"
+    src.write_bytes(b"VIDEO" * 40)
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [{"source_path": str(src), "title": "Para Borrar", "kind": "movie"}],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["success"] is True
+
+    resp = await async_client.get("/api/ipod/videos")
+    video_id = resp.json()["videos"][0]["id"]
+
+    resp = await async_client.delete(f"/api/ipod/videos/{video_id}")
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["success"] is True
+
+    lib = load_ipod_library(
+        str(mock_ipod / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mock_ipod),
+    )
+    assert "Para Borrar" not in {t.get("Title") for t in lib["mhlt"]}
+    assert not list((mock_ipod / "iPod_Control" / "Music").rglob("*.m4v"))
+
+
+@pytest.mark.asyncio
+async def test_api_video_delete_inexistente_404(async_client: httpx.AsyncClient, mock_ipod: Path):
+    resp = await async_client.delete("/api/ipod/videos/999999999")
+    assert resp.status_code == 404
+    assert resp.json()["detail"]["code"] == "TRACK_NOT_FOUND"
+
+
+@pytest.mark.asyncio
 async def test_api_media_sync_kind_music_no_cambia_comportamiento_previo(
     async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path,
 ):
@@ -777,6 +976,118 @@ async def test_api_media_sync_kind_music_no_cambia_comportamiento_previo(
     assert track.get("skip_when_shuffling", 0) == 0
     assert track.get("remember_position", 0) == 0
     assert track.get("use_podcast_now_playing_flag", 0) == 0
+
+
+def _build_nero_chpl_m4b(path: Path, chapters: list[tuple[int, str]]) -> None:
+    import struct
+    body = bytes([0]) + bytes(4) + bytes([len(chapters)])
+    for start_ms, title in chapters:
+        title_bytes = title.encode("utf-8")
+        body += struct.pack(">Q", start_ms * 10_000) + bytes([len(title_bytes)]) + title_bytes
+    def atom(fourcc: bytes, b: bytes) -> bytes:
+        return struct.pack(">I", 8 + len(b)) + fourcc + b
+    path.write_bytes(atom(b"moov", atom(b"udta", atom(b"chpl", body))))
+
+
+@pytest.mark.asyncio
+async def test_api_podcasts_agrupa_episodios_por_programa(async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path):
+    """Fase 5c: /podcasts debe reflejar una biblioteca REAL escrita por
+    apply() a través del pipeline completo (/media/sync), no un fixture
+    armado a mano — dos episodios del mismo programa (mismo Album) deben
+    agruparse juntos."""
+    ep1 = tmp_path / "ep1.mp3"
+    ep1.write_bytes(b"AUDIO" * 40)
+    ep2 = tmp_path / "ep2.mp3"
+    ep2.write_bytes(b"AUDIO" * 40)
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [
+            {"source_path": str(ep1), "title": "Episodio 1", "album": "Radio Ambulante", "kind": "podcast"},
+            {"source_path": str(ep2), "title": "Episodio 2", "album": "Radio Ambulante", "kind": "podcast"},
+        ],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["success"] is True
+
+    resp = await async_client.get("/api/ipod/podcasts")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] == 1
+    pod = data["podcasts"][0]
+    assert pod["name"] == "Radio Ambulante"
+    assert {ep["title"] for ep in pod["episodes"]} == {"Episodio 1", "Episodio 2"}
+
+
+@pytest.mark.asyncio
+async def test_api_podcasts_no_incluye_musica_normal(async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path):
+    src = tmp_path / "cancion.mp3"
+    src.write_bytes(b"AUDIO" * 40)
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [{"source_path": str(src), "title": "Una Cancion"}],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    resp = await async_client.get("/api/ipod/podcasts")
+    assert resp.json() == {"podcasts": [], "count": 0}
+
+
+@pytest.mark.asyncio
+async def test_api_audiobooks_expande_capitulos_embebidos_de_una_pista(async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path):
+    """Audiolibro de un solo archivo (.m4b) con capítulos Nero embebidos:
+    /audiobooks debe expandir chapter_data, calculando la duración de cada
+    capítulo a partir de los startpos consecutivos (chapter_data no trae
+    duración explícita)."""
+    src = tmp_path / "libro.m4b"
+    _build_nero_chpl_m4b(src, [(0, "Capitulo 1"), (60000, "Capitulo 2"), (100000, "Capitulo 3")])
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [{
+            "source_path": str(src), "title": "Un Libro", "artist": "Un Autor",
+            "album": "Un Libro", "kind": "audiobook", "length_ms": 150000,
+        }],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["success"] is True
+
+    resp = await async_client.get("/api/ipod/audiobooks")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["count"] == 1
+    ab = data["audiobooks"][0]
+    assert ab["title"] == "Un Libro"
+    assert ab["author"] == "Un Autor"
+    assert [(c["title"], c["duration_ms"]) for c in ab["chapters"]] == [
+        ("Capitulo 1", 60000), ("Capitulo 2", 40000), ("Capitulo 3", 50000),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_api_audiobooks_multi_pista_usa_cada_pista_como_capitulo(async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path):
+    """Formato alterno real (iTunes/iOpenPod): un audiolibro partido en
+    varias pistas del mismo Album, sin chapter_data embebido — cada pista
+    ES un capítulo, ordenadas por track_number."""
+    part2 = tmp_path / "parte2.mp3"
+    part2.write_bytes(b"AUDIO" * 40)
+    part1 = tmp_path / "parte1.mp3"
+    part1.write_bytes(b"AUDIO" * 40)
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [
+            {"source_path": str(part2), "title": "Parte 2", "album": "Multi Libro",
+             "artist": "Autor", "kind": "audiobook", "track_number": 2, "length_ms": 30000},
+            {"source_path": str(part1), "title": "Parte 1", "album": "Multi Libro",
+             "artist": "Autor", "kind": "audiobook", "track_number": 1, "length_ms": 20000},
+        ],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["success"] is True
+
+    resp = await async_client.get("/api/ipod/audiobooks")
+    data = resp.json()
+    ab = next(a for a in data["audiobooks"] if a["title"] == "Multi Libro")
+    assert [(c["title"], c["duration_ms"]) for c in ab["chapters"]] == [
+        ("Parte 1", 20000), ("Parte 2", 30000),
+    ]
 
 
 @pytest.mark.asyncio

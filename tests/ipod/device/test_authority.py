@@ -4,7 +4,7 @@ Todo con tmp_path: un árbol de iPod simulado + ~/.cicada redirigido por
 CICADA_HOME. Sin dispositivo real. Se verifica: indexado por GUID (no por
 montaje), carpeta ofuscada con sha256(guid)[:16], cero escrituras al volumen,
 round-trip de procedencia con SOURCE_RANK, detección de manipulación, que el
-iOpenPodSysInfoAuthority ajeno se ignore, y clean_foreign_authority.
+iOpenPodSysInfoAuthority ajeno se ignore, y clean_foreign_artifacts.
 """
 import hashlib
 import json
@@ -20,7 +20,7 @@ from cicada.ipod.device.authority import (
     SOURCE_RANK,
     cache_sysinfo_extended,
     check_authority_coverage,
-    clean_foreign_authority,
+    clean_foreign_artifacts,
     read_authority,
     update_sysinfo,
 )
@@ -192,13 +192,13 @@ def test_read_authority_ignora_el_ajeno(tmp_path, _cicada_home):
 
 
 # --------------------------------------------------------------------------- #
-# clean_foreign_authority
+# clean_foreign_artifacts
 # --------------------------------------------------------------------------- #
 def test_clean_foreign_elimina_el_ajeno(tmp_path, _cicada_home):
     mount = _make_ipod(tmp_path, foreign=True)
     foreign = mount / "iPod_Control" / "Device" / FOREIGN_AUTHORITY_FILENAME
     assert foreign.exists()
-    removed = clean_foreign_authority(str(mount))
+    removed = clean_foreign_artifacts(str(mount))
     assert removed == [f"iPod_Control/Device/{FOREIGN_AUTHORITY_FILENAME}"]
     assert not foreign.exists()
     # El resto de Device/ intacto.
@@ -207,7 +207,7 @@ def test_clean_foreign_elimina_el_ajeno(tmp_path, _cicada_home):
 
 def test_clean_foreign_sin_archivo_devuelve_lista_vacia(tmp_path, _cicada_home):
     mount = _make_ipod(tmp_path, foreign=False)
-    assert clean_foreign_authority(str(mount)) == []
+    assert clean_foreign_artifacts(str(mount)) == []
 
 
 def test_clean_foreign_mount_desaparecido(tmp_path, _cicada_home):
@@ -216,7 +216,7 @@ def test_clean_foreign_mount_desaparecido(tmp_path, _cicada_home):
     mount = _make_ipod(tmp_path, foreign=True)
     shutil.rmtree(mount)
     with pytest.raises(MountNotFoundError):
-        clean_foreign_authority(str(mount))
+        clean_foreign_artifacts(str(mount))
 
 
 def test_clean_foreign_elimina_los_backup_ajenos(tmp_path, _cicada_home):
@@ -226,7 +226,7 @@ def test_clean_foreign_elimina_los_backup_ajenos(tmp_path, _cicada_home):
     for rel in FOREIGN_BACKUP_RELPATHS:
         assert (mount / rel).exists()
 
-    removed = clean_foreign_authority(str(mount))
+    removed = clean_foreign_artifacts(str(mount))
 
     assert set(removed) == set(FOREIGN_BACKUP_RELPATHS)
     for rel in FOREIGN_BACKUP_RELPATHS:
@@ -238,7 +238,7 @@ def test_clean_foreign_elimina_autoridad_y_backups_juntos(tmp_path, _cicada_home
     a la vez, ambas se limpian, y la lista devuelta las nombra todas."""
     mount = _make_ipod(tmp_path, foreign=True, foreign_backups=True)
 
-    removed = clean_foreign_authority(str(mount))
+    removed = clean_foreign_artifacts(str(mount))
 
     expected = {f"iPod_Control/Device/{FOREIGN_AUTHORITY_FILENAME}", *FOREIGN_BACKUP_RELPATHS}
     assert set(removed) == expected
@@ -256,7 +256,7 @@ def test_clean_foreign_no_toca_archivos_legitimos_homonimos_fuera_de_ruta(tmp_pa
     decoy = mount / "iPod_Control" / "iTunes" / "Library.itdb.backup.txt"
     decoy.write_text("no es el archivo ajeno real")
 
-    removed = clean_foreign_authority(str(mount))
+    removed = clean_foreign_artifacts(str(mount))
 
     assert removed == []
     assert decoy.exists()

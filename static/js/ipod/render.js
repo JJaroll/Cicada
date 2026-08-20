@@ -18,6 +18,11 @@ function _formatMs(ms) {
     return m + ":" + (s < 10 ? "0" : "") + s;
 }
 
+function _formatDateAdded(unixSeconds) {
+    if (!unixSeconds) return "";
+    return new Date(unixSeconds * 1000).toLocaleDateString();
+}
+
 function _formatBytes(b) {
     if (!b || b <= 0) return "0 B";
     if (b >= 1073741824) return (b / 1073741824).toFixed(1) + " GB";
@@ -176,7 +181,7 @@ function ipodVideoCardHtml(vid, idx) {
             </div>
             <div class="flex flex-col gap-0.5">
                 <span class="font-data-sm text-[12px] text-main truncate font-medium">${_escapeHtmlIpod(vid.title || `Video #${idx + 1}`)}</span>
-                <span class="font-data-sm text-[10px] text-muted/60">${vid.resolution || _formatBytes(vid.size)}</span>
+                <span class="font-data-sm text-[10px] text-muted/60">${vid.resolution || _formatBytes(vid.size_bytes)}</span>
             </div>
         </div>
     `;
@@ -201,7 +206,7 @@ function ipodEpisodeRowHtml(ep, i) {
                 <span class="font-data-sm text-[12px] text-muted/40 w-6 text-right">${i + 1}</span>
                 <div class="flex-1 min-w-0">
                     <div class="font-data-sm text-[13px] text-main truncate font-medium">${_escapeHtmlIpod(ep.title)}</div>
-                    <div class="font-data-sm text-[11px] text-muted/60 truncate">${ep.date || ""}</div>
+                    <div class="font-data-sm text-[11px] text-muted/60 truncate">${_formatDateAdded(ep.date_added)}</div>
                 </div>
                 <span class="font-data-sm text-[11px] text-muted/50">${_formatMs(ep.duration_ms)}</span>
             </div>

@@ -98,7 +98,7 @@ que cumple la interfaz que espera `info.py` (`read_authority`,
   el GUID real vive dentro del `authority.json`.
 - Las tablas de ranking/procedencia (`_SOURCE_ORDER`, `SYSINFO_FIELDS`) y la
   semántica derivan de iOpenPod (MIT) — atribución en NOTICE.
-- Añadida `clean_foreign_authority(ipod_path)` (vía `write_guard`), expuesta como
+- Añadida `clean_foreign_artifacts(ipod_path)` (vía `write_guard`), expuesta como
   `cicada ipod clean-foreign`: elimina el `iOpenPodSysInfoAuthority` ajeno del
   dispositivo.
 
@@ -109,7 +109,7 @@ dispositivo completo de nuevo. Detalle y comparación byte a byte del `mhbd`/SQL
 (idénticos entre Cicada e iOpenPod salvo 4 IDs aleatorios esperados) en
 `docs/IPOD_INTEGRATION.md` §0.3.
 
-**`clean_foreign_authority()` extendida para cubrir también los `.backup` ajenos
+**`clean_foreign_artifacts()` extendida para cubrir también los `.backup` ajenos
 (2026-08-19).** Ya no limpia solo `iOpenPodSysInfoAuthority` — también los 7 `.backup`
 en sitio de los 7 archivos de base de datos (`FOREIGN_BACKUP_RELPATHS`: mecanismo
 propio de `write_itunesdb`/`write_sqlite_databases` de iOpenPod, que el camino activo
@@ -128,7 +128,7 @@ Sanity check de mutación: se inyectó a mano un `.write_bytes` que generaba
 `iTunesCDB.backup` en `create_plan()`, el test lo detectó, se revirtió.
 
 **Decisión de nombre registrada, no un olvido**: la función se sigue llamando
-`clean_foreign_authority` pese a que ya cubre más que solo el archivo de autoridad —
+`clean_foreign_artifacts` pese a que ya cubre más que solo el archivo de autoridad —
 a propósito, porque es el nombre del comando público `cicada ipod clean-foreign` ya
 conocido, y no hay urgencia de romperlo. Un rename a `clean_foreign_artifacts` (o
 similar) sería apropiado si en el futuro algo más importa este nombre directamente.
@@ -395,7 +395,7 @@ por separado** (parser del iTunesCDB sin signo ↔ sqlite3 con signo, normalizad
 
 Orquestador propio de escritura transaccional con rollback para el iPod Nano 7G. **Estado: implementado y verificado.**
 
-- `consent.py` (propio): Gate de advertencia de divergencia de firma con Music.app de Apple. Persiste consentimiento off-device en `~/.cicada/consent/<sha256(guid)[:16]>.json` con escritura atómica. No re-pregunta si ya fue otorgado. **Se mantiene, no descartado** — la firma HASHAB de Cicada sigue sin ser la de Apple. **Nota pendiente (2026-08-19, no aplicada a propósito):** el texto del docstring de `consent.py` y del aviso en `cli.py`/`api.py` ("invalidará la compatibilidad con Music.app") quedó desactualizado tras confirmar en `docs/IPOD_INTEGRATION.md` §0.3 que Cicada, por sí sola, **no** rompe esa compatibilidad — el riesgo real es residuo de terceros (iOpenPod u otras herramientas) en el dispositivo, no la escritura de Cicada. Revisar el texto del mensaje cuando se decida tocar este gate; el mecanismo en sí no cambia.
+- `consent.py` (propio): Gate de advertencia de divergencia de firma con Music.app de Apple. Persiste consentimiento off-device en `~/.cicada/consent/<sha256(guid)[:16]>.json` con escritura atómica. No re-pregunta si ya fue otorgado. **Se mantiene, no descartado** — la firma HASHAB de Cicada sigue sin ser la de Apple. **Nota resuelta (corregida el 2026-08-19):** el texto del docstring de `consent.py` y del aviso en `cli.py`/`i18n.js` ("invalidará la compatibilidad con Music.app") estaba desactualizado tras confirmar en `docs/IPOD_INTEGRATION.md` §0.3 que Cicada, por sí sola, **no** rompe esa compatibilidad — el riesgo real es residuo de terceros (iOpenPod u otras herramientas) en el dispositivo, no la escritura de Cicada. Corregido en los tres sitios (mecanismo del gate sin tocar, solo el mensaje). `clean_foreign_artifacts()` también se extendió ese mismo día para cubrir los `.backup` ajenos además del archivo de autoridad — ver Etapa 2c/`authority.py` y el detalle completo del hallazgo en la sección "HALLAZGO MAYOR" del historial de esta fase.
 - `plan.py` (propio): Generador de planes dry-run. Captura la huella `PreStateFingerprint` de los 7 archivos pre-existentes en el iPod, genera los 7 artefactos en staging off-device (`iTunesCDB` comprimido/firmado + 6 archivos `iTunes Library.itlp/`), y valida consistencia interna antes de congelar el plan.
 - `apply.py` (propio): Ejecución en 5 fases rigurosas:
   - Fase A (Precondiciones): Revalida montaje, permisos, procedencia de GUID (`guid_is_write_safe`), gate de consentimiento y huella pre-estado.
@@ -776,11 +776,19 @@ diferida.
       (no verificado contra fuente ni hardware)** — el resto de families
       con `supports_artwork` suben a nivel 2 (Classic/Nano1-5G/iPod
       Video/4G photo-color) o ya tenían nivel de hardware real (Nano 7G).
-  - **Etapa 4f-3 — RGB565_BE/RGB555 para iPod touch/"Mobile". Diferida, no
-    descartada.** No se construye sin que exista primero soporte real de
-    Cicada para esa familia de dispositivo (hoy no existe en absoluto, en
-    ninguna capacidad) — ese trabajo mayor debe definir su propio diseño,
-    no colgar de "generalizar artwork".
+  - **Etapa 4f-3 — RGB565_BE/RGB555 para iPod touch/"Mobile". Sin soporte,
+    sin plan de extensión incremental.** No se construye sin que exista
+    primero soporte real de Cicada para esa familia de dispositivo (hoy no
+    existe en absoluto, en ninguna capacidad, ni parcial). No es un
+    "próximamente" del roadmap de artwork: el iPod touch corre iOS y
+    sincroniza por un protocolo de dispositivo distinto al de los iPods
+    click-wheel/Nano que modela `cicada/ipod/device/` hoy — muy
+    probablemente sin el par FireWireGUID/HASHAB del que depende toda la
+    identificación y firma actual (`authority.py`, `checksum.py`,
+    `device_info.py`). Soportarlo sería un proyecto de integración aparte
+    con su propio diseño, no una generalización de artwork ni de ningún
+    otro subsistema existente. Documentado también en `README.md` y
+    `docs/IPOD_INTEGRATION.md` (§0, nota de alcance).
 
 ### Paquete 8 — `podcasts/` → excluido (Fase 5, `cicada/ipod/db/media/chapters.py`)
 
@@ -929,4 +937,279 @@ track parseado ni fila en `Extras.itdb`. Mutation sanity check adicional
 sobre el enganche en `media.py` (deshabilitado con `if False`, el test de
 round-trip falló como se esperaba, se revirtió). Suite completa: 487 tests
 verdes (478 + 9 nuevos).
+
+#### Etapa 5c — `GET /podcasts` y `GET /audiobooks` reales. **Estado: implementado y verificado.**
+
+Reemplazados los stubs (`{"podcasts": [], "count": 0}` fijo) por lectura
+real de la biblioteca on-device, agrupando por `Album` (con fallback a
+`Artist`). `/podcasts` filtra `media_type == MEDIA_TYPE_PODCAST` en
+exclusiva — `video_podcast` no se lista (mismo criterio de exclusión que
+5a/Paquete 8, requiere el pipeline de Fase 6). Comportamiento alineado con
+`/tracks`: sin dispositivo montado, `404 MOUNT_NOT_FOUND` en vez del `200`
+vacío que tenía el placeholder (el placeholder nunca tocaba el
+dispositivo; la implementación real sí). Helper compartido
+`_load_current_library()` extraído de `get_ipod_tracks()` para no
+duplicar la resolución `iTunesCDB`/`iTunesDB`.
+
+**Hallazgo que cambió el diseño respecto al plan original (segunda vez en
+este bloque — la primera fue el enganche kind-agnóstico de 5b):** el plan
+asumía "un audiolibro = un grupo con lista de capítulos" sin más detalle.
+Un audiolibro real en un iTunesDB existe de dos formas genuinamente
+distintas, y la implementación debe cubrir ambas, no solo la que Cicada
+mismo produce:
+  - Un solo archivo con capítulos embebidos (MHOD 17 / `chapter_data`) —
+    el único camino que Cicada puede escribir hoy (Fase 5b).
+  - Varias pistas bajo el mismo `Album`, cada una una parte/capítulo —
+    el formato que usan iTunes/iOpenPod para audiolibros multi-pista, y
+    que puede existir en un dispositivo real de una sesión anterior
+    (mismo espíritu que el round-trip de playlists/ratings: leer
+    correctamente lo que ya hay, no solo lo que Cicada mismo escribe).
+
+`get_audiobooks()` distingue por cantidad de pistas en el grupo: más de
+una → cada pista es un capítulo (orden por `track_number`), y
+`chapter_data` embebido se ignora en ese caso (no debería coexistir con
+el split multi-pista real). Exactamente una pista → se expanden sus
+capítulos embebidos si los tiene; si no, la pista entera es un único
+capítulo (nunca queda un audiolibro con lista de capítulos vacía).
+
+`chapter_data` solo trae `startpos` (posición de inicio), no duración —
+`_chapter_durations_ms()` la calcula a partir de los `startpos`
+consecutivos, con el último capítulo durando hasta el final de la pista
+(`length` del track).
+
+**Corrección de frontend necesaria (fuera del alcance original de 5c pero
+inevitable: es la primera vez que estos endpoints devuelven datos
+reales):** `ep.date` (string ya formateado, contrato de `ui-ipod.md`) se
+cambió a `ep.date_added` (unix ts crudo, igual que el resto de
+`TrackSchema`) — no había ninguna convención de fecha-como-string en el
+resto de `api.py` que igualar, y mantener la inconsistencia habría sido
+peor que corregirla ahora que se implementa por primera vez. Un solo punto
+de formato nuevo: `_formatDateAdded()` en `render.js`
+(`toLocaleDateString()`, respeta el idioma del navegador). Cache-busting
+`render.js`/`ui.js` subido a `2.2.1`. `_mockAddPodcast()` (flujo de UI que
+simula "suscribirse a un podcast por nombre" — el propio vestigio del
+modelo de feeds que corrige Etapa 5d) ajustado al mismo campo para no
+quedar visualmente roto; su corrección de fondo (si debe seguir
+existiendo) queda para 5d.
+
+Tests (`tests/ipod/test_api.py`, +8): agrupamiento de 2 episodios reales
+del mismo programa (vía `/media/sync` real, no un dict armado a mano);
+música normal no aparece en `/podcasts`; audiolibro de una pista con
+capítulos Nero reales, verificando duración calculada por capítulo;
+audiolibro multi-pista real, verificando orden por `track_number`; 404
+sin dispositivo (antes 200 vacío) para ambos endpoints. 3 mutation sanity
+checks confirmados (clave de agrupamiento, cómputo de duración de
+capítulo, orden multi-pista). Suite completa: 491 tests verdes (487 + 4
+netos — el placeholder compartido perdió 2 casos y ganó una prueba 404
+dedicada de 2, más 6 pruebas sustantivas nuevas).
+
+#### Etapa 5d — Corrección de documentación. **Estado: cerrado.**
+
+`ui-ipod.md`: §1.1 (tabla de estado) actualizada — `/podcasts`/
+`/audiobooks` pasan de placeholder a real, `/media/sync` documenta `kind`
+y la extracción de capítulos. §2.5 reescrita: contrato real (sin
+`feed_url`, `date` → `date_added` como unix ts crudo, `chapters` con
+duración calculada, no una lista pasada tal cual), más un párrafo de
+alcance explícito al inicio de la sección (no gestión de feeds/
+suscripciones, por qué). §4 ("Guía de Conexión para Próximas Fases"),
+ítem 2: corregido — no había ningún feed parser que conectar, los MHOD
+15/16/17 ya estaban vendorizados desde antes de Fase 5.
+
+De paso, ya con el contexto cargado: se corrigió también la nota stale de
+la Etapa 2c más arriba en este documento (`consent.py`) que decía
+"pendiente, no aplicada a propósito" sobre un texto que en realidad ya se
+había corregido — drift de cierre de una sesión anterior, detectado al
+investigar Fase 5, sin relación de código con esta fase.
+
+**No tocado a propósito:** `_mockAddPodcast()` en `static/js/ipod/ui.js`
+sigue con el texto "Nombre del Podcast a **suscribir**" — vestigio visible
+del modelo de feeds que corrige esta etapa, pero cambiar su copy o su
+comportamiento (p. ej. conectarlo a un flujo real de "agregar archivo con
+kind=podcast") es una decisión de UI/UX que nadie pidió todavía; solo se
+ajustó el campo `date`→`date_added` para que no quedara visualmente roto
+tras el cambio de contrato de 5c. Ítems 1 y 3 de §4 (Fase 4 ya cerrada
+figurando como "próxima fase"; versión de cache-busting de ejemplo
+desactualizada) detectados de pasada, fuera de alcance de Fase 5, sin
+tocar.
+
+### Paquete 9 — Fase 6: Video (implementado) y Fotos (diferido)
+
+**Investigación inicial (2026-08-19) — incompleta, corregida el mismo
+día.** La primera pasada auditó `src/iopenpod/` buscando un paquete de
+dominio nombrado `photodb_*` o con prefijo `photo`, y concluyó que
+iOpenPod no implementa fotos. **Esa conclusión era falsa** — el hueco fue
+metodológico: nunca se buscó *dentro* de `sync/` (ya vendorizado
+parcialmente, Paquete 6) ni con raíces `album`/`thumb`/`image`. El usuario
+aportó evidencia directa (captura de la GUI real de iOpenPod, con una
+sección "Photos" completa) que forzó la re-investigación. No es el mismo
+tipo de hueco que Nano 6G en 4f-2 (ahí `WebFetch` fabricó datos
+inexistentes) — acá la búsqueda fue genuina pero insuficientemente amplia.
+Mismo principio aplicado: no aceptar la primera conclusión negativa sin
+descartar huecos de búsqueda, evidencia de un lado a otro.
+
+**Lo que existe realmente: `src/iopenpod/sync/photos.py`, 2706 líneas,
+implementación completa y probada (MIT).** Parser y escritor completos —
+no un mockup de GUI. Tests reales: `tests/test_photo_path_safety.py` (285
+líneas: rechazo de path traversal, symlink escape, "Photo Database"
+corrupta falla cerrado), `tests/test_photo_encoding.py`,
+`tests/test_photo_planning.py`. La GUI (`gui/widgets/photo{Browser,Tile,
+Viewer}.py`, `pooledPhotoGrid.py`) es una capa Qt separada encima —
+confirmado cero imports de Qt en `photos.py` mismo.
+
+**Formato — no es un formato nuevo, es el que ya está vendorizado.**
+"Photo Database" usa el mismo árbol de chunks
+`mhfd→mhsd→{mhli,mhla,mhlf}→mhii→{mhod,mhni}` que ArtworkDB (Etapa 4c) —
+tamaños de header idénticos byte a byte (`MHFD`=132, `MHSD`=96, `MHLI`=92,
+`MHLA`=92, `MHLF`=92, `MHII`=152, `MHOD`=24, `MHNI`=76, confirmado contra
+`chunks.py`). No es casualidad: `chunks.py` ya escribe `write_mhla()` y
+`write_mhlf()` — vacíos porque ArtworkDB nunca necesitó álbumes reales,
+pero el contenedor MHFD de ArtworkDB siempre incluyó esos tres datasets
+(imagen/álbumes/archivos) desde 4c. Lo único que falta a nivel de chunk
+son `mhba`/`mhia` (entrada de álbum + membresía) — no existen en
+`chunks.py` hoy, pero son ~40 líneas en el original (`_write_mhba`/
+`_write_mhia` en `photos.py`), no un formato nuevo.
+
+**Pixel format — RGB565_LE confirmado para Nano 7G (1005/1007,
+`artwork_presets.py`), mismo códec que cover art.** `photos.py` llama a
+`ithmb_codecs.encode_image_for_format()`/`decode_pixels_for_format()`/
+`expected_size_bytes()` — un módulo que **no se porta completo** en 4b
+(`rgb565.py` es una reimplementación deliberadamente más angosta, solo
+RGB565_LE, documentado en la Etapa 4b de este mismo archivo). Para Nano 7G
+el códec actual alcanza — hace falta un adaptador delgado de firma de
+función (`convert_art_for_format` vs `encode_image_for_format`), no un
+codec nuevo. La nota de la Etapa 4f-2 más abajo en este documento ya
+señalaba que los formatos no-LE son "de fotos (slideshow) o salida de TV,
+subsistema photo_formats, Fase 6" — la investigación inicial de Fase 6 no
+cruzó ese hallazgo propio al arrancar de cero.
+
+**Infraestructura ya vendorizada, reutilizable directo:**
+`device/durability.py`, `device/path_safety.py`,
+`device/storage_safety.py` — los tres del Paquete 2, sin cambios.
+
+**Punto de adaptación real para cuando se retome (no un bloqueador, un
+diseño a resolver primero):** `_photo_mapping_path()` de iOpenPod escribe
+`iPod_Control/iOpenPod/photo_sync.json` **en el dispositivo**, bajo
+namespace ajeno — misma categoría de residuo que `SysInfoAuthority`
+(Etapa 2c, mucho menos invasivo: un JSON namespaced, no reescritura de
+SysInfo). Mismo tratamiento que `authority.py` ya aplica: ese estado debe
+ir off-device, no al iPod.
+
+`supports_photo`/`photo_formats`/`max_video_width/height/bitrate/fps`/
+`h264_level` en `capabilities.py` siguen siendo metadata correcta pero
+inerte hasta que se construya el escritor — nada las consume todavía
+(confirmado por grep). No estaban mal, solo sin usar.
+
+**Fotos — diferido, no descartado. Motivo real: dimensión del trabajo, no
+falta de referencia.** Existe una referencia Python completa, probada,
+MIT (`sync/photos.py`), que reutiliza infraestructura y formato ya
+vendorizados. Lo que falta es ~2700 líneas de dominio nuevo por adaptar —
+comparable en tamaño a toda la Fase 4 (4a-4f) junta — que no estaba
+dimensionado en el alcance de esta sesión. **No hay plan de troceado
+todavía**: se investiga cuando se abra una sesión dedicada a construirlo,
+no ahora. El primer punto a resolver en esa sesión es el residuo
+on-device de `photo_sync.json` descrito arriba.
+
+#### Etapa 6a — `kind` de video en `/media/sync`. **Estado: implementado y verificado.**
+
+`MediaTrackInput.kind` extendido con `"movie"`, `"tv_show"`,
+`"music_video"`, `"video_podcast"` (cierra el hueco que había quedado
+abierto en 5a — `MEDIA_TYPE_VIDEO_PODCAST` estaba excluido "hasta que
+existiera Fase 6"). Campos nuevos opcionales: `season_number`,
+`episode_number`, `show_name`. `video_podcast` combina las flags de
+podcast (5a) con `media_type` de video — sin caso especial nuevo, la unión
+de dos derivaciones ya existentes.
+
+**Hallazgo que simplificó el código respecto al plan (video resultó
+todavía más simple de lo esperado):** la derivación inicial seteaba
+`ti.movie_file_flag = 1` explícitamente para las cuatro variantes de
+video, calcado del patrón `podcast_flag`/`remember_position` de 5a. El
+mutation sanity check sobre esa línea (comentada para `video_podcast`) no
+hizo fallar ningún test — confirmando que `write_mhit()`
+(`_resolve_movie_flag()`, infraestructura genérica de Fase 2) **ya
+deriva `movie_flag` de `media_type` automáticamente** cuando el campo
+explícito queda en 0. Se quitaron las cuatro líneas redundantes; un
+segundo mutation check sobre `media_type` en sí (constante equivocada)
+sí falló como se esperaba, confirmando que el test seguía siendo
+significativo tras la simplificación.
+
+Tests (`tests/ipod/test_api.py`, +5): round-trip real parametrizado para
+las 4 variantes (`movie`/`tv_show`/`music_video`/`video_podcast`),
+verificando `media_type` y `movie_flag` parseados del iTunesCDB escrito
+en disco; prueba dedicada de `tv_show` verificando `season_number`/
+`episode_number`/`Show` (nombre del programa) round-trip. 2 mutation
+sanity checks confirmados y revertidos. Suite completa: 496 tests verdes
+(491 + 5 nuevos).
+
+#### Etapa 6b — Verificación del pipeline de artwork sobre video. **Estado: verificado, cero cambios de código.**
+
+Hipótesis del plan: `shared/artwork.py` (Fase 4a, ya diseñado para
+compartirse entre `core` e `ipod`) debería extraer carátula embebida de un
+`.m4v` igual que de un `.m4a`, sin tocar nada. Confirmado en dos pasos:
+
+1. `extract_embedded_artwork()` detecta el contenedor con
+   `isinstance(audio, MP4)` vía `mutagen.File()` (que **sniffea** el
+   contenido real, no la extensión) — un `.m4v` con `covr` se lee
+   idéntico a un `.m4a`. Probado directo con el fixture existente
+   `tests/fixtures/audio/with_art.m4a` copiado a `.m4v`: extrae los
+   mismos bytes.
+2. `create_plan()` (línea ~247 en `plan.py`) resuelve fuente de artwork
+   para **todos** los tracks sin filtrar por `media_type` — un video con
+   `kind="movie"` entra exactamente por el mismo camino que música.
+
+Cero código nuevo — la instrucción explícita para esta etapa era no
+forzar una corrección si algo no encajaba, y no hizo falta: la hipótesis
+se cumplió sin cambios. Test (`tests/ipod/test_api.py`, +1): round-trip
+real vía `/media/sync` con `kind="movie"` y el fixture `.m4v` reusado,
+verificando `artwork_touched`/`artwork_tracks_count` en la respuesta **y**
+la entrada real en `ArtworkDB` (`read_artworkdb()`), mismo patrón de
+verificación que Fase 4d/5a. Suite completa: 497 tests verdes (496 + 1).
+
+#### Etapa 6c — `GET /videos` y `DELETE /videos/{id}` reales. **Estado: implementado y verificado.**
+
+`GET /videos`: lista plana (sin agrupar — así la consume el frontend hoy,
+a diferencia de podcasts/audiobooks) filtrada por
+`media_type ∈ {VIDEO, MUSIC_VIDEO, TV_SHOW, TV_SHOW_ALT}`, reusando
+`_load_current_library()`. Sin `resolution` ni `thumb` del contrato
+original (`ui-ipod.md`): `resolution` no se puede derivar sin `ffprobe`
+(sin esa dependencia, ver Paquete 9); `thumb` necesitaría un endpoint de
+servido de ArtworkDB que tampoco existe para música todavía — ambos
+quedan fuera, mismo criterio que 5c con el arte de podcasts.
+
+**Cierre del hueco de `MEDIA_TYPE_VIDEO_PODCAST` (aprobado explícitamente
+por el usuario, ya que 6a lo hizo trivial):** en vez de agregarlo a
+`/videos`, se sumó a `/podcasts` (5c) junto con `MEDIA_TYPE_PODCAST` — un
+video_podcast es un episodio de programa antes que un video suelto;
+mostrarlo en ambas categorías habría duplicado la pista en la UI.
+Decisión tomada en implementación, documentada aquí en vez de dejarla como
+hueco silencioso.
+
+**`DELETE /videos/{id}` no necesitó coordinador nuevo — hallazgo que
+simplificó el trabajo:** `POST /track/remove` (Fase 3, `remove_track_from_ipod()`
+en `media.py`) ya borraba cualquier pista por `db_track_id` sin importar
+`media_type`. El endpoint nuevo es un wrapper delgado que traduce el `id`
+de la URL; sin `consent_ack` en el body (el contrato original de
+`ui-ipod.md` no lo tenía) — no hace falta: `apply()` solo exige
+`consent_ack=True` cuando `plan.consent_needed` es `True`, y eso solo pasa
+en la primera escritura de un dispositivo (confirmado leyendo
+`plan.py`/`apply.py`); para poder borrar un video ya tuvo que haber una
+escritura previa, así que el consentimiento ya está otorgado.
+
+Tests (`tests/ipod/test_api.py`, +5): lista real con película + episodio
+de serie (verificando `show_name`/`season_number`/`episode_number`);
+`video_podcast` no aparece en `/videos` pero sí en `/podcasts`; delete
+real de extremo a extremo (`POST /media/sync` → `GET /videos` para el id
+real → `DELETE` → verificado que la pista y el archivo de audio
+desaparecen del iTunesCDB real, no de un mock); 404 con id inexistente. 2
+mutation sanity checks confirmados (filtro de `_VIDEO_MEDIA_TYPES`,
+wiring del id en `delete_video`). Suite completa: 500 tests verdes.
+
+**Corrección de frontend necesaria (mismo patrón que `date`→`date_added`
+en 5c — primera vez que `/videos` devuelve datos reales):**
+`ipodVideoCardHtml()` en `render.js` leía `vid.size` (contrato antiguo de
+`ui-ipod.md`); el schema real usa `size_bytes` (consistente con
+`TrackSchema`). Sin el fix, el fallback de tamaño mostraba "0 B" para todo
+video sin `resolution`. Corregido y verificado en el navegador real
+(`preview_start`, sin errores). Cache-busting `render.js` a `2.2.2`.
+`_mockAddVideo()` no se tocó — sigue enviando `resolution` explícito, que
+tiene prioridad sobre el fallback y no se ve afectado.
 

@@ -50,7 +50,7 @@ __all__ = [
     "check_authority_coverage",
     "update_sysinfo",
     "cache_sysinfo_extended",
-    "clean_foreign_authority",
+    "clean_foreign_artifacts",
     "read_guid_pointer",
     "write_guid_pointer",
     "read_cached_sysinfo_extended",
@@ -508,7 +508,7 @@ def _normalise_sysinfo_extended(raw_xml: bytes | str) -> bytes:
 # ──────────────────────────────────────────────────────────────────────
 # Limpieza del archivo de autoridad ajeno (iOpenPod) — vía write_guard
 # ──────────────────────────────────────────────────────────────────────
-def clean_foreign_authority(ipod_path: str) -> list[str]:
+def clean_foreign_artifacts(ipod_path: str) -> list[str]:
     """Elimina artefactos ajenos conocidos del dispositivo, vía write_guard.
 
     Cubre dos categorías, ambas confirmadas en hardware real como causa de
@@ -527,12 +527,10 @@ def clean_foreign_authority(ipod_path: str) -> list[str]:
 
     Devuelve la lista de rutas relativas eliminadas (vacía si no había nada).
 
-    Nota de nombre: se llama ``_authority`` desde antes de cubrir los
-    ``.backup``; se mantiene así a propósito — es el nombre del comando
-    público ``cicada ipod clean-foreign`` ya conocido, sin urgencia de
-    romperlo. Un rename a algo como ``clean_foreign_artifacts`` sería
-    apropiado si en el futuro alguien más importa este nombre directamente.
-    Ver docs/VENDORED.md.
+    El comando público sigue siendo ``cicada ipod clean-foreign`` — este
+    rename (de ``clean_foreign_authority``) es solo del símbolo interno,
+    para que el nombre refleje que cubre autoridad ajena y backups ajenos,
+    no solo autoridad. Ver docs/VENDORED.md.
     """
     from cicada.ipod.device import write_guard as wg
 

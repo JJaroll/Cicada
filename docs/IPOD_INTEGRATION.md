@@ -7,6 +7,21 @@ Spec de implementación, basado en inspección del dispositivo real y del códig
 - **Dispositivo de desarrollo**: iPod nano 7G, FAT32, montado en `/Volumes/IPOD`
 - **Alcance v1**: música y playlists, sync bidireccional, selección manual
 
+**Fuera de alcance, sin soporte, sin plan de extensión incremental: iPod touch
+/ "iPod Mobile"** (Motorola ROKR/SLVR/RAZR). No hay identificación de
+dispositivo, sync, artwork ni ninguna otra capacidad implementada para esa
+familia (ni siquiera parcial) — grep sobre `capabilities.py` confirma cero
+entradas en `_FAMILY_GEN_CAPABILITIES` para las family IDs 2002/2003
+("Mobile") o 3001-3005 ("touch"), a pesar de que `artwork_presets.py` sí
+tiene sus formatos de píxel transcritos (RGB565_BE/RGB555, vendorizados desde
+iOpenPod pero nunca cableados a ninguna family — ver Etapa 4f-3 en
+`docs/VENDORED.md`). No es un "próximamente": el iPod touch corre iOS y
+sincroniza por un protocolo de dispositivo distinto al de los iPods
+click-wheel/Nano que modela este proyecto, muy probablemente sin el par
+FireWireGUID/HASHAB en el que se apoya la identificación y firma de todo el
+resto de `cicada/ipod/device/`. Soportarlo requeriría un proyecto de
+integración aparte, no una generalización del código actual.
+
 ---
 
 ## 0. Hallazgos que definen el diseño
@@ -486,13 +501,47 @@ riesgo, empezando por un único caso real verificable contra hardware:
 **Alcance de 4a-4e: RGB565_LE, ahora en las 24 device families que Cicada
 modela (antes solo Nano 7G) desde 4f-1.**
 
-### Fase 5 — Podcasts y audiolibros
-### Fase 6 — Fotos y video
+### Fase 5 — Podcasts y audiolibros (cerrada 2026-08-19)
 
-> La UI ya expone las categorías de estas fases, pero los endpoints son **honestos**: la
-> lectura (`/photos`, `/videos`, `/podcasts`, `/audiobooks`) devuelve lista vacía, y las
-> operaciones de escritura/borrado (incluido `POST /playlists/{create,import}`) responden
-> `501 Not Implemented`. Contrato futuro documentado en `ui-ipod.md`.
+Alcance: "ya tengo el episodio/audiolibro, ponlo bien en el iPod" — sin gestión de
+feeds RSS ni suscripciones (Cicada no es un cliente de podcasts). `kind`/`category`
+en `POST /media/sync` (5a), extracción de capítulos embebidos de M4B/MP3 ya locales
+(5b, sin `ffprobe`), lectura real agrupada en `GET /podcasts`/`/audiobooks` (5c,
+soporta tanto un archivo con capítulos embebidos como audiolibros multi-pista reales
+de iTunes/iOpenPod). El soporte de formato binario (MHOD 15/16/17, campos de
+`TrackInfo`) ya estaba vendorizado desde Fase 2 sin que nadie lo activara — el
+paquete `podcasts/` de iOpenPod es 100% gestión de feeds, excluido en bloque salvo
+la extracción de capítulos. Detalle completo en `docs/VENDORED.md` Paquete 8.
+
+### Fase 6 — Fotos y video (video cerrado 2026-08-19; fotos diferida)
+
+**Video**: mismo patrón que podcasts — `kind: "movie"|"tv_show"|"music_video"|
+"video_podcast"` en `POST /media/sync` (6a), arte embebido reutiliza el pipeline de
+Fase 4a-4d sin cambios (6b, verificado no construido), `GET /videos`/
+`DELETE /videos/{id}` reales (6c, este último reusa `POST /track/remove` de Fase 3).
+Sin transcodificación (Cicada no transcodifica nada, ni audio ni video) ni servido de
+miniaturas por HTTP (no existe ni para música todavía).
+
+**Fotos — diferida, con motivo preciso: dimensión del trabajo, no falta de
+referencia.** El Nano 7G sí tiene app de Fotos (confirmado por hardware). **Sí
+existe** una referencia Python vendorizable: `src/iopenpod/sync/photos.py`
+(2706 líneas, MIT, parser y escritor completos, con tests de seguridad reales) —
+la investigación inicial de esta fase no la encontró por buscar solo paquetes de
+dominio nombrados "photo", no dentro de `sync/`; corregido el mismo día con
+evidencia del usuario. El formato "Photo Database" comparte el árbol de chunks
+con ArtworkDB (`mhfd→mhsd→{mhli,mhla,mhlf}→mhii→{mhod,mhni}`, ya vendorizado en
+4c, headers idénticos byte a byte) — solo faltan `mhba`/`mhia` (entrada de álbum)
+a nivel de chunk. El pixel format sigue siendo `RGB565_LE`, mismo códec que cover
+art. Se difiere por **dimensión**: ~2700 líneas de dominio nuevo por adaptar,
+comparable a toda la Fase 4 junta, sin plan de troceado todavía — se define
+cuando se abra una sesión dedicada. Diferido con motivo registrado, no
+descartado — mismo tratamiento que el hueco de Nano 6G en 4f-2. Detalle
+completo, incluida la corrección de la investigación inicial, en
+`docs/VENDORED.md` Paquete 9.
+
+> Con Fase 6 (video) cerrada, lo único que sigue con el placeholder honesto original
+> es `/photos` (lista vacía, `DELETE` responde `501`) y `POST /playlists/{create,import}`
+> (`501`). Contrato futuro documentado en `ui-ipod.md`.
 
 ---
 

@@ -1298,8 +1298,8 @@ async def get():
         <script src="/static/js/library.js?v=2.2.0"></script>
         <script src="/static/js/player.js?v=2.2.0"></script>
         <script src="/static/js/ipod/api.js?v=2.2.0"></script>
-        <script src="/static/js/ipod/render.js?v=2.2.0"></script>
-        <script src="/static/js/ipod/ui.js?v=2.2.0"></script>
+        <script src="/static/js/ipod/render.js?v=2.2.2"></script>
+        <script src="/static/js/ipod/ui.js?v=2.2.1"></script>
         <script>
             // Inicialización de la UI
             applyLanguage(currentLang);

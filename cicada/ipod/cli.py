@@ -286,9 +286,9 @@ def _cmd_restore(args: argparse.Namespace) -> int:
 
 
 def _cmd_clean_foreign(_args: argparse.Namespace) -> int:
-    from cicada.ipod.device.authority import clean_foreign_authority
+    from cicada.ipod.device.authority import clean_foreign_artifacts
     mount = resolve_mount()
-    removed = clean_foreign_authority(mount)
+    removed = clean_foreign_artifacts(mount)
     if removed:
         print("Eliminados del dispositivo (ajenos a Cicada):")
         for rel in removed:
