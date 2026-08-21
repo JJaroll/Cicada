@@ -514,7 +514,8 @@ paquete `podcasts/` de iOpenPod es 100% gestión de feeds, excluido en bloque sa
 la extracción de capítulos. Detalle completo en `docs/VENDORED.md` Paquete 8.
 
 ### Fase 6 — Fotos y video (video cerrado 2026-08-19, confirmado en hardware
-real 2026-08-20; fotos en pausa 2026-08-20 tras 6e-6h, diagnóstico avanzado en 6j)
+real 2026-08-20; fotos con parada real 2026-08-20 tras 6e-6h y cinco intentos
+de hardware en 6j — discrepancias conocidas agotadas, síntoma sin resolver)
 
 **Video**: mismo patrón que podcasts — `kind: "movie"|"tv_show"|"music_video"|
 "video_podcast"` en `POST /media/sync` (6a), arte embebido reutiliza el pipeline de
@@ -528,10 +529,11 @@ capas del dispositivo (iTunesCDB binario y SQLite `Library.itdb`) y reproducció
 real confirmada por el usuario en el propio iPod.
 
 **Fotos**: investigación profunda y troceado cerrados 2026-08-20; 6e-6h
-implementadas y verificadas en software; 6j (prueba de fuego en hardware) en
-pausa deliberada tras 4 intentos, diagnóstico avanzado (detalle completo en
-`docs/VENDORED.md`, Paquete 9). Orden ajustado para validar contra hardware
-real antes de la capa de API (mismo patrón que Fase 2):
+implementadas y verificadas en software; 6j (prueba de fuego en hardware)
+con parada real tras 5 intentos — discrepancias conocidas del formato
+confirmado como relevante agotadas, síntoma sin resolver (detalle completo
+en `docs/VENDORED.md`, Paquete 9). Orden ajustado para validar contra
+hardware real antes de la capa de API (mismo patrón que Fase 2):
 - [x] **6e** — Infra de soporte: `path_safety.py`, `storage_safety.py` (reducido,
       sin portar la detección de filesystem cross-platform completa de iOpenPod),
       mapa off-device `photo_sync.json`→`~/.cicada/photos/` (patrón `authority.py`).
@@ -558,29 +560,37 @@ real antes de la capa de API (mismo patrón que Fase 2):
       PHOTOS_DIRNAME`), decisión del usuario de extender la autoridad única en
       vez de duplicarla. Detalle completo en `docs/VENDORED.md`, Paquete 9.
 - [~] **6j** — Prueba de fuego con imágenes reales contra el Nano 7G conectado.
-      **PAUSADA 2026-08-20, en progreso con diagnóstico avanzado — no cerrada,
-      no descartada.** Cuatro intentos en hardware, cada uno con un fix
-      estructural correcto y verificado (época Mac/1904, chunk `mhaf` +
-      `persistent_id`=`image_id+2`), `success=True` y Photo Database
+      **PARADA REAL 2026-08-20 — no cerrada, no descartada, pero sin
+      trabajo pendiente conocido: se agotaron todas las discrepancias
+      del único formato confirmado como relevante.** Cinco intentos en
+      hardware, cada uno con un fix estructural correcto y verificado
+      (época Mac/1904; chunk `mhaf` + `persistent_id`=`image_id+2`;
+      width/height reales del full-res; `original_size`=0; orden de
+      miniaturas grande-antes-que-chica; `created_at`/`digitized_at`
+      separados por EXIF vs. mtime), `success=True` y Photo Database
       releído del dispositivo real confirmando la escritura en todos los
-      casos — pero la app de Fotos del Nano sigue mostrándose vacía tras
-      los cuatro. Diff binario completo contra un `Photo Database` real
+      casos — la app de Fotos del Nano sigue mostrándose vacía tras
+      los cinco. Diff binario completo contra un `Photo Database` real
       de Apple/Música (61 fotos, sync real vía Finder) surgió 6
-      discrepancias (A-F, detalle en `docs/VENDORED.md` Paquete 9); tras
-      aplicar las dos más plausibles (A, B) sin resultado, comparación de
-      árbol completo (no solo `Photos/`) encontró un formato hermano sin
+      discrepancias (A-F, detalle en `docs/VENDORED.md` Paquete 9); las
+      seis quedaron aplicadas y verificadas byte a byte en el
+      dispositivo sin resolver el síntoma. Comparación de árbol completo
+      (no solo `Photos/`) encontró además un formato hermano sin
       documentar (`frpd`/`PhotosFolder*` en `iPod_Control/iTunes/`, 5
-      archivos nuevos que ni iOpenPod ni Cicada modelan) — con al menos un
-      campo que parece un checksum sin algoritmo identificable. Se pausa
-      porque el trabajo restante cambió de naturaleza: de "encontrar el
-      campo que falta" a "reconstruir un formato binario legado sin
-      especificación", que no conviene forzar al final de una sesión
-      larga. Los dos backups reales (antes/después del sync de Música) y
-      todo el material de diffing quedan preservados en
-      `~/.cicada/photo_sync_forensics/` (fuera del repo por tamaño) para
-      retomar sin repetir el trabajo. Hallazgo no bloqueante de esta
-      etapa: fotos de 95-96MP disparan `DecompressionBombWarning` de
-      Pillow (solo aviso).
+      archivos nuevos que ni iOpenPod ni Cicada modelan); investigación
+      posterior sin hardware (iOpenPod, libgpod, documentación de
+      terceros vía Wayback Machine, origen del nombre Photoshop
+      Album/Elements) dio evidencia convergente de que son bitácora de
+      sincronización del lado iTunes/PC, no datos leídos por el
+      firmware — **evidencia, no prueba**, sigue siendo el único lead
+      concreto no probado en hardware. Se para en serio (no solo se
+      pausa) porque seguir sin evidencia nueva sería especular — criterio
+      fijado de antemano por el usuario y cumplido tal cual. Los backups
+      reales (antes/después del sync de Música) y todo el material de
+      diffing quedan preservados en `~/.cicada/photo_sync_forensics/`
+      (fuera del repo por tamaño) para retomar sin repetir el trabajo.
+      Hallazgo no bloqueante de esta etapa: fotos de 95-96MP disparan
+      `DecompressionBombWarning` de Pillow (solo aviso).
 - [ ] **6i** — API/CLI (`POST /photos/sync`, reemplazo del stub `GET /photos`).
       Bloqueada por 6j: no tiene sentido exponer un sync que, verificado en
       hardware real, todavía no logra que la app de Fotos muestre nada.
@@ -588,16 +598,22 @@ real antes de la capa de API (mismo patrón que Fase 2):
 HEIC/HEIF diferido explícitamente (requiere `pillow-heif`, no instalado) — caso
 real fuera de alcance hoy, no descartado.
 
-**Fotos — en pausa, con motivo preciso: reconstrucción de formato binario sin
-especificación, no falta de referencia ni de esfuerzo.** El Nano 7G sí tiene
-app de Fotos (confirmado por hardware). La referencia inicial
-(`src/iopenpod/sync/photos.py`, MIT) y el formato compartido con ArtworkDB
-(`mhfd→mhsd→{mhli,mhla,mhlf}→mhii→{mhod,mhni}`, ya vendorizado en 4c) permitieron
-construir 6e-6h completos y verificados en software (608 tests). Lo que quedó
-sin resolver en 6j no es código de Cicada sino un formato adicional (`frpd`)
-que **ninguna referencia disponible documenta** — ni iOpenPod, ni ningún otro
-proyecto consultado. Detalle completo, incluidos los 6 diffs A-F y el hallazgo
-de `frpd`, en `docs/VENDORED.md` Paquete 9.
+**Fotos — parada real, con motivo preciso: se agotó el único formato
+confirmado como relevante sin resolver el síntoma, no falta de referencia ni
+de esfuerzo.** El Nano 7G sí tiene app de Fotos (confirmado por hardware). La
+referencia inicial (`src/iopenpod/sync/photos.py`, MIT) y el formato
+compartido con ArtworkDB (`mhfd→mhsd→{mhli,mhla,mhlf}→mhii→{mhod,mhni}`, ya
+vendorizado en 4c) permitieron construir 6e-6h completos y verificados en
+software, y reproducir byte a byte las 6 discrepancias (A-F) encontradas
+contra un Photo Database real de Apple/Música — las seis aplicadas y
+confirmadas instaladas en el dispositivo, sin cambio de síntoma (615 tests).
+Lo único que sigue sin investigar en hardware es un formato adicional
+(`frpd`) que **ninguna referencia disponible documenta** — ni iOpenPod, ni
+libgpod, ni ningún otro proyecto consultado — y para el que una
+investigación posterior (sin hardware) encontró evidencia convergente,
+aunque no concluyente, de que es bitácora de iTunes/PC y no algo que el
+firmware lea. Detalle completo, incluidos los 6 diffs A-F, el hallazgo de
+`frpd` y su investigación, en `docs/VENDORED.md` Paquete 9.
 
 > Con Fase 6 (video) cerrada, lo único que sigue con el placeholder honesto original
 > es `/photos` (lista vacía, `DELETE` responde `501`) y `POST /playlists/{create,import}`

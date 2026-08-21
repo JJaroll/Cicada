@@ -35,6 +35,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass, field
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable, Optional
 
@@ -152,6 +153,43 @@ def _load_pil_image(path: str | Path) -> Image.Image:
         img.seek(0)
         loaded = img.copy()
     return ImageOps.exif_transpose(loaded)
+
+
+#: Tag EXIF "DateTimeOriginal" (fecha/hora de captura), vive en la Exif
+#: SubIFD (puntero 0x8769), no en la IFD base — por eso hace falta
+#: ``get_ifd()``, ``getexif()`` solo no alcanza.
+_EXIF_SUBIFD_TAG = 0x8769
+_EXIF_DATETIME_ORIGINAL_TAG = 36867
+
+
+def _exif_capture_timestamp(img: Image.Image) -> Optional[int]:
+    """Fecha de captura real (EXIF DateTimeOriginal) como Unix timestamp,
+    para separar ``created_at`` (captura) de ``digitized_at`` (import,
+    aproximado por mtime) — discrepancia F confirmada contra un Photo
+    Database real de Música/iTunes (Etapa 6j). Ni iOpenPod ni Cicada
+    tenían una referencia de esta separación (ambos igualaban las dos
+    fechas al mtime), así que esto es la mejor aproximación disponible,
+    no un valor verificado campo a campo como A/B/D:
+
+    - EXIF no lleva zona horaria — el string ``"YYYY:MM:DD HH:MM:SS"`` se
+      interpreta como hora LOCAL de esta máquina, mismo supuesto que ya
+      usa ``item.mtime`` en el resto del módulo (consistencia interna,
+      no una fuente de verdad nueva).
+    - ``None`` si la foto no trae ese tag (recorte de imagen, captura de
+      pantalla, exportación que lo eliminó) o el valor no parsea — el
+      caller debe usar ``item.mtime`` como fallback en ese caso.
+    """
+    try:
+        exif_ifd = img.getexif().get_ifd(_EXIF_SUBIFD_TAG)
+    except Exception:  # EXIF de un archivo externo puede venir corrupto de cualquier forma; campo best-effort, nunca debe abortar el sync
+        return None
+    raw = exif_ifd.get(_EXIF_DATETIME_ORIGINAL_TAG)
+    if not raw or not isinstance(raw, str):
+        return None
+    try:
+        return int(datetime.strptime(raw, "%Y:%m:%d %H:%M:%S").timestamp())
+    except ValueError:
+        return None
 
 
 def _sanitize_basename(name: str, fallback: str) -> str:
@@ -294,7 +332,19 @@ def _build_photo_db_contents(
     absurdo, ~2092). Mismo patrón de bug documentado que ya mordió 3
     veces con fechas del iTunesCDB — ahora una cuarta vez, con una época
     distinta (1904, no Cocoa/2001), en el único subsistema de Fotos sin
-    respaldo SQLite."""
+    respaldo SQLite.
+
+    ``created_at``/``digitized_at`` NO comparten la misma fuente Unix
+    (discrepancia F, Etapa 6j quinto intento): ``created_at`` usa la
+    fecha de captura EXIF (:func:`_exif_capture_timestamp`) si la foto la
+    trae, con fallback a ``item.mtime``; ``digitized_at`` usa siempre
+    ``item.mtime`` (aproximación de "fecha de importación" — Cicada no
+    tiene un evento de "agregado a la biblioteca" real distinto del sync
+    mismo). Ninguna referencia (ni iOpenPod ni la Cicada de antes de esta
+    etapa) separaba las dos fechas — las dos siempre eran el mismo mtime
+    — así que esto es la mejor aproximación disponible, no un valor
+    verificado campo a campo contra la muestra real como los offsets 20
+    o 48."""
     formats = device_info.capabilities.photo_formats if device_info.capabilities else ()
     if not formats:
         raise PhotoSyncError("El dispositivo no tiene formatos de fotos configurados (supports_photo).")
@@ -327,15 +377,17 @@ def _build_photo_db_contents(
             thumb_storage_paths[fmt.format_id] = _thumb_photos_relpath(fmt.format_id)
 
         full_res_payload = EncodedFormatPayload(
-            data=b"", width=0, height=0, size=len(full_res_bytes),
+            data=b"", width=img.width, height=img.height, size=len(full_res_bytes),
             stride_pixels=0, hpad=0, vpad=0, pixel_format=None,
         )
-        mac_timestamp = time_context.unix_to_mac(item.mtime)
+        capture_unix = _exif_capture_timestamp(img)
+        created_mac = time_context.unix_to_mac(capture_unix if capture_unix is not None else item.mtime)
+        digitized_mac = time_context.unix_to_mac(item.mtime)
         mhii_blobs.append(write_mhii_photo(
             image_id,
-            created_at=mac_timestamp,
-            digitized_at=mac_timestamp,
-            original_size=item.size,
+            created_at=created_mac,
+            digitized_at=digitized_mac,
+            original_size=0,
             full_res_payload=full_res_payload,
             full_res_storage_path=full_res_photos_rel,
             thumb_formats=thumb_payloads,

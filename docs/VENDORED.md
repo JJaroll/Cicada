@@ -1911,6 +1911,76 @@ principio (coinciden con lo que escribe Apple), aunque no demostrados
 suficientes por sí solos. C/D/E/F quedan sin aplicar, documentados
 arriba con su confianza relativa.
 
+**Investigación sin hardware (2026-08-20): ¿el firmware realmente lee
+`frpd`?** Antes de un quinto intento en hardware, se buscó evidencia
+independiente por 4 vías distintas, sin tocar el dispositivo:
+
+1. **iOpenPod** (`../iPod-clon/iOpenPod`, grep exhaustivo): las únicas
+   referencias a `frpd` están en `src/iopenpod/sync/itunes_prefs.py`
+   (y su test). Ese módulo documenta `frpd` como el formato binario de
+   `iTunesPrefs` — preferencias de sync del iPod (manual/automático,
+   uso como disco, ID de vínculo a biblioteca) —, **no** de fotos.
+   iOpenPod no escribe ni lee `PhotosFolderName`/`PhotosFolderAlbums`/
+   `PhotosFolderPrefs`/`PSAlbumAlbums`/`PSElementsAlbums` en absoluto:
+   cero coincidencias en todo el repo salvo ese archivo no relacionado.
+2. **libgpod** (`gtkpod/libgpod`, rama `main`, vía GitHub API — árbol
+   completo + `src/itdb_photoalbum.c` descargado y grepeado): **cero**
+   referencias a `frpd`, `PhotosFolder*`, `PSAlbum*` o `PSElements*` en
+   todo el repositorio. libgpod es la referencia más completa de
+   ingeniería inversa abierta para los formatos on-device de iPod
+   (de ahí sale la tabla de dimensiones que ya usa Cicada) y sus
+   herramientas derivadas (gtkpod) sincronizan fotos con iPods reales
+   sin tocar estos archivos — indicio de que no son necesarios para
+   que el dispositivo muestre fotos.
+3. **theiphonewiki.com — "iTunes Backup"** (sitio en vivo devuelve
+   403/502 vía bot-protection; se accedió al snapshot de Wayback
+   Machine del 2026-07-21). Documentación de terceros, independiente
+   de Apple e independiente de este proyecto, con detalle estructural
+   real:
+   - `PhotosFolderAlbums`: magia `frpd` + pocos bytes + relleno cero,
+     luego **registros repetidos cada 0x204 (516) bytes desde 0x68**,
+     cada uno un nombre de carpeta en UTF-16 con la longitud como
+     prefijo.
+   - `PhotosFolderName`: archivo fijo de 0x200 (512) bytes que
+     contiene literalmente el texto **"Pictures"** (UTF-16,
+     longitud-prefijada) — el nombre de la carpeta del PC que fue el
+     origen del sync, no nada relativo a cómo el dispositivo muestra
+     las fotos.
+   - `iTunesPrefs`/`iPodPrefs`: también con magia `frpd`; contienen
+     nombres de computadoras/red con las que se sincronizó — bitácora
+     pura del lado PC.
+   - `PhotosFolderPrefs` (el archivo con el posible checksum) aparece
+     listado como clave del diccionario de backup pero **sin sección
+     propia** en todo el artículo — sigue siendo el menos documentado
+     de los cinco, consistente con lo ya sabido.
+   - Contexto clave: estos archivos se capturan tal cual, como blobs,
+     dentro del `Info.plist` que iTunes genera al hacer backup del
+     dispositivo — es decir, iTunes los trata como su propio estado de
+     "última sincronización", igual que el historial de sync.
+4. **Photoshop Album / Photoshop Elements**: confirmado por la propia
+   documentación de Apple (soporte de iTunes vigente) que iTunes para
+   Windows ofrecía un menú de fotos con opciones "Photoshop Album" o
+   "Photoshop Elements" como **fuente alternativa a una carpeta** para
+   sincronizar fotos. Esto explica el nombre `PSAlbumAlbums`/
+   `PSElementsAlbums` como hermanos directos de `PhotosFolderAlbums`
+   (uno por cada posible origen configurado en el PC) — pero es
+   evidencia en contra, no a favor, de que el firmware los necesite:
+   Photoshop Album/Elements son software de PC sin ninguna relevancia
+   para el dispositivo.
+
+**Lectura honesta de la evidencia**: las 4 vías apuntan en la misma
+dirección — `frpd`/`PhotosFolder*`/`PSAlbum*`/`PSElements*` son
+bitácora de sincronización del lado iTunes/PC ("¿de qué carpeta o app
+vinieron estas fotos la última vez?"), replicada al dispositivo y a los
+backups por continuidad de iTunes, **no** datos que el firmware del
+Nano 7G consulte para poblar la app de Fotos. Esto no es prueba
+definitiva (nadie desensambló el firmware para confirmarlo), pero es
+evidencia convergente e independiente — no una sola fuente. Baja,
+más que sube, la prioridad de escribir estos archivos en un futuro
+intento de hardware: la vía más prometedora para retomar sigue siendo
+C/D/E/F sobre el propio Photo Database (mhfd/mhsd), que es el formato
+que sí está confirmado como la fuente de datos de la app de Fotos.
+
 **Para retomar sin repetir el trabajo de hoy**, todo preservado en
 `~/.cicada/photo_sync_forensics/` (fuera del repo — 2 GB, no apto para
 git; fuera también de la rotación de `~/.cicada/backups/`, que ya
@@ -1930,6 +2000,116 @@ sync de cualquier tipo):
   `build_cicada_mhii.py` — el par de MHII usados para el diff A-F y el
   script que los generó, reproducible contra cualquier otra foto de la
   muestra real.
+
+**Retomado (2026-08-20): C+D+E+F aplicados juntos, quinto intento en
+hardware.** Con la evidencia de `frpd` bajando su prioridad (arriba) y
+las 4 discrepancias restantes ya conocidas del formato confirmado como
+relevante, el usuario decidió aplicarlas de una sola vez en vez de
+seguir aislando variables de a una — A/B ya cumplieron ese propósito.
+
+- **C** (`chunks.py`/`coordinator/photos.py`): `full_res_payload` ahora
+  lleva `width=img.width, height=img.height` (dimensiones reales
+  post-EXIF-transpose) en vez de `0, 0`. La escritura del MHNI
+  (`write_mhni_photo`) ya empaquetaba width/height correctamente — el
+  bug estaba en el caller, que armaba el payload con ceros.
+- **D** (`coordinator/photos.py`): `original_size=0` en vez de
+  `item.size` (tamaño del .jpg fuente en la PC). Confirmado 0 en las 61
+  entradas reales, no solo en la primera — mismo nivel de confianza que
+  A/B, no una aproximación.
+- **E** (`chunks.py`, `write_mhii_photo`): los hijos MHOD tipo
+  THUMBNAIL_IMAGE ahora se escriben en **orden de tamaño de payload
+  descendente** (`sorted(..., key=lambda fid: thumb_formats[fid].size,
+  reverse=True)`), no de `format_id` ascendente. Se ordena por tamaño y
+  no por id numérico a propósito — para Nano 7G da el mismo resultado
+  que "id descendente" (1007 > 1005), pero no hay garantía de que esa
+  correlación se sostenga en otro dispositivo; tamaño es lo que
+  realmente se observó en la muestra real, no el id.
+- **F** (`coordinator/photos.py`, `_exif_capture_timestamp` nueva):
+  `created_at` usa la fecha EXIF `DateTimeOriginal` (tag 36867, Exif
+  SubIFD) de la foto si está presente, con fallback a `item.mtime`;
+  `digitized_at` sigue usando siempre `item.mtime`. A diferencia de
+  A/B/D, esto **no** es un valor verificado campo a campo contra la
+  muestra real — ni iOpenPod ni Cicada (antes de esta etapa) separaban
+  alguna vez estas dos fechas, así que no hay referencia de qué fuente
+  exacta usa Apple para cada una. Es la aproximación más razonable
+  disponible sin una fecha de "importación" real distinta del sync
+  (documentada así en el docstring de la función, no presentada como
+  certeza).
+
+Verificación: 5 tests nuevos (1 en `test_chunks_photo.py` para E, con
+las dos asignaciones de id/tamaño invertidas a propósito para que el
+test solo pase si el criterio real es tamaño; 4 en `test_photos.py`
+para C/D/F, incluido un caso sin EXIF confirmando que el fallback deja
+`created_at == digitized_at` igual que antes). 4 mutation checks reales
+(revertir cada fix a su versión anterior, confirmar que el test
+correspondiente falla, revertir) confirmados y revertidos. 615 tests
+verdes.
+
+**Quinto intento EJECUTADO (2026-08-20): C+D+E+F confirmados byte a
+byte en el dispositivo real.** Mapa off-device limpiado antes del sync
+(mismo paso operativo que en 2º/4º intento). `sync_photos_to_ipod()`
+real: `success=True`, 2 fotos, 1 álbum, backup en
+`~/.cicada/backups/ipod/000A27002484DDFB/..._db-only.tar.zst`.
+Verificación releyendo lo REALMENTE instalado (no el resultado del
+script):
+
+- **C**: `full_res.width/height` = 11376×8480 y 11392×8368 — dimensiones
+  reales de los JPEG fuente, ya no 0/0.
+- **D**: `original_size == 0` en ambas entradas.
+- **E**: recorrido crudo del primer MHII confirma el orden exacto —
+  hijo 0 FULL_RESOLUTION, hijo 1 THUMBNAIL_IMAGE format_id=1007
+  (size=829440), hijo 2 THUMBNAIL_IMAGE format_id=1005 (size=12800),
+  hijo 3 UNKNOWN_MHAF — formato grande antes que chico, igual que el
+  Photo Database real de Música.
+- **F**: `created_at != digitized_at` en ambas entradas (EXIF de
+  captura vs. mtime de import), confirmado en las dos fotos reales.
+
+A/B (mhaf/persistent_id, intentos previos) siguen presentes y
+correctos. Archivos en disco verificados: 2 JPEG full-res + 2 `.ithmb`
+de miniaturas, tamaños coherentes con lo escrito. Eject limpio.
+
+**Resultado confirmado por el usuario (2026-08-20): la app de Fotos
+sigue mostrando 0 fotos.** Quinto intento, mismo síntoma. Con esto,
+las 6 discrepancias A-F del diff binario completo contra un Photo
+Database real de Apple — el único formato confirmado como relevante —
+quedan **agotadas**: las seis están aplicadas, verificadas campo a
+campo contra la muestra real, y confirmadas instaladas byte a byte en
+el dispositivo. Ninguna resolvió el síntoma, ni individualmente (A/B)
+ni en conjunto (C/D/E/F sobre A/B ya aplicados).
+
+**PARADA REAL (no otra pausa con pistas pendientes) — criterio fijado
+de antemano por el usuario antes de este intento, cumplido tal cual:**
+*"Si con C+D+E+F sigue vacía después de este intento, ahí sí paramos en
+serio — habremos agotado todas las discrepancias conocidas del único
+formato confirmado como relevante, y seguir sería especular sobre algo
+que ninguna evidencia respalda todavía."* Diferencia con la pausa
+anterior (post-cuarto intento): esa vez había un lead concreto sin
+investigar (`frpd`) que justificaba seguir. Esta vez no hay un lead
+concreto — solo especulación no respaldada. No se implementa nada más
+sin evidencia nueva.
+
+**Estado honesto para quien retome esto:**
+- El Photo Database que Cicada construye es, campo por campo, un
+  duplicado del que escribe Música/iTunes para las mismas fotos —
+  confirmado por diff binario completo, no por inferencia.
+- `frpd`/`PhotosFolder*` sigue sin descartarse con certeza (la
+  investigación bajó su prioridad con evidencia convergente, no lo
+  eliminó) — sigue siendo el único lead concreto no probado en
+  hardware.
+- Hipótesis sin investigar en absoluto, candidatas para una sesión
+  futura con tiempo dedicado: (a) algo a nivel de `SysInfo`/
+  capabilities del dispositivo que declare soporte de Fotos y que
+  Cicada nunca toca (mismo patrón que el conteo en `iTunesPrefs` que
+  iOpenPod sí escribe para música/video); (b) un checksum o firma sobre
+  el propio Photo Database que el firmware valide antes de indexarlo
+  (nunca se comparó el archivo completo con una herramienta de
+  checksum conocida, más allá de la inspección campo a campo); (c) caché
+  interno del propio dispositivo que sobreviva a un rewrite completo
+  del archivo (no descartado: nunca se probó un factory-reset de
+  Fotos antes de un sync).
+- Todo el material de las 5 rondas (backups reales, diffs, scripts)
+  sigue en `~/.cicada/photo_sync_forensics/`, sin tocar desde el
+  intento anterior.
 
 Primer paso sugerido al retomar (barato, no necesita el dispositivo):
 buscar si hay evidencia pública de que el firmware de un Nano 7G lee

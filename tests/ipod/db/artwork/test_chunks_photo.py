@@ -223,6 +223,40 @@ class TestMhiiPhotoRoundTrip:
         assert entry.thumbs[1089].storage_path == "Thumbs/F1089_1.ithmb"
 
 
+class TestMhiiPhotoOrdenDeThumbnails:
+    """Discrepancia E (Etapa 6j, quinto intento): un Photo Database real
+    de Música/iTunes pone el formato de payload más grande antes que el
+    chico — Cicada escribía en orden de format_id ascendente. Formato
+    con format_id NUMÉRICAMENTE MENOR pero payload más grande a
+    propósito: si el test pasara igual ordenando por id, no probaría
+    nada — así confirma que el criterio real es tamaño, no id."""
+
+    def test_formato_grande_va_antes_que_el_chico_pese_a_id_mayor(self):
+        # A propósito al revés de la numeración real (1005 chico, 1007
+        # grande): si el criterio fuera "id ascendente" en vez de "tamaño
+        # descendente", este test daría el resultado opuesto — así prueba
+        # que el criterio real es tamaño, no coincidencia con el id.
+        small_payload_low_id = _payload(width=80, height=80)  # format_id 1005, payload chico
+        big_payload_high_id = _payload(width=480, height=864)  # format_id 1007, payload grande
+        assert big_payload_high_id.size > small_payload_low_id.size
+
+        blob = write_mhii_photo(
+            image_id=1, created_at=0, digitized_at=0, original_size=0,
+            full_res_payload=_payload(size=10), full_res_storage_path="Full Resolution/iOpenPod/x.jpg",
+            thumb_formats={1005: small_payload_low_id, 1007: big_payload_high_id},
+            thumb_offsets={1005: 0, 1007: 0},
+            thumb_storage_paths={1005: "Thumbs/F1005_1.ithmb", 1007: "Thumbs/F1007_1.ithmb"},
+        )
+        # El primer hijo es siempre FULL_RESOLUTION; el segundo debe ser
+        # el thumbnail de payload grande (1007), pese a tener id mayor.
+        pos = MHII_HEADER_SIZE
+        full_res_total = struct.unpack_from("<I", blob, pos + 8)[0]
+        pos += full_res_total
+        first_thumb_mhni_offset = pos + 24  # MHOD_HEADER_SIZE
+        first_format_id = struct.unpack_from("<I", blob, first_thumb_mhni_offset + 16)[0]
+        assert first_format_id == 1007
+
+
 class TestMhiiPhotoMhafMarker:
     """Etapa 6j (2026-08-20): el 4º hijo (MHOD tipo 6, "mhaf") y offset 20
     ("persistent_id" = image_id + 2) que un Photo Database real de

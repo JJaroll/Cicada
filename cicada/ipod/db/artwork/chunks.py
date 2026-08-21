@@ -270,10 +270,27 @@ def write_mhii_photo(
     el MHNI de la imagen completa (``format_id`` centinela
     :data:`PHOTO_FULL_RESOLUTION_FORMAT_ID`); siguen los MHOD tipo
     THUMBNAIL_IMAGE (2), uno por formato de miniatura, en orden de
-    ``format_id`` ascendente (mismo criterio de orden que ``write_mhii``);
-    el último es un MHOD tipo UNKNOWN_MHAF (6) con :data:`MHAF_STATIC_BLOB`
-    — presente en las 61 entradas de un Photo Database real de referencia
-    pero ausente en toda escritura previa de Cicada/iOpenPod (Etapa 6j).
+    **tamaño de payload descendente (el formato más grande primero)** —
+    a diferencia de ``write_mhii`` (cover art, orden de ``format_id``
+    ascendente): confirmado contra las 61 entradas de un Photo Database
+    real de Música/iTunes, que siempre pone el formato grande (1007, foto
+    completa en pantalla) antes que el chico (1005, miniatura 80x80),
+    Etapa 6j. Se ordena por tamaño de payload y no por ``format_id``
+    numérico para no depender de que IDs más altos sean siempre formatos
+    más grandes en otros dispositivos — aquí coincide, pero no es la ley
+    que se está reproduciendo; el último es un MHOD tipo UNKNOWN_MHAF (6)
+    con :data:`MHAF_STATIC_BLOB` — presente en las 61 entradas de un Photo
+    Database real de referencia pero ausente en toda escritura previa de
+    Cicada/iOpenPod (Etapa 6j).
+
+    ``original_size`` (offset 48): confirmado **0** en las 61 entradas
+    reales, no el tamaño del archivo fuente en la PC (que sí escribe
+    ``write_mhii`` de cover art en el mismo offset) — a diferencia de
+    offset 20/48 de MHFD, este no es un patrón de una sola sesión: se
+    revisó contra el rango completo de image_id (100-160) sin excepción.
+    El caller debe pasar 0 explícitamente; el parámetro se conserva (no
+    se hardcodea acá) para que el offset quede documentado por nombre en
+    vez de un ``0`` mágico en el call site.
 
     Offset 20 del header (u32, sin uso documentado hasta ahora): se
     escribe ``image_id + 2``, patrón empírico confirmado sin excepción en
@@ -296,7 +313,7 @@ def write_mhii_photo(
             ArtworkMhodType.THUMBNAIL_IMAGE,
             write_mhni_photo(fmt_id, thumb_offsets[fmt_id], thumb_formats[fmt_id], thumb_storage_paths[fmt_id]),
         )
-        for fmt_id in sorted(thumb_formats.keys())
+        for fmt_id in sorted(thumb_formats.keys(), key=lambda fid: thumb_formats[fid].size, reverse=True)
     )
     children.append(_write_mhod_container(ArtworkMhodType.UNKNOWN_MHAF, MHAF_STATIC_BLOB))
     children_data = b"".join(children)

@@ -50,6 +50,16 @@ def _make_photo(path: Path, size=(400, 300), color=(200, 50, 50)) -> None:
     Image.new("RGB", size, color).save(path)
 
 
+def _make_photo_with_exif_capture(path: Path, capture_iso: str, size=(400, 300), color=(200, 50, 50)) -> None:
+    """Foto con EXIF DateTimeOriginal real (tag 36867, Exif SubIFD 0x8769)
+    — ``_make_photo`` no trae EXIF en absoluto, no sirve para probar la
+    discrepancia F (Etapa 6j, quinto intento)."""
+    img = Image.new("RGB", size, color)
+    exif = img.getexif()
+    exif.get_ifd(0x8769)[36867] = capture_iso
+    img.save(path, exif=exif)
+
+
 # ── scan_pc_photos / image_visual_hash ───────────────────────────────────
 
 
@@ -195,6 +205,85 @@ class TestSyncRoundTrip:
         mac_epoch = datetime.datetime(1904, 1, 1, tzinfo=datetime.timezone.utc)
         decoded = mac_epoch + datetime.timedelta(seconds=entry.created_at)
         assert 2020 <= decoded.year <= 2030
+
+    def test_full_res_width_height_son_las_dimensiones_reales(self, ipod, device_info, tmp_path):
+        """Discrepancia C (Etapa 6j, quinto intento): un Photo Database
+        real trae width/height del MHNI de full-res poblados (10612x8086
+        en la muestra auditada); Cicada escribía 0/0."""
+        src = tmp_path / "lib"
+        src.mkdir()
+        _make_photo(src / "a.jpg", size=(640, 480))
+
+        result = sync_photos_to_ipod(ipod, src, device_info=device_info)
+        assert result.success
+
+        images, _ = read_photo_db((ipod / "Photos" / "Photo Database").read_bytes())
+        assert images[0].full_res.width == 640
+        assert images[0].full_res.height == 480
+
+    def test_original_size_es_cero_no_el_tamano_del_archivo_fuente(self, ipod, device_info, tmp_path):
+        """Discrepancia D (Etapa 6j, quinto intento): confirmado 0 en las
+        61 entradas reales — Cicada escribía el tamaño del .jpg de origen
+        en la PC (offset 48 del header MHII)."""
+        src = tmp_path / "lib"
+        src.mkdir()
+        photo_path = src / "a.jpg"
+        _make_photo(photo_path, size=(800, 600))
+        assert photo_path.stat().st_size > 0  # el archivo fuente sí pesa algo
+
+        result = sync_photos_to_ipod(ipod, src, device_info=device_info)
+        assert result.success
+
+        images, _ = read_photo_db((ipod / "Photos" / "Photo Database").read_bytes())
+        assert images[0].original_size == 0
+
+    def test_created_at_usa_exif_digitized_at_usa_mtime_cuando_difieren(self, ipod, device_info, tmp_path):
+        """Discrepancia F (Etapa 6j, quinto intento): un Photo Database
+        real trae created_at (fecha de captura) distinto de digitized_at
+        (fecha de import) — Cicada igualaba ambos al mtime del archivo.
+        Sin fecha de import real disponible, se aproxima con EXIF
+        DateTimeOriginal para created_at y mtime para digitized_at (ver
+        docstring de _exif_capture_timestamp)."""
+        import os
+
+        src = tmp_path / "lib"
+        src.mkdir()
+        photo_path = src / "a.jpg"
+        _make_photo_with_exif_capture(photo_path, "2024:03:15 10:30:00")
+        # mtime deliberadamente MUY distinto de la fecha EXIF de captura.
+        mtime_unix = 1780010632  # 2026-05-28, muy lejos del 2024-03-15 EXIF
+        os.utime(photo_path, (mtime_unix, mtime_unix))
+
+        result = sync_photos_to_ipod(ipod, src, device_info=device_info)
+        assert result.success
+
+        images, _ = read_photo_db((ipod / "Photos" / "Photo Database").read_bytes())
+        entry = images[0]
+        assert entry.created_at != entry.digitized_at
+
+        expected_digitized = DeviceTimeContext.utc().unix_to_mac(mtime_unix)
+        assert entry.digitized_at == expected_digitized
+
+        import datetime
+        expected_capture_unix = int(datetime.datetime(2024, 3, 15, 10, 30, 0).timestamp())
+        expected_created = DeviceTimeContext.utc().unix_to_mac(expected_capture_unix)
+        assert entry.created_at == expected_created
+
+    def test_sin_exif_created_at_y_digitized_at_siguen_iguales(self, ipod, device_info, tmp_path):
+        """Fallback documentado: sin EXIF DateTimeOriginal (caso de
+        _make_photo, igual que antes de esta etapa), ambas fechas siguen
+        siendo el mismo mtime — no un cambio de comportamiento sorpresa
+        para el caso ya cubierto por
+        test_created_at_digitized_at_son_epoca_mac_1904_no_unix."""
+        src = tmp_path / "lib"
+        src.mkdir()
+        _make_photo(src / "a.jpg")
+
+        result = sync_photos_to_ipod(ipod, src, device_info=device_info)
+        assert result.success
+
+        images, _ = read_photo_db((ipod / "Photos" / "Photo Database").read_bytes())
+        assert images[0].created_at == images[0].digitized_at
 
     def test_segundo_sync_sin_cambios_es_no_op(self, ipod, device_info, tmp_path):
         src = tmp_path / "lib"
