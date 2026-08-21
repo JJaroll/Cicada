@@ -2118,7 +2118,240 @@ allá de iOpenPod, foros, ingeniería inversa previa de terceros) antes
 de invertir tiempo en diseccionar el checksum de `PhotosFolderPrefs`
 a ciegas.
 
-#### Etapa 6a — `kind` de video en `/media/sync`. **Estado: implementado y verificado.**
+#### RETOMADO (2026-08-21): iOpenPod sincronizó una foto nueva y TODAS las fotos aparecieron — incluidas las de Cicada
+
+Sin que Cicada tocara el dispositivo, el usuario sincronizó una foto
+nueva con iOpenPod real (no una reimplementación — el software de
+terceros, mismo trato que Música/iTunes como fuente primaria). Resultado
+en el dispositivo real: **las 3 fotos son visibles** — la nueva
+(`img20260524_00255169.jpeg`, nombre real, `Source Path` real) y las 2
+que Cicada había escrito en el 5º intento (visibles como "Photo 100"/
+"Photo 101", nombre genérico — el dispositivo no tenía un nombre real
+que mostrar para esas).
+
+**Captura inmediata para no perder el estado**: `Photo Database`
+post-iOpenPod copiado a
+`~/.cicada/photo_sync_forensics/Photo_Database_post_iopenpod_20260821T205952Z`
+antes de cualquier otra escritura.
+
+**Pregunta central respondida sin ambigüedad: iOpenPod REESCRIBIÓ por
+completo las entradas 100/101 de Cicada — no son los mismos bytes.**
+Diff campo por campo (image_id 100, Cicada 5º intento vs. iOpenPod
+ahora vs. Apple real):
+
+| Campo | Cicada (5º intento) | iOpenPod (ahora) | Apple real |
+|---|---|---|---|
+| `mhaf` (hijo 4, tipo 6) | Presente | **Ausente** | Presente |
+| offset 20 MHII (`persistent_id`) | `image_id+2` | **0** | `image_id+2` |
+| full_res width/height | reales (11376×8480) | **0×0** | reales |
+| `original_size` (offset 48 MHII) | 0 | **tamaño real del archivo** (22382016) | 0 |
+| orden de miniaturas | grande primero | **chica primero** | grande primero |
+| `created_at` vs `digitized_at` | distintos | **iguales** | distintos |
+| MHFD offset 48 | 0 | **2** | 1 |
+| MHFD offset 52 | — | **0** | 2 |
+| MHFD "checksum" opaco (24B, offset 32-48+60-68) | 0 (nunca escrito) | **0 (tampoco escrito)** | 24 bytes alta entropía |
+
+**iOpenPod viola A, B, C, D, E, F y los dos campos MHFD investigados —
+simultáneamente — y el dispositivo las muestra igual.** Esto no es "tal
+vez no importan": es la misma app, mismo dispositivo, mostrando estas
+fotos con TODAS esas discrepancias presentes a la vez. Cinco rondas de
+hardware persiguiendo A-F fueron, con esta evidencia, la dirección
+equivocada — el contenido interno del Photo Database nunca fue el gate.
+
+**Hipótesis del mapa on-device de iOpenPod (punto 5 del usuario) —
+confirmada su existencia, descartada como causa probable.**
+`iPod_Control/iOpenPod/photo_sync.json` SÍ existe en el dispositivo tras
+este sync real (antes solo se conocía por lectura del código fuente de
+iOpenPod, nunca confirmado en un dispositivo real) — mismo formato que
+el mapa off-device de Cicada (`display_name`/`source_path`/
+`visual_hash` + `__photo_sync_settings__`). Pero es un JSON con
+namespace de terceros (`iPod_Control/iOpenPod/`) — el firmware de Apple
+no tiene forma de conocer la existencia de esa carpeta. Descartado por
+implausibilidad, no por evidencia directa en contra.
+
+**Hipótesis `EstimatedDeviceTotals.totalPhotos` — descartada con
+evidencia directa.** Diff de árbol completo (mismo método que encontró
+`frpd`, esta vez con `tarfile` exacto contra el backup automático
+tomado justo antes del 5º intento) mostró que `iTunesPrefs.plist` ganó
+un bloque `EstimatedDeviceTotals` (`totalPhotos=3`,
+`totalPhotoBytes=2526720`) que **no existía en ese mismo dispositivo un
+momento antes** de este sync de iOpenPod — parecía el candidato más
+fuerte de toda la investigación (un contador con formato real de Apple,
+en un archivo real de Apple, justo el tipo de índice que se había
+buscado en el primer diagnóstico post-6j). **Descartada al confirmar
+con el usuario que las 61 fotos reales del sync de Música SÍ eran
+visibles en la app de Fotos** — y ese `iTunesPrefs.plist` (verificado
+en el backup preservado, antes y después del sync real) **nunca tuvo
+`EstimatedDeviceTotals`**. Si el campo fuera necesario, esas 61 fotos
+tampoco se habrían visto. Confirma que no es un requisito — es una
+convención de iOpenPod, no del firmware.
+
+**HIPÓTESIS CON MÁS PESO DE TODA LA INVESTIGACIÓN: el gate no está en
+`Photos/`, está en si `iTunesCDB` se reescribe en la MISMA sesión.**
+Correlación exacta entre `mtime` de `iTunesCDB` y de `Photo Database`,
+contra los backups preservados (no inferencia — archivos reales
+extraídos con `tarfile`):
+
+| Momento | `iTunesCDB` mtime | `Photo Database` mtime | ¿Fotos visibles? |
+|---|---|---|---|
+| Antes del sync real de Música | 2026-08-19 20:12 | — | — |
+| **Sync real de Música (61 fotos)** | **2026-08-20 18:10** ← cambió | 2026-08-20 18:15 (+5min) | **Sí (confirmado por el usuario)** |
+| 3er/4º intento Cicada (después) | 2026-08-20 18:10 — **sin cambios** | 2026-08-20 18:38 | No |
+| Justo antes del 5º intento | 2026-08-20 18:10 — **sin cambios, +1 día** | 2026-08-20 19:23 | No |
+| **Sync de iOpenPod (ahora)** | **2026-08-21 16:51:58** ← cambió | 2026-08-21 16:52:04 (+6s) | **Sí (confirmado por el usuario)** |
+
+**Correlación perfecta, sin una sola excepción en los datos que
+tenemos**: cada sesión donde `iTunesCDB` se reescribió junto con
+`Photo Database` mostró fotos; las cinco sesiones de Cicada, donde
+`iTunesCDB` quedó exactamente intacto (mismo mtime durante más de un
+día, atravesando 3 intentos distintos), no mostraron ninguna. Encaja
+con una decisión de diseño ya documentada en Etapa 6h, tomada por
+buenas razones pero con este posible efecto colateral no anticipado:
+`sync_photos_to_ipod()` nunca toca `iTunesCDB` a propósito, para evitar
+el riesgo de re-firmar HASHAB en cada sync de fotos — si el índice de
+Fotos del firmware se reconstruye al detectar que `iTunesCDB` cambió
+(no al detectar que `Photo Database` cambió), un sync que solo toca
+`Photos/` nunca dispara ese re-escaneo, sin importar cuán correcto sea
+su contenido — coherente con que las discrepancias A-F resultaran
+irrelevantes: nunca fueron el gate.
+
+**Diseño del experimento (aprobado por el usuario, 2026-08-21):**
+`sync_photos_to_ipod()` (fotos de Cicada, sin mejoras adicionales al
+Photo Database — deliberado, para no reintroducir A-F como variable)
+seguido, en el MISMO proceso y SIN desmontar el volumen entre medio,
+por un `apply()` de música con los tracks YA existentes en el
+dispositivo sin cambios (mismo `build_itunescdb`, misma firma HASHAB,
+ningún track distinto) — para aislar la variable real ("¿alcanza con
+que `iTunesCDB` cambie en la misma sesión?") de una posible variable de
+orden/operaciones-subsecuentes que dos sesiones de hardware separadas
+no permitirían distinguir.
+
+**Limpieza previa decidida**: se eliminan del dispositivo
+`iPod_Control/iOpenPod/photo_sync.json` e
+`iPod_Control/iTunes/iOpenPod.json` (bookkeeping propio de iOpenPod,
+Cicada nunca los toca) antes del experimento — para que un resultado
+positivo se pueda atribuir sin ambigüedad al toque de `iTunesCDB`, no a
+residuo de la sesión de iOpenPod. `sync_photos_to_ipod()` y `apply()`
+ya revierten por sí solos el contenido de `Photo Database`/`iTunesCDB`
+al formato de Cicada (reescritura completa en cada sync, sin
+preservación) — no hace falta revertir esos dos manualmente. Los
+archivos `frpd`/`PhotosFolder*` se dejan como están: ya estaban
+presentes y sin relación con el contenido sincronizado durante los 5
+intentos previos de Cicada (todos fallaron con ellos apuntando a
+Música), así que no aportan ni quitan aislamiento a este experimento
+puntual.
+
+**Experimento EJECUTADO (2026-08-21): resultado negativo, limpio.**
+Un solo proceso, sin desmontar el volumen entre pasos: (1)
+`clean_foreign_artifacts()` + borrado manual de
+`iPod_Control/iOpenPod/photo_sync.json` e
+`iPod_Control/iTunes/iOpenPod.json`; (2) `sync_photos_to_ipod()` con las
+2 fotos de siempre, Photo Database sin ninguna mejora adicional
+(`success=True`, `photos_written=2`); (3) en el mismo proceso, lectura
+de los 47 tracks YA existentes en el dispositivo vía `load_ipod_library`
+(mismo mecanismo que `cicada ipod tracks`) y `apply()` de esos mismos 47
+tracks sin cambios (`consent_needed=False` — ya no hacía falta
+consentimiento nuevo, misma firma HASHAB de siempre; `success=True`,
+`tracks_written=47`); (4) eject limpio. Los tres pasos, plan y resultado
+completos quedaron en el log del script
+(`itunescdb_experiment/run_experiment.py`, preservado en el scratchpad
+de la sesión). `iTunesCDB` quedó reescrito y refirmado en la MISMA
+sesión que `Photo Database`, con segundos de diferencia entre ambos —
+exactamente la condición que la correlación de mtimes predecía como
+suficiente.
+
+**Confirmado por el usuario tras reconectar el dispositivo: la app de
+Fotos sigue sin mostrar las fotos de Cicada.** La hipótesis de
+coordinación con `iTunesCDB` queda **descartada con evidencia limpia**,
+no como un experimento fallido por mala ejecución — se verificó que
+ambos archivos se reescribieron en la misma sesión (mismo mecanismo,
+misma firma, sin desmontar entre medio) y aun así el síntoma persiste.
+No es un callejón sin salida silencioso: es información real que
+descarta una hipótesis fuerte y bien fundamentada, y angosta el espacio
+de búsqueda — el gate no es "¿se tocó `iTunesCDB` en la sesión?".
+
+**Balance de la investigación a esta altura (2026-08-21): cuatro líneas
+de investigación serias, cuatro resultados negativos.** (1) Las 6
+discrepancias de contenido del Photo Database (A-F) — descartadas: un
+sync de iOpenPod real las viola todas simultáneamente y funciona. (2)
+El formato hermano `frpd`/`PhotosFolder*` — descartado con evidencia
+convergente de 4 fuentes independientes. (3) El contador
+`EstimatedDeviceTotals.totalPhotos` de `iTunesPrefs.plist` — descartado
+porque el sync real de Música (61 fotos, confirmado visible) tampoco lo
+escribe. (4) La coordinación de escritura con `iTunesCDB` en la misma
+sesión — descartada arriba. Cuatro hipótesis distintas, cada una con
+razonamiento propio y evidencia real detrás, ninguna sostenida.
+
+#### Investigación del ENTORNO de escritura, no del contenido (2026-08-21)
+
+Con las cuatro hipótesis de contenido/coordinación agotadas, el usuario
+pidió reconsiderar el enfoque completo: ¿hay algo en CÓMO se escriben
+los bytes al disco (no QUÉ bytes) que difiera entre iOpenPod y Cicada?
+Tres comprobaciones directas, sobre el propio dispositivo real (mismo
+volumen, mismo momento, sin inferencia):
+
+1. **Metadata de filesystem — idéntica.** `xattr -l`, `stat -x` (todos
+   los timestamps: access/modify/change/birth), `GetFileInfo` (type/
+   creator/atributos Finder) y flags BSD (`ls -lO`) comparados entre un
+   archivo recién escrito por iOpenPod (`img20260524_00255169_00102.jpg`,
+   todavía huérfano en el dispositivo) y uno recién reescrito por Cicada
+   (`img20260322_15243486_00101.jpg`, mismo sync). Resultado: **mismo
+   `xattr` (`com.apple.provenance`, lo agrega macOS automáticamente, no
+   ninguna de las dos herramientas), mismo modo `0700`, mismos
+   type/creator vacíos, mismos flags Finder (ninguno activo), mismo
+   patrón de timestamps (`mtime == ctime == birthtime`, típico de
+   FAT32).** Tiene sentido: ambas herramientas son procesos de usuario
+   normales escribiendo a través del mismo driver FAT32 de macOS — no
+   hay mecanismo para que ninguna de las dos difiera a este nivel sin
+   escribir directo al dispositivo de bloques, que ninguna hace.
+
+2. **Mecanismo de expulsión — equivalente.** Comparado
+   `cicada/ipod/device/eject.py` contra `src/iopenpod/device/eject.py`
+   real (clon local). Ambos: flush previo (`os.fsync`/`os.sync`,
+   `_macos_full_fsync` en iOpenPod — mismo mecanismo que
+   `durability.py` de Cicada) → `diskutil eject <disco completo>` → si
+   falla, `diskutil unmount` + `diskutil eject` de respaldo → espera a
+   que el punto de montaje desaparezca. Es el mismo camino estándar de
+   macOS (DiskArbitration/`diskutil`) que usaría cualquier expulsión de
+   Finder — ninguna de las dos herramientas hace algo a nivel de SCSI/
+   USB que la otra no haga.
+
+3. **Contenido de píxeles de las miniaturas `.ithmb` — equivalente
+   dentro del margen de cuantización, nunca comparado antes.**
+   Las dos fotos de Cicada (`img20260322_14485213.jpg`/
+   `img20260322_15243486.jpg`) están TAMBIÉN entre las 61 que
+   sincronizó Música — permite comparar la miniatura real de Apple
+   contra la de Cicada para el MISMO archivo fuente, no una
+   aproximación. Extraídos los bytes RGB565_LE reales del `.ithmb`
+   preservado (`image_id=128`, offset 126074880, formato 1007,
+   480×864 con contenido en filas 253-610) y decodificados junto con
+   el resultado de `encode_photo_for_format()` de Cicada para el mismo
+   archivo. Resultado: **misma región de contenido exacta (filas
+   253-610 en ambas), diferencia media de 12.6 sobre 765 posibles por
+   píxel (suma RGB) — ruido de cuantización/decodificador JPEG
+   normal, no una diferencia estructural.** Verificado también
+   visualmente (PNG decodificado de ambos lados): indistinguibles a
+   simple vista.
+
+**Balance actualizado: siete líneas de investigación serias, siete
+resultados negativos** — las cuatro anteriores (A-F, `frpd`,
+`totalPhotos`, coordinación con `iTunesCDB`) más estas tres
+(metadata de filesystem, mecanismo de expulsión, contenido de
+píxeles). Se agotó tanto la comparación de CONTENIDO como la de
+ENTORNO de escritura disponible desde el host, en los dos niveles
+donde Cicada tiene visibilidad completa y control total.
+
+**Lo que queda, honestamente, está fuera del alcance de comparación
+estática desde el host**: la única categoría de evidencia no
+explorada es el tráfico USB real durante un sync (captura de
+paquetes) — si el firmware espera una secuencia de comandos SCSI/USB
+específica (más allá del `diskutil eject` estándar) que solo
+iTunes/Música/iOpenPod emitan, ningún archivo en el volumen lo
+revelaría nunca. Es una categoría de esfuerzo cualitativamente
+distinta (herramientas de captura USB en macOS, no triviales de
+configurar) — no es desensamblar firmware, pero se acerca a la
+misma frontera de "inversión desproporcionada" que ya motivó diferir
+Fotos la primera vez.
 
 `MediaTrackInput.kind` extendido con `"movie"`, `"tv_show"`,
 `"music_video"`, `"video_podcast"` (cierra el hueco que había quedado
