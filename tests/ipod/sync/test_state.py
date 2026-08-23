@@ -60,14 +60,12 @@ def test_device_upsert_and_retrieve(sync_db: SyncStateDB):
     assert retrieved.model_num == "MD481"
     assert retrieved.name == "Mi iPod Nano"
 
-    # Actualizar last_seen
     dev.last_seen = 1700000999
     sync_db.upsert_device(dev)
     updated = sync_db.get_device(GUID_1)
     assert updated is not None
     assert updated.last_seen == 1700000999
 
-    # Listar
     devs = sync_db.list_devices()
     assert len(devs) == 1
     assert devs[0].guid == GUID_1
@@ -77,7 +75,7 @@ def test_track_map_u64_id_normalization(sync_db: SyncStateDB):
     """Verifica que los IDs grandes que superan 2^63-1 se recuperan correctamente como uint64."""
     sync_db.upsert_device(DeviceRecord(guid=GUID_1))
 
-    large_dbid_1 = 0xFFFFFFFFFFFFFFFF  # 2^64 - 1
+    large_dbid_1 = 0xFFFFFFFFFFFFFFFF
     large_dbid_2 = 0x9000000000000001
 
     rec1 = TrackMapRecord(
@@ -99,22 +97,18 @@ def test_track_map_u64_id_normalization(sync_db: SyncStateDB):
 
     sync_db.upsert_track_maps([rec1, rec2])
 
-    # Recuperación por dbid
     t1 = sync_db.get_track_map(GUID_1, large_dbid_1)
     assert t1 is not None
     assert t1.ipod_dbid == large_dbid_1
     assert t1.local_path == "/music/song1.mp3"
 
-    # Recuperación por local_path
     t2 = sync_db.get_track_map_by_local_path(GUID_1, "/music/song2.mp3")
     assert t2 is not None
     assert t2.ipod_dbid == large_dbid_2
 
-    # Listado
     all_tracks = sync_db.list_track_maps(GUID_1)
     assert len(all_tracks) == 2
 
-    # Borrado
     deleted = sync_db.delete_track_maps(GUID_1, [large_dbid_1])
     assert deleted == 1
     assert sync_db.get_track_map(GUID_1, large_dbid_1) is None
@@ -125,7 +119,6 @@ def test_playback_state_stars_property(sync_db: SyncStateDB):
     """Verifica el cálculo de estrellas a partir de la calificación 0-100."""
     sync_db.upsert_device(DeviceRecord(guid=GUID_1))
 
-    # 0 -> 0 estrellas, 20 -> 1 estrella, 60 -> 3 estrellas, 80 -> 4 estrellas, 100 -> 5 estrellas
     ratings = [(101, 0, 0), (102, 20, 1), (103, 60, 3), (104, 80, 4), (105, 100, 5)]
     records = [
         PlaybackStateRecord(
@@ -225,7 +218,6 @@ def test_atomic_transaction_and_rollback(sync_db: SyncStateDB):
             )
             raise RuntimeError("Error forzado para disparar rollback")
 
-    # El registro no debe existir
     assert sync_db.get_track_map(GUID_1, 1001) is None
 
 
@@ -243,12 +235,10 @@ def test_cascade_delete_on_device_removal(sync_db: SyncStateDB):
     assert len(sync_db.list_playlists_map(GUID_1)) == 1
     assert sync_db.get_local_playback_state(GUID_1, 501) is not None
 
-    # Borrar dispositivo
     with sync_db._connection() as conn:
         conn.execute("DELETE FROM devices WHERE guid = ?", (GUID_1,))
         conn.commit()
 
-    # Tablas hijas vacías para ese GUID
     assert sync_db.get_track_map(GUID_1, 501) is None
     assert sync_db.get_playback_state(GUID_1, 501) is None
     assert len(sync_db.list_playlists_map(GUID_1)) == 0

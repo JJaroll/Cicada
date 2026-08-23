@@ -95,9 +95,6 @@ from .mhyp_writer import PlaylistInfo, generate_playlist_id
 
 logger = logging.getLogger(__name__)
 
-# Default database version — 0x4F (79) works for iPod Classic / Nano 3G+.
-# For older devices, callers should pass `db_version` from
-# ``iopenpod.device.DeviceCapabilities.db_version``.
 DATABASE_VERSION_DEFAULT = 0x4F
 
 
@@ -189,13 +186,10 @@ def extract_preserved_mhsd_blobs(itdb_data: bytes) -> list[bytes]:
 
     header_length = struct.unpack("<I", itdb_data[4:8])[0]
 
-    # Decompress iTunesCDB payload if needed — the MHSD children are in
-    # the zlib-compressed payload, so we can't walk them without this.
     itdb_data = _maybe_decompress_cdb(itdb_data)
 
     children_count = struct.unpack("<I", itdb_data[0x14:0x18])[0]
 
-    # Types we now generate ourselves — don't preserve these
     GENERATED_TYPES = {1, 2, 3, 4, 5, 6, 8, 10}
 
     blobs: list[bytes] = []
@@ -278,34 +272,26 @@ def write_mhbd(
     Returns:
         Complete iTunesDB file content as bytes
     """
-    # Determine database ID, passed, preserved, or random
     if db_id is None:
         if reference_info and "db_id" in reference_info:
             db_id = reference_info["db_id"]
         else:
             db_id = generate_database_id()
 
-    # Generate db_id_2 early - needed for both the MHBD header AND every MHIT, preserved or random.
-    # Field is named 'db_id_2' in the shared field definitions (offset 0x24).
     if reference_info and "db_id_2" in reference_info:
         db_id_2 = reference_info["db_id_2"]
     else:
         db_id_2 = random.getrandbits(64)
 
-    # Build album list first to get album IDs for tracks (Type 4 dataset)
     global_id_start_index = 1
 
     mhla_data, album_map, last_id = write_mhla(tracks, starting_index_for_album_id=global_id_start_index)
     mhsd_type4 = write_mhsd_type4(mhla_data)
 
-    # Build artist list to get artist IDs for tracks (Type 8 dataset)
     mhli_data, artist_map, last_id = write_mhli(tracks, starting_index_for_artist_id=last_id + 1)
     mhsd_type8 = write_mhsd_type8(mhli_data)
 
-    # Build composer ID map (no dataset — composers don't have their own
-    # MHSD type, but the iPod firmware uses composer_id in mhit for
-    # grouping and sorting).
-    composer_map: dict[str, int] = {}  # lowercase composer → composer_id
+    composer_map: dict[str, int] = {}
     composer_id = last_id + 1
     for track in tracks:
         composer_name = track.composer or ""
@@ -317,7 +303,6 @@ def write_mhbd(
             composer_id += 1
     last_id = composer_id - 1 if composer_map else last_id
 
-    # Assign album_id, artist_id, and composer_id to each track
     for track in tracks:
         if not track.album_id:
             identity = album_identity_from_track(track)
@@ -326,66 +311,45 @@ def write_mhbd(
             key = (album_name, album_artist)
             track.album_id = album_map.get(key, 0)
 
-        # Artist ID from the artist list (artist_map is keyed by lowercase)
         artist_name = track.artist or ""
         if artist_name:
             track.artist_id = artist_map.get(artist_name.lower(), 0)
 
-        # Composer ID from the composer map
         composer_name = track.composer or ""
         if composer_name:
             track.composer_id = composer_map.get(composer_name.lower(), 0)
 
-    # ── Compute db_version early — needed for MHIT header sizing ────
     ref_version = reference_info.get("version", 0) if reference_info else 0
     cap_version = capabilities.db_version if capabilities else 0
     if cap_version:
-        # Device identified — use the higher of reference and capability
         db_version = max(ref_version, cap_version)
     elif ref_version:
-        # Device unknown — preserve the existing database's version
         db_version = ref_version
     else:
-        # No reference, no capabilities — use safe default
         db_version = DATABASE_VERSION_DEFAULT
     logger.debug("Using db_version=0x%X (ref=0x%X, cap=0x%X, default=0x%X)", db_version, ref_version, cap_version, DATABASE_VERSION_DEFAULT)
 
-    # Build track list (Type 1 dataset)
-    # This also returns next_track_id which tells us track IDs used
 
     mhlt_data, next_track_id = write_mhlt(tracks, db_id_2=db_id_2, capabilities=capabilities, db_version=db_version, start_track_id=last_id + 1)
     mhsd_type1 = write_mhsd_type1(mhlt_data)
 
-    # Collect all track IDs for the master playlist
-    # Track IDs are sequential starting from 1
     track_ids = list(range(last_id + 1, next_track_id))
 
-    # Build db_track_id → sequential track_id map so playlists can reference
-    # tracks by their 32-bit MHIT trackID (not 64-bit db_track_id).
-    # The sync executor stores db_track_ids in PlaylistInfo.track_ids because
-    # db_track_ids are the stable identifier, but MHIP entries need 32-bit IDs.
     db_track_id_to_track_id: dict[int, int] = {}
     for i, track in enumerate(tracks):
         if track.db_track_id:
             db_track_id_to_track_id[track.db_track_id] = i + last_id + 1
 
-    # Remap playlist track_ids from 64-bit db_track_id → 32-bit sequential track_id.
-    #
-    # PlaylistInfo.track_ids stores db_track_ids (the stable cross-session identifier),
-    # but MHIP entries in the iTunesDB need sequential track IDs assigned by
-    # write_mhlt.  We build new PlaylistInfo copies with remapped IDs instead
-    # of mutating the caller's objects — if write_mhbd() were retried (e.g.
-    # after an I/O error) the original db_track_id-based track_ids must still be intact.
     def _remap_playlist(pl: PlaylistInfo) -> PlaylistInfo:
         """Return a copy of pl with the db_track_ids translated to track IDs."""
         new_ids: list[int] = []
         new_meta: list | None = [] if pl.item_metadata is not None else None
 
-        meta = pl.item_metadata  # capture for type narrowing
+        meta = pl.item_metadata
         for i, db_track_id in enumerate(pl.track_ids):
             track_id = db_track_id_to_track_id.get(db_track_id)
             if track_id is None:
-                continue  # track not in this database — skip
+                continue
             new_ids.append(track_id)
             if new_meta is not None and meta is not None and i < len(meta):
                 new_meta.append(meta[i])
@@ -395,10 +359,6 @@ def write_mhbd(
 
         return _dc_replace(pl, track_ids=new_ids, item_metadata=new_meta)
 
-    # Build playlist list WITH master playlist (Type 2 dataset)
-    # The master playlist is REQUIRED and must reference ALL tracks
-    # Pass tracks so master playlist can generate library index MHODs (type 52/53)
-    #
     remapped_playlists_type2 = [_remap_playlist(pl) for pl in (playlists_type2 or [])]
     if master_playlist_id is None:
         master_playlist_id = generate_playlist_id()
@@ -413,14 +373,7 @@ def write_mhbd(
     )
     mhsd_type2 = write_mhsd_type2(mhsd_type2_data)
 
-    # Build podcast list (Type 3 dataset). If an explicit list is supplied,
-    # preserve that dataset independently. Otherwise keep the historical
-    # libgpod-compatible behavior of cloning dataset 2 into dataset 3. The
-    # clone path is only for new/default writes; it is not evidence that parsed
-    # dataset-2 and dataset-3 rows are interchangeable.
 
-    # Pre-podcast devices (iPod 1G-3G, Mini 1G-2G, Shuffle 1G-2G)
-    # don't understand type 3; skip it when capabilities say so.
     include_podcasts = True
     if capabilities is not None and not capabilities.supports_podcast:
         include_podcasts = False
@@ -430,8 +383,6 @@ def write_mhbd(
         remapped_playlists_type3 = [_remap_playlist(pl) for pl in (source_playlists_type3 or [])]
         if podcast_master_playlist_id is None:
             podcast_master_playlist_id = generate_playlist_id()
-        # Build track_id → album map for podcast grouping.
-        # Sequential track IDs start after last_id (same as track_ids range).
         track_album_map: dict[int, str] = {}
         for i, track in enumerate(tracks):
             seq_id = i + last_id + 1
@@ -454,7 +405,6 @@ def write_mhbd(
     else:
         mhsd_type3 = b""
 
-    # Build smart playlist list (Type 5 dataset) — same non-mutating remap
     remapped_playlists_type5 = [_remap_playlist(pl) for pl in (playlists_type5 or [])]
     mhsd_type5_data = write_mhlp_smart(remapped_playlists_type5, db_id_2=db_id_2)
     mhsd_type5 = write_mhsd_smart_type5(mhsd_type5_data)
@@ -462,27 +412,11 @@ def write_mhbd(
     mhsd_type6 = write_mhsd_empty_stub(6)
     mhsd_type10 = write_mhsd_empty_stub(10)
 
-    # Concatenate all datasets
-    #
-    # Default order matches libgpod: Type 1, 3, 2, 4, 8, 6, 10, 5
-    #   - Type 3 MUST appear between types 1 and 2 for podcast support
-    #   - Type 1 MUST be first — older iPod firmware (iPod 5G, Nano 1G-2G)
-    #     may assume dataset[0] is the track list.
-    #   - Types 8, 6, 10 come between albums (4) and smart playlists (5).
-    #
-    # When a reference database is available, we match write only those types.
-    # For example, iTunes on Nano 6G writes only [4,8,1,3,5]
-    # (no playlist type 2 or empty stubs 6/10).  Including types the
-    # firmware doesn't expect can cause it to reject or mis-parse the
-    # database.  We still keep the libgpod order to stay compatible
-    # with devices where no reference is available.
 
-    # Determine which MHSD types the reference database uses (if any)
     ref_types: set[int] | None = None
     ref_order: list[int] | None = None
     if reference_info and "mhsd_types" in reference_info:
         rt = reference_info["mhsd_types"]
-        # Only use ref_types if extraction found meaningful data (at least type 1)
         if rt and 1 in rt:
             ref_types = rt
             ref_order = reference_info.get("mhsd_order")
@@ -490,20 +424,10 @@ def write_mhbd(
 
     legacy_excluded_types: set[int] = set()
     if capabilities is not None and capabilities.db_version <= 0x19:
-        # Types 6, 8, and 10 are newer generated browsing/stub datasets.
-        # They are useful on Classic/Nano 3G+ era databases, but older
-        # firmware can treat them as a malformed library. Strip them even
-        # when a previous iOpenPod write already introduced them.
         legacy_excluded_types = {6, 8, 10}
 
     required_ref_types: set[int] = set()
     if ref_types is not None:
-        # A usable binary iTunesDB needs a track list plus whichever playlist
-        # universe the reference database already used. MHSD type 3 devices
-        # still need the regular type 2 playlist list as a companion; otherwise
-        # creating a user playlist can leave only the podcast-aware mirror.
-        # Do not invent newer browsing datasets here: older firmware can reject
-        # unfamiliar MHSDs even though iOpenPod's parser can read them back.
         required_ref_types.add(1)
         needs_regular_playlist_dataset = False
         if 2 in ref_types:
@@ -517,10 +441,6 @@ def write_mhbd(
         if not required_ref_types.intersection({2, 3}):
             required_ref_types.add(2)
 
-    # Build the candidate datasets in priority order
-    # Each entry: (type_number, data_bytes, required_flag)
-    # When ref_types is available, only include types that are present in it.
-    # Otherwise, include all types (libgpod-compatible default).
 
     def _include(dtype: int, required: bool = False) -> bool:
         if dtype in legacy_excluded_types:
@@ -528,10 +448,9 @@ def write_mhbd(
         if required:
             return True
         if ref_types is None:
-            return True  # no reference → include everything
+            return True
         return dtype in ref_types
 
-    # Map type numbers to their data blobs
     type_to_data: dict[int, bytes] = {
         1: mhsd_type1,
         2: mhsd_type2,
@@ -543,15 +462,12 @@ def write_mhbd(
         10: mhsd_type10,
     }
 
-    # Assemble datasets — use reference order if available, else libgpod order
     dataset_entries: list[tuple[int, bytes]] = []
     if ref_order:
-        # Follow the exact order from the reference database
         inserted_required_type2 = False
         for dtype in ref_order:
             if dtype not in type_to_data:
                 continue
-            # Type 3 (podcasts) requires include_podcasts flag
             if dtype == 3 and not include_podcasts:
                 continue
             if _include(dtype, required=(dtype in required_ref_types)):
@@ -561,20 +477,18 @@ def write_mhbd(
                     if dtype == 3 and 2 in required_ref_types and ref_types is not None and 2 not in ref_types and not inserted_required_type2:
                         dataset_entries.append((2, type_to_data[2]))
                         inserted_required_type2 = True
-        # Add any required core types that weren't in the reference order.
         for dtype in (1, 3, 2):
             if dtype not in required_ref_types:
                 continue
             if not any(t == dtype for t, _ in dataset_entries):
                 dataset_entries.append((dtype, type_to_data[dtype]))
     else:
-        # Default libgpod order: 1, 3, 2, 4, 8, 6, 10, 5
-        dataset_entries.append((1, mhsd_type1))  # always required
+        dataset_entries.append((1, mhsd_type1))
         if include_podcasts and _include(3):
             dataset_entries.append((3, mhsd_type3))
         if _include(2):
             dataset_entries.append((2, mhsd_type2))
-        dataset_entries.append((4, mhsd_type4))  # always required
+        dataset_entries.append((4, mhsd_type4))
         if _include(8):
             dataset_entries.append((8, mhsd_type8))
         if _include(6):
@@ -588,30 +502,23 @@ def write_mhbd(
     child_count = len(dataset_entries)
     logger.debug("Writing %d MHSD datasets: %s", child_count, [t for t, _ in dataset_entries])
 
-    # Append preserved MHSD blobs from original database (Type 7 and 9).
     extra_blobs = preserved_mhsd_blobs or []
     for blob in extra_blobs:
         all_datasets += blob
     child_count += len(extra_blobs)
 
-    # Total file length
     total_length = MHBD_HEADER_SIZE + len(all_datasets)
 
-    # ── Compute all field values before writing ──────────────────────
 
-    # +0x0C: compressed — 2 for devices with iTunesCDB, 1 otherwise
     compressed = 2 if (capabilities and capabilities.supports_compressed_db) else 1
 
-    # +0x10: Version — already computed above (before MHLT build)
 
-    # +0x32: unk0x32 — preserve from reference (libgpod does this)
     unk0x32 = b"\x00" * 20
     if reference_info and "unk0x32" in reference_info:
         raw = reference_info["unk0x32"]
         if isinstance(raw, (bytes, bytearray)) and len(raw) == 20:
             unk0x32 = bytes(raw)
 
-    # +0x46: Language ID (2 bytes, e.g. "en")
     if reference_info and "language" in reference_info:
         lang_val = reference_info["language"]
         if isinstance(lang_val, str):
@@ -619,16 +526,11 @@ def write_mhbd(
     else:
         lang_val = language.encode("utf-8")[:2].ljust(2, b"\x00")
 
-    # +0x48: Library Persistent ID — preserve the original device/library ID
-    # so it continues to match iTunesPrefs and the device's historical owner.
     if reference_info and reference_info.get("db_persistent_id"):
         lib_pid = reference_info["db_persistent_id"]
     else:
         lib_pid = db_id
 
-    # +0x6C: timezone_offset (signed).  A sync boundary supplies the target
-    # device context; do not retain a stale offset after the user changes the
-    # iPod clock between syncs.
     time_context = active_device_time_context()
     if time_context is not None:
         tz_offset = time_context.offset_at_unix(int(time.time()))
@@ -637,7 +539,6 @@ def write_mhbd(
     else:
         tz_offset = -time.altzone if time.daylight else -time.timezone
 
-    # +0x70: hash_type_indicator — HASHAB→4, HASH72→2, default→0
     if reference_info:
         hash_type_ind = reference_info.get("hash_type_indicator", 0)
     elif capabilities:
@@ -646,7 +547,6 @@ def write_mhbd(
     else:
         hash_type_ind = 0
 
-    # ── Build the header using shared field definitions ──────────────
 
     platform_flag = platform
     if platform_flag not in (1, 2):
@@ -666,18 +566,16 @@ def write_mhbd(
         "unk0x22": reference_info.get("unk0x22", 611) if reference_info else 611,
         "db_id_2": db_id_2,
         "unk0x2c": 0,
-        "hashing_scheme": 0,  # write_itunesdb() patches after checksum
+        "hashing_scheme": 0,
         "unk0x32": unk0x32,
         "language": lang_val,
         "db_persistent_id": lib_pid,
         "unk0x50": reference_info.get("unk0x50", 1) if reference_info else 1,
         "unk0x54": reference_info.get("unk0x54", 15) if reference_info else 15,
-        # hash58, hash72 left as defaults (zeros) — filled by write_itunesdb
         "timezone_offset": tz_offset,
         "hash_type_indicator": hash_type_ind,
     }
 
-    # Extended fields — preserved from reference if available
     if reference_info:
         for key in ("audio_language", "subtitle_language", "unk0xa4", "unk0xa6", "cdb_flag"):
             if key in reference_info:

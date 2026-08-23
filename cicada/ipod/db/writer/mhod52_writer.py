@@ -47,13 +47,10 @@ from cicada.ipod.db.shared.mhod_defs import (
 if TYPE_CHECKING:
     from .mhit_writer import TrackInfo
 
-# Base sort types — always written
 BASE_SORT_TYPES = [SORT_TITLE, SORT_ALBUM, SORT_ARTIST, SORT_GENRE, SORT_COMPOSER]
 
-# Video sort types — only for devices with supports_video
 VIDEO_SORT_TYPES = [SORT_SHOW, SORT_SEASON, SORT_EPISODE]
 
-# Legacy alias for backward compatibility
 ALL_SORT_TYPES = BASE_SORT_TYPES
 
 
@@ -76,7 +73,6 @@ def _sort_key(s: Any) -> str:
     if not s:
         return ""
     s = strip_article(s)
-    # Normalize unicode for consistent comparison
     return unicodedata.normalize('NFKD', s).casefold()
 
 
@@ -99,7 +95,7 @@ def _jump_table_letter(s: Any) -> int:
                 return ord('0')
             upper = ord(ch.upper()[0])
             if upper > 0xFFFF:
-                continue  # non-BMP char can't fit in UTF-16 jump table
+                continue
             return upper
 
     return ord('0')
@@ -211,19 +207,15 @@ def write_mhod_type52(tracks: list["TrackInfo"], sort_type: int) -> tuple[bytes,
     """
     num_tracks = len(tracks)
 
-    # Create indexed list: (sort_key, original_index, track)
     indexed = []
     for i, track in enumerate(tracks):
         sort_key = _get_sort_fields(track, sort_type)
         indexed.append((sort_key, i, track))
 
-    # Sort by the sort key
     indexed.sort(key=lambda x: x[0])
 
-    # Build sorted track indices (original position in track list)
     sorted_indices = [idx for _, idx, _ in indexed]
 
-    # Build jump table entries: group by first letter
     jump_entries: list[tuple[int, int, int]] = []
     last_letter = -1
     current_entry = None
@@ -234,23 +226,17 @@ def write_mhod_type52(tracks: list["TrackInfo"], sort_type: int) -> tuple[bytes,
             current_entry = (letter, pos, 0)
             jump_entries.append(current_entry)
             last_letter = letter
-        # Increment count for current entry
         letter_val, start, count = jump_entries[-1]
         jump_entries[-1] = (letter_val, start, count + 1)
 
-    # Build MHOD type 52 binary data
-    # Body: sort_type(4) + count(4) + padding(40) + indices(count*4)
     total_len = 4 * num_tracks + MHOD_HEADER_SIZE + MHOD52_BODY_HEADER_SIZE
 
     header = write_mhod_header(52, total_len)
 
-    # Body header
     body_header = bytearray(MHOD52_BODY_HEADER_SIZE)
-    struct.pack_into('<I', body_header, 0, sort_type)    # sort type
-    struct.pack_into('<I', body_header, 4, num_tracks)   # number of entries
-    # Remaining 40 bytes are zero padding
+    struct.pack_into('<I', body_header, 0, sort_type)
+    struct.pack_into('<I', body_header, 4, num_tracks)
 
-    # Track indices
     indices_data = bytearray(4 * num_tracks)
     for i, idx in enumerate(sorted_indices):
         struct.pack_into('<I', indices_data, i * 4, idx)
@@ -271,26 +257,21 @@ def write_mhod_type53(sort_type: int, jump_entries: list[tuple[int, int, int]]) 
     """
     num_entries = len(jump_entries)
 
-    # Build MHOD type 53 binary data
-    # Body: sort_type(4) + count(4) + padding(8) + entries(count*12)
     total_len = MHOD53_ENTRY_SIZE * num_entries + MHOD_HEADER_SIZE + MHOD53_BODY_HEADER_SIZE
 
     header = write_mhod_header(53, total_len)
 
-    # Body header
     body_header = bytearray(MHOD53_BODY_HEADER_SIZE)
-    struct.pack_into('<I', body_header, 0, sort_type)     # sort type
-    struct.pack_into('<I', body_header, 4, num_entries)    # number of entries
-    # 8 bytes zero padding
+    struct.pack_into('<I', body_header, 0, sort_type)
+    struct.pack_into('<I', body_header, 4, num_entries)
 
-    # Jump table entries: each is letter(u16) + pad(u16) + start(u32) + count(u32)
     entries_data = bytearray(MHOD53_ENTRY_SIZE * num_entries)
     for i, (letter, start, count) in enumerate(jump_entries):
         offset = i * MHOD53_ENTRY_SIZE
-        struct.pack_into('<H', entries_data, offset, letter)       # letter (UTF-16)
-        struct.pack_into('<H', entries_data, offset + 2, 0)        # padding
-        struct.pack_into('<I', entries_data, offset + 4, start)    # start index
-        struct.pack_into('<I', entries_data, offset + 8, count)    # count
+        struct.pack_into('<H', entries_data, offset, letter)
+        struct.pack_into('<H', entries_data, offset + 2, 0)
+        struct.pack_into('<I', entries_data, offset + 4, start)
+        struct.pack_into('<I', entries_data, offset + 8, count)
 
     return bytes(header) + bytes(body_header) + bytes(entries_data)
 
@@ -319,24 +300,20 @@ def write_library_indices(tracks: list["TrackInfo"], capabilities=None) -> tuple
     if not tracks:
         return b'', 0
 
-    # Build the list of sort types to write
     sort_types = list(BASE_SORT_TYPES)
     if capabilities is not None:
         if capabilities.supports_video:
             sort_types.extend(VIDEO_SORT_TYPES)
-        # Album artist sort for all modern iPods
         sort_types.append(SORT_ALBUM_ARTIST)
 
     result = bytearray()
     mhod_count = 0
 
     for sort_type in sort_types:
-        # Write type 52 (sorted index)
         mhod52_data, jump_entries = write_mhod_type52(tracks, sort_type)
         result.extend(mhod52_data)
         mhod_count += 1
 
-        # Write type 53 (jump table)
         mhod53_data = write_mhod_type53(sort_type, jump_entries)
         result.extend(mhod53_data)
         mhod_count += 1

@@ -70,8 +70,6 @@ class TestMhiiRoundTrip:
         assert entries[0].formats[1013].ithmb_offset == 999
 
     def test_large_db_track_id_survives_u64(self):
-        # song_id/db_track_id se empaqueta como u64 — verificar que no se
-        # trunca a 32 bits con IDs grandes (Cicada usa IDs de 64 bits).
         big_id = 0xFFFFFFFF12345678
         payload = _payload()
         blob = write_mhii(
@@ -111,7 +109,6 @@ def test_build_artworkdb_empty_is_still_valid():
 
 def test_build_artworkdb_has_three_datasets():
     db = build_artworkdb([], [1010], {1010: 0}, next_img_id=100)
-    # 3 MHSD hijos: IMAGE_LIST, PHOTO_ALBUM_LIST, FILE_LIST.
     import struct
     num_datasets = struct.unpack_from("<I", db, 20)[0]
     assert num_datasets == 3

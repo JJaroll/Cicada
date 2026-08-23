@@ -128,12 +128,9 @@ class PlaylistManager:
         except ValueError:
             parts = (file_path.name,)
 
-        # Artist/Album/archivo.ext -> 3 partes; si el archivo cuelga directo
-        # de output_dir no podemos inferir artista/álbum de la carpeta.
         artist = parts[0] if len(parts) >= 3 else "Unknown Artist"
         album = parts[1] if len(parts) >= 3 else "Unknown Album"
 
-        # Quita el prefijo "XX - " (número de pista) que agrega Cicada al nombrar el archivo
         title = re.sub(r"^\d{1,3}\s*-\s*", "", file_path.stem).strip()
 
         return title or file_path.stem, artist, album
@@ -179,9 +176,6 @@ class PlaylistManager:
 
         query_is_alt_version = self._has_version_keyword(query)
 
-        # Mapeamos índice numérico -> texto comparable. Usar el índice como key
-        # (en vez del texto) evita colisiones cuando dos pistas locales
-        # comparten el mismo "Artista - Título".
         choices: Dict[int, str] = {
             i: self._comparable(entry.get("artist", ""), entry.get("title", ""))
             for i, entry in enumerate(local_index)
@@ -220,9 +214,6 @@ class PlaylistManager:
         """
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        # Resolvemos symlinks para que coincida con las rutas ya resueltas
-        # que entrega `index_local_library`; si no, relpath puede calcular
-        # saltos de directorio incorrectos entre una ruta resuelta y otra que no lo está.
         output_path = output_path.resolve()
 
         safe_name = re.sub(r'[<>:"/\\|?*]', "_", playlist_name).strip() or "playlist"
@@ -234,7 +225,6 @@ class PlaylistManager:
             try:
                 line = os.path.relpath(resolved_file, start=output_path)
             except ValueError:
-                # En Windows, relpath falla entre unidades distintas (ej. C:\ vs D:\)
                 line = str(resolved_file)
             lines.append(line)
 

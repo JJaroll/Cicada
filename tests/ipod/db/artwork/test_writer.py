@@ -30,13 +30,11 @@ from cicada.ipod.db.artwork.writer import (
 )
 from cicada.ipod.device.artwork_presets import NANO_7G_COVER_ART_FORMATS
 
-COLOR_TOLERANCE = 40  # JPEG + resize LANCZOS + cuantización RGB565 combinados
+COLOR_TOLERANCE = 40
 
-# Tres tracks con patrones de 4 cuadrantes totalmente distintos entre sí,
-# para que cualquier mezcla de offsets entre tracks sea detectable.
-TRACK_A = (111, ((255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)))       # rojo/verde/azul/amarillo
-TRACK_B = (222, ((0, 255, 255), (255, 0, 255), (255, 255, 255), (0, 0, 0)))   # cian/magenta/blanco/negro
-TRACK_C = (333, ((0, 128, 0), (128, 128, 128), (0, 0, 128), (128, 0, 0)))     # verde oscuro/gris/navy/granate
+TRACK_A = (111, ((255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)))
+TRACK_B = (222, ((0, 255, 255), (255, 0, 255), (255, 255, 255), (0, 0, 0)))
+TRACK_C = (333, ((0, 128, 0), (128, 128, 128), (0, 0, 128), (128, 0, 0)))
 
 
 def _quadrant_jpeg(colors, size=(64, 64)) -> bytes:

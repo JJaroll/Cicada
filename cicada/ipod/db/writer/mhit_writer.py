@@ -56,8 +56,6 @@ _MAX_IPOD_SAMPLE_RATE = 48000
 _MIN_AUDIO_SAMPLE_RATE = 8000
 
 
-
-
 def _compute_sort_indicators(track: TrackInfo) -> bytes:
     """Build the 8-byte sort_mhod_indicators field from sort field presence.
 
@@ -254,7 +252,6 @@ def write_mhit(track: TrackInfo, track_id: int, db_id_2: int = 0,
         track.bookmark_time,
     )
 
-    # Build child MHODs first to know count + size.
     mhod_data, mhod_count = write_track_mhods(
         title=title, location=location,
         artist=track.artist, album=track.album, genre=track.genre,
@@ -273,13 +270,9 @@ def write_mhit(track: TrackInfo, track_id: int, db_id_2: int = 0,
         chapter_data=track.chapter_data,
     )
 
-    # Use device-appropriate header size.  Older iPod firmware expects smaller
-    # MHIT headers; fields beyond the header boundary are automatically skipped
-    # by write_fields() via each field's min_header_length attribute.
     header_size = mhit_header_size_for_version(db_version) if db_version else MHIT_HEADER_SIZE
     total_length = header_size + len(mhod_data)
 
-    # Assemble the values dict — write_fields handles transforms & packing.
     values: dict = {
         'child_count': mhod_count,
         'track_id': _u32(track_id),
@@ -321,7 +314,6 @@ def write_mhit(track: TrackInfo, track_id: int, db_id_2: int = 0,
         'mpeg_audio_type': _u16(track.mpeg_audio_type),
         'explicit_flag': _u8(track.explicit_flag),
         'purchased_aac_flag': _u8(track.purchased_aac_flag),
-        # Extended fields
         'skip_count': _u32(track.skip_count),
         'last_skipped': _u32(track.last_skipped),
         'has_artwork': 1 if _u16(track.artwork_count) > 0 else 2,

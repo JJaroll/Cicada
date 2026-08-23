@@ -55,13 +55,12 @@ class PlayCountEntry:
     """Delta values for a single track from the Play Counts file."""
 
     play_count: int = 0
-    last_played_mac: int = 0    # Device-local Mac timestamp (0 = not played)
+    last_played_mac: int = 0
     bookmark_time: int = 0
-    rating: int = -1            # -1 = no change; 0-100 = new rating
+    rating: int = -1
     skip_count: int = 0
-    last_skipped_mac: int = 0   # Device-local Mac timestamp (0 = not skipped)
+    last_skipped_mac: int = 0
 
-    # Convenience: is there any delta data in this entry?
     @property
     def has_data(self) -> bool:
         return (
@@ -146,7 +145,6 @@ def parse_playcounts(path: str | Path) -> list[PlayCountEntry] | None:
         offset = header_len + i * entry_len
         entry = PlayCountEntry()
 
-        # Minimum fields (always present)
         entry.play_count = UINT32_LE.unpack_from(data, offset)[0]
 
         if entry_len >= 8:
@@ -157,21 +155,9 @@ def parse_playcounts(path: str | Path) -> list[PlayCountEntry] | None:
 
         if entry_len >= 16:
             raw_rating = UINT32_LE.unpack_from(data, offset + 12)[0]
-            # Convention: rating=0 in the Play Counts file means "no change"
-            # when the track had no user interaction.  The iPod firmware
-            # initialises all entries to zero.  We treat 0 as "unchanged"
-            # to avoid accidentally clearing ratings set on the PC.
-            #
-            # Ratings 20-100 (1-5 stars) are genuine user-set values.
-            # A user *removing* a rating on the iPod is indistinguishable
-            # from "no interaction" — this is a known limitation shared
-            # with libgpod (which checks ``rating != NO_PLAYCOUNT (-1)``
-            # but the firmware never writes -1).
             if raw_rating > 0:
                 entry.rating = raw_rating
-            # else: stays -1 (no change)
 
-        # entry_len >= 20: unk16 / podcast flag — skipped
 
         if entry_len >= 24:
             entry.skip_count = UINT32_LE.unpack_from(data, offset + 20)[0]
@@ -225,40 +211,27 @@ def merge_playcounts(
         track = tracks[i]
         entry = entries[i]
 
-        # --- Play count (additive) ---
         track["recent_playcount"] = entry.play_count
         track["play_count_1"] = track.get("play_count_1", 0) + entry.play_count
-        # This slot survives Play Counts cleanup and is the durable queue of
-        # plays still awaiting scrobbling.  Never fold its existing value into
-        # the main play count: that count already included the older delta
-        # when it was originally imported.
         track["play_count_2"] = track.get("play_count_2", 0) + entry.play_count
         if entry.play_count > 0:
             merged_plays += 1
 
-        # --- Skip count (additive) ---
         track["recent_skipcount"] = entry.skip_count
         track["skip_count"] = track.get("skip_count", 0) + entry.skip_count
         if entry.skip_count > 0:
             merged_skips += 1
 
-        # --- Rating (override if changed) ---
-        if entry.rating >= 0:  # -1 = no change
+        if entry.rating >= 0:
             old_rating = track.get("rating", 0)
             if old_rating != entry.rating:
-                track["app_rating"] = old_rating  # backup (libgpod convention)
+                track["app_rating"] = old_rating
                 track["rating"] = entry.rating
                 merged_ratings += 1
 
-        # --- Bookmark (override — iPod always has the latest position) ---
         if entry.bookmark_time > 0:
             track["bookmark_time"] = entry.bookmark_time
 
-        # --- Timestamps (use more-recent value) ---
-        # track["last_played"] is a Unix timestamp (converted from the Mac
-        # epoch during iTunesDB parsing). entry.last_played_mac is device-local
-        # Mac time. Use the .last_played_unix property to compare in the same
-        # unit and avoid double-conversion downstream.
         if entry.last_played_mac > 0:
             unix_ts = entry.last_played_as_unix(time_context)
             if unix_ts > track.get("last_played", 0):
@@ -269,9 +242,6 @@ def merge_playcounts(
             if unix_ts > track.get("last_skipped", 0):
                 track["last_skipped"] = unix_ts
 
-    # Tracks beyond the Play Counts entries did not receive a new device
-    # delta.  Preserve their durable pending-scrobble count, which may have
-    # been imported during an earlier device selection.
     for i in range(count, len(tracks)):
         tracks[i]["recent_playcount"] = 0
         tracks[i]["recent_skipcount"] = 0

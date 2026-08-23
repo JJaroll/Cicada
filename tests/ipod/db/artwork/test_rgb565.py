@@ -63,7 +63,7 @@ class TestResizeForFormat:
         assert resized.size == (fmt.width, fmt.height)
 
     def test_upscales_small_source(self):
-        fmt = ARTWORK_FORMATS_BY_ID[1010]  # 240x240
+        fmt = ARTWORK_FORMATS_BY_ID[1010]
         img = Image.new("RGB", (16, 16), (1, 2, 3))
         resized = resize_for_format(img, fmt)
         assert resized.size == (240, 240)
@@ -73,13 +73,11 @@ class TestRgb888ToRgb565Le:
     def test_pure_red(self):
         img = Image.new("RGB", (1, 1), (255, 0, 0))
         data = rgb888_to_rgb565_le(img, 1, 1)
-        # R=31 (0x1F) << 11, G=0, B=0
         assert data == (0x1F << 11).to_bytes(2, "little")
 
     def test_pure_green(self):
         img = Image.new("RGB", (1, 1), (0, 255, 0))
         data = rgb888_to_rgb565_le(img, 1, 1)
-        # G=63 (0x3F) << 5
         assert data == (0x3F << 5).to_bytes(2, "little")
 
     def test_pure_blue(self):
@@ -128,7 +126,6 @@ class TestConvertArtForFormat:
         assert payload.size == expected_stride * fmt.height * 2
 
     def test_format_1016_has_alignment_padding(self):
-        # 1016 (override Nano 7G): 57x57 visible, row_bytes=116 -> stride 58px -> hpad=1
         fmt = NANO_7G_BY_ID[1016]
         assert fmt.width == 57 and fmt.row_bytes == 116
         payload = convert_art_for_format(_jpeg_bytes(), fmt)
@@ -151,13 +148,12 @@ class TestConvertArtForFormat:
         assert convert_art_for_format(b"garbage", fmt) is None
 
     def test_rejects_non_rgb565_le_format(self):
-        # 1019 = UYVY (TV-out) — fuera de alcance hasta la Etapa 4f.
         fmt = ARTWORK_FORMATS_BY_ID[1019]
         with pytest.raises(NotImplementedError):
             convert_art_for_format(_jpeg_bytes(), fmt)
 
     @pytest.mark.parametrize(
-        "fmt_id", [2002, 3001, 1067, 1013]  # RGB565_BE, REC_RGB555_LE, I420_LE, RGB565_BE_90
+        "fmt_id", [2002, 3001, 1067, 1013]
     )
     def test_rejects_every_non_rgb565_le_global_format(self, fmt_id):
         fmt = ARTWORK_FORMATS_BY_ID[fmt_id]
@@ -190,9 +186,7 @@ class TestRgb565LeToRgb888:
         assert rgb565_le_to_rgb888(b"\xff\xff", 1, 1).getpixel((0, 0)) == (255, 255, 255)
 
     def test_ignores_stride_padding_columns(self):
-        # 2px visibles + 1px de relleno a stride=3; el píxel de relleno
-        # (blanco) no debe aparecer en la imagen decodificada de 2px.
-        data = b"\xff\xff\xff\xff\x00\x00"  # blanco, blanco, negro(relleno)
+        data = b"\xff\xff\xff\xff\x00\x00"
         img = rgb565_le_to_rgb888(data, 2, 1, stride=3)
         assert img.size == (2, 1)
         assert img.getpixel((0, 0)) == (255, 255, 255)
@@ -200,8 +194,6 @@ class TestRgb565LeToRgb888:
 
     @pytest.mark.parametrize("fmt", NANO_7G_COVER_ART_FORMATS)
     def test_round_trip_within_rgb565_quantization(self, fmt):
-        # Colores puros solo pierden precisión de cuantización RGB565
-        # (5/6/5 bits), no más: el decode debe reproducirlos exactos.
         img = Image.new("RGB", (fmt.width, fmt.height), (255, 128, 64))
         stride = fmt.row_bytes // 2
         encoded = rgb888_to_rgb565_le(img, fmt.width, fmt.height, stride=stride)

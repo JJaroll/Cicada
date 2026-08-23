@@ -46,11 +46,9 @@ def write_extras_itdb(
 
     cur.executescript(_EXTRAS_SCHEMA)
 
-    # Insert lyrics for tracks that have them
     lyrics_count = 0
     for track in tracks:
         if track.lyrics:
-            # Simple checksum: sum of bytes mod 2^32
             checksum = sum(track.lyrics.encode('utf-8')) & 0xFFFFFFFF
             cur.execute(
                 "INSERT INTO lyrics (item_pid, checksum, lyrics) VALUES (?, ?, ?)",
@@ -58,7 +56,6 @@ def write_extras_itdb(
             )
             lyrics_count += 1
 
-    # Insert chapter data for tracks that have chapters
     chapter_count = 0
     for track in tracks:
         cd = track.chapter_data or {}

@@ -28,12 +28,8 @@ __all__ = [
     "filter_names",
 ]
 
-#: Prefijo de los forks de recursos AppleDouble: ``._SysInfo``, ``._Nombre``…
 APPLEDOUBLE_PREFIX = "._"
 
-#: Nombres exactos de artefactos macOS/FAT32, tal cual aparecen en el volumen.
-#: La comparación es *case-insensitive*: en FAT32 ``.DS_Store`` aparece con
-#: capitalización variable (``.DS_Store``, ``.ds_store``, ``.DS_STORE``…).
 ARTIFACT_NAMES = frozenset({
     ".DS_Store",
     ".Spotlight-V100",
@@ -41,7 +37,6 @@ ARTIFACT_NAMES = frozenset({
     ".Trashes",
 })
 
-# Conjunto normalizado (minúsculas) para la comparación interna.
 _ARTIFACT_NAMES_LOWER = frozenset(name.lower() for name in ARTIFACT_NAMES)
 
 T = TypeVar("T", str, os.PathLike)

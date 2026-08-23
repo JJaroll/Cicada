@@ -61,7 +61,6 @@ def write_mhii_artist(artist_id: int, artist_name: str) -> bytes:
     Returns:
         Complete MHII chunk with MHOD type 300
     """
-    # Build child MHOD (always exactly 1: the artist name)
     children = bytearray()
     child_count = 0
 
@@ -71,14 +70,11 @@ def write_mhii_artist(artist_id: int, artist_name: str) -> bytes:
             write_mhod_string(MHOD_TYPE_ARTIST_NAME, artist_name),
         )
 
-    # Total chunk length
     total_length = MHII_HEADER_SIZE + len(children)
 
-    # Build header
     header = bytearray(MHII_HEADER_SIZE)
     write_generic_header(header, 0, b'mhii', MHII_HEADER_SIZE, total_length)
 
-    # CRITICAL: sql_id must be non-zero! Clean iTunes DBs have random u64 values here.
     sql_id = random.getrandbits(64)
     write_fields(header, 0, 'mhii', {
         'child_count': child_count,
@@ -103,8 +99,6 @@ def write_mhli(tracks: list["TrackInfo"], starting_index_for_artist_id: int) -> 
     Returns:
         Tuple of (MHLI chunk bytes, artist_map dict mapping artist_name_lower to artist_id)
     """
-    # Collect unique artists: lowercase artist name → display name
-    # Use the first occurrence's casing as the canonical display name
     artist_display: dict[str, str] = {}
     for track in tracks:
         artist_name = track.artist or ""
@@ -114,9 +108,8 @@ def write_mhli(tracks: list["TrackInfo"], starting_index_for_artist_id: int) -> 
         if key not in artist_display:
             artist_display[key] = artist_name
 
-    # Build artist items
     artist_items = bytearray()
-    artist_map: dict[str, int] = {}  # lowercase artist → artist_id
+    artist_map: dict[str, int] = {}
 
     artist_id = starting_index_for_artist_id
     for key in sorted(artist_display.keys()):

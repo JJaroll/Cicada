@@ -17,8 +17,6 @@ from cicada.ipod.db.shared.constants import (
 )
 from cicada.ipod.db.writer.mhit_writer import TrackInfo
 
-# Filetype string → writer filetype code.  Checked in order; first
-# substring match wins.  Falls back to "mp3".
 _FILETYPE_MAP: list[tuple[str, str]] = [
     ("AAC", "m4a"), ("M4A", "m4a"), ("Lossless", "m4a"),
     ("Protected", "m4p"), ("Audiobook", "m4b"),
@@ -78,11 +76,7 @@ def track_dict_to_info(t: dict) -> TrackInfo:
         skip_when_shuffling=bool(t.get("skip_when_shuffling", 0)),
         remember_position=bool(t.get("remember_position", 0)),
         rating=t.get("rating", 0),
-        # play_count_1 is the cumulative count (already includes any
-        # Play Counts deltas folded into the DB or merged at load time).
         play_count=t.get("play_count_1", 0),
-        # The durable pending-scrobble queue is independent of the current
-        # physical Play Counts-file delta.
         play_count_2=t.get("play_count_2", 0),
         skip_count=t.get("skip_count", 0),
         volume=t.get("volume", 0),
@@ -125,7 +119,6 @@ def track_dict_to_info(t: dict) -> TrackInfo:
         sort_album_artist=t.get("Sort Album Artist"),
         sort_composer=t.get("Sort Composer"),
         filetype_desc=t.get("filetype"),
-        # Video string fields from parsed MHOD types
         show_name=t.get("Show"),
         episode_id=t.get("Episode"),
         description=t.get("Description Text"),
@@ -134,13 +127,11 @@ def track_dict_to_info(t: dict) -> TrackInfo:
         sort_show=t.get("Sort Show"),
         show_locale=t.get("Show Locale"),
         keywords=t.get("Track Keywords"),
-        # Podcast/audiobook fields from parsed track
         podcast_enclosure_url=t.get("Podcast Enclosure URL"),
         podcast_rss_url=t.get("Podcast RSS URL"),
         category=t.get("Category"),
         played_mark=t.get("not_played_flag", -1),
         podcast_flag=t.get("use_podcast_now_playing_flag", 0),
-        # Round-trip fields (preserved from existing iPod database)
         user_id=t.get("user_id", 0),
         app_rating=t.get("app_rating", 0),
         mpeg_audio_type=t.get("mpeg_audio_type", t.get("unk144", 0)),
@@ -178,49 +169,33 @@ def pc_track_to_info(
     ext = Path(ipod_location.replace(":", "/")).suffix.lower()
     filetype = ipod_filetype_for_extension(ext)
 
-    # Rating: PCTrack already stores 0-100 (stars × 20), same as iPod
     rating = pc_track.rating or 0
 
-    # File size: use actual iPod file size (especially important after transcode)
     if ipod_file_path and ipod_file_path.exists():
         file_size = ipod_file_path.stat().st_size
     else:
         file_size = pc_track.size or 0
 
-    # Bitrate/sample_rate: use source values for direct copies,
-    # but for transcodes we should probe the actual file.
-    # As a practical default, use AAC 256kbps for transcoded AAC.
     bitrate = pc_track.bitrate or 0
     sample_rate = pc_track.sample_rate or 44100
     if was_transcoded:
-        # Lossless sources (.flac, .wav, .aif, .aiff) transcode to ALAC —
-        # keep the source bitrate.  Lossy sources (.ogg, .opus, .wma) go
-        # to AAC — use the user-configured bitrate.
         source_ext = pc_track.extension.lower().lstrip(".")
         is_lossless_source = source_ext in ("flac", "wav", "aif", "aiff")
         if filetype == "m4a" and not is_lossless_source:
             from .transcoder import quality_to_nominal_bitrate, resolve_transcode_plan
             plan = resolve_transcode_plan(pc_track.path)
             bitrate = quality_to_nominal_bitrate(plan.effective_quality)
-        # Transcoded audio is capped at IPOD_MAX_SAMPLE_RATE; reflect that
-        # in the stored sample_rate so iTunesDB is consistent with the file.
         if filetype == "m4a":
             from .transcoder import IPOD_MAX_SAMPLE_RATE as _MAX_SR
             sample_rate = min(sample_rate, _MAX_SR)
 
-    # ── Media type auto-detection ────────────────────────────────
-    # If an existing media_type is provided (for UPDATE operations), preserve it
-    # instead of recalculating from the current file's video_kind metadata.
-    # This prevents media_type from changing due to missing/inconsistent stik atoms.
     if existing_media_type is not None:
         media_type = existing_media_type
-        # Derive flags from the preserved media_type
         movie_file_flag = 1 if existing_media_type & (MEDIA_TYPE_VIDEO | MEDIA_TYPE_MUSIC_VIDEO | MEDIA_TYPE_TV_SHOW | MEDIA_TYPE_VIDEO_PODCAST) else 0
         podcast_flag = 1 if existing_media_type & (MEDIA_TYPE_PODCAST | MEDIA_TYPE_VIDEO_PODCAST) else 0
         skip_when_shuffling = bool(existing_media_type & (MEDIA_TYPE_PODCAST | MEDIA_TYPE_AUDIOBOOK | MEDIA_TYPE_VIDEO_PODCAST))
         remember_position = bool(existing_media_type & (MEDIA_TYPE_PODCAST | MEDIA_TYPE_AUDIOBOOK | MEDIA_TYPE_VIDEO_PODCAST))
     else:
-        # Normal auto-detection from PC track metadata
         is_video = pc_track.is_video
         video_kind = pc_track.video_kind or ""
         is_podcast = pc_track.is_podcast
@@ -243,7 +218,6 @@ def pc_track_to_info(
             elif video_kind == "music_video":
                 media_type = MEDIA_TYPE_MUSIC_VIDEO
             else:
-                # Default to movie for generic video files
                 media_type = MEDIA_TYPE_VIDEO
         elif is_podcast:
             media_type = MEDIA_TYPE_PODCAST
@@ -255,28 +229,20 @@ def pc_track_to_info(
             skip_when_shuffling = True
             remember_position = True
 
-    # ── Encoding flags ───────────────────────────────────────────
-    # For direct copies read flags from the source (mutagen was accurate).
-    # For transcoded files derive them from the actual encoder used, because
-    # the output format/VBR mode may differ completely from the source.
     if was_transcoded and transcode_options is not None:
         from .transcoder import resolve_effective_encoder
         _target, _actual_encoder = resolve_effective_encoder(transcode_options)
         _is_manual = (transcode_options.lossy_encoder or "auto").lower() not in {"auto", ""}
         if filetype == "mp3":
-            # encoder_flag=1 tells the iPod to look for a LAME gapless header.
-            # libshine doesn't write one, so set 0 to avoid false gapless probing.
             encoder_flag = 1 if _actual_encoder == "libmp3lame" else 0
-            # VBR: libmp3lame auto mode uses -q:a (VBR); libshine is always CBR.
             if _actual_encoder == "libshine":
                 vbr = False
             elif _is_manual:
                 vbr = transcode_options.bitrate_mode == "vbr"
             else:
-                vbr = True  # auto libmp3lame always uses -q:a VBR for music
+                vbr = True
         elif filetype == "m4a":
-            encoder_flag = 0  # AAC/ALAC do not use LAME headers
-            # libfdk_aac -vbr and aac_at -aac_at_mode vbr produce genuine VBR output.
+            encoder_flag = 0
             vbr = (
                 _is_manual
                 and _actual_encoder in {"libfdk_aac", "aac_at"}
@@ -286,24 +252,17 @@ def pc_track_to_info(
             encoder_flag = 0
             vbr = False
     elif was_transcoded:
-        # Options not available (dry-run / legacy call). Use format-safe defaults.
         encoder_flag = 1 if filetype == "mp3" else 0
         vbr = False if filetype == "m4a" else pc_track.vbr
     else:
-        # Direct copy — source flags are correct.
         encoder_flag = 1 if filetype == "mp3" else 0
         vbr = pc_track.vbr
 
-    # ── Gapless & encoder flags ──────────────────────────────────
     pregap = pc_track.pregap or 0
     postgap = pc_track.postgap or 0
     sample_count = pc_track.sample_count or 0
     gapless_data = pc_track.gapless_data or 0
     if was_transcoded:
-        # Prefer probing the actual output file — it gives us values at the
-        # correct sample rate with no floating-point error, and for files
-        # encoded by Apple's Core Audio (aac_at on macOS) we also get exact
-        # pregap/postgap from the iTunSMPB atom.
         if ipod_file_path and ipod_file_path.exists():
             from .pc_library import probe_gapless_info
             probed = probe_gapless_info(ipod_file_path)
@@ -314,9 +273,6 @@ def pc_track_to_info(
                 pregap = probed.get("pregap", 0)
                 postgap = probed.get("postgap", 0)
         else:
-            # Fallback: the output file isn't available yet (dry-run, etc.).
-            # Scale source values to the output sample rate to avoid the
-            # early-cutoff bug described in the transcoder fix.
             src_sr = pc_track.sample_rate or 44100
             if src_sr != sample_rate:
                 ratio = sample_rate / src_sr
@@ -326,8 +282,6 @@ def pc_track_to_info(
                     pregap = round(pregap * ratio)
                 if postgap:
                     postgap = round(postgap * ratio)
-    # Gapless playback flag is OFF by default.
-    # Only enable it when explicitly provided by metadata/user intent.
     gapless_track_flag = pc_track.gapless_track_flag or 0
 
     return TrackInfo(
@@ -372,7 +326,6 @@ def pc_track_to_info(
         sort_album=pc_track.sort_album,
         sort_album_artist=pc_track.sort_album_artist,
         sort_composer=pc_track.sort_composer,
-        # Video fields
         media_type=media_type,
         movie_file_flag=movie_file_flag,
         source_path=pc_track.path,
@@ -384,14 +337,12 @@ def pc_track_to_info(
         description=pc_track.description,
         network_name=pc_track.network_name,
         sort_show=pc_track.sort_show,
-        # Podcast/audiobook flags
         podcast_flag=podcast_flag,
         skip_when_shuffling=skip_when_shuffling,
         remember_position=remember_position,
         category=pc_track.category,
         podcast_rss_url=pc_track.podcast_url,
         podcast_enclosure_url=pc_track.podcast_enclosure_url,
-        # iTunesDB chapters are DB-side and not limited to AAC/M4A files.
         chapter_data={"chapters": pc_track.chapters} if pc_track.chapters else None,
     )
 
@@ -404,9 +355,7 @@ def trackinfo_to_eval_dict(t: TrackInfo) -> dict:
     track_id so that spl_update() returns db_track_ids directly.
     """
     return {
-        # Use db_track_id as track_id so evaluator returns db_track_ids.
         "track_id": t.db_track_id,
-        # String fields
         "Title": t.title or "",
         "Album": t.album or "",
         "Artist": t.artist or "",
@@ -422,7 +371,6 @@ def trackinfo_to_eval_dict(t: TrackInfo) -> dict:
         "Sort Composer": t.sort_composer or "",
         "Sort Show": t.sort_show or "",
         "Grouping": t.grouping or "",
-        # Integer fields
         "bitrate": t.bitrate,
         "sample_rate_1": t.sample_rate,
         "year": t.year,
@@ -434,28 +382,20 @@ def trackinfo_to_eval_dict(t: TrackInfo) -> dict:
         "rating": t.rating,
         "bpm": t.bpm,
         "skip_count": t.skip_count,
-        # Date fields (Unix timestamps)
         "date_added": t.date_added,
         "last_modified": t.last_modified,
         "last_played": t.last_played,
         "last_skipped": t.last_skipped,
-        # Boolean fields
         "compilation_flag": 1 if t.compilation_flag else 0,
         "has_artwork": bool(t.artwork_count or t.mhii_link),
         "artwork_count": t.artwork_count,
         "artwork_id_ref": t.mhii_link,
         "purchased_flag": t.purchased_aac_flag,
-        # Binary AND fields
         "media_type": t.media_type,
-        # Tracks being evaluated are local to this iPod. The iPod's Location
-        # rule uses bit 0 for "on this computer".
         "location_kind": 1,
-        # Checked flag (0=checked, 1=unchecked in iPod convention)
         "checked_flag": t.checked_flag,
-        # Video fields for smart playlist evaluation
         "season_number": t.season_number,
         "Show": t.show_name or "",
-        # Podcast/audiobook fields for smart playlist evaluation
         "Description Text": t.description or "",
         "Category": t.category or "",
         "podcast_flag": t.podcast_flag,

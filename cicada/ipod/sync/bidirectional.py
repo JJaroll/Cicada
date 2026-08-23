@@ -21,36 +21,32 @@ from cicada.ipod.sync.state import DeviceRecord, PlaybackStateRecord, SyncStateD
 logger = logging.getLogger(__name__)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Dataclasses de Resultados y Deltas
-# ═══════════════════════════════════════════════════════════════════════════
-
 @dataclass
 class RawPlaybackStat:
     """Valores absolutos leídos directamente del iPod (normalizados a Unix epoch)."""
-    ipod_dbid: int  # uint64
+    ipod_dbid: int
     play_count: int = 0
-    rating: int = 0  # 0..100
-    last_played: int = 0  # Unix timestamp 1970
+    rating: int = 0
+    last_played: int = 0
     skip_count: int = 0
-    date_skipped: int = 0  # Unix timestamp 1970
+    date_skipped: int = 0
 
 
 @dataclass
 class TrackPlaybackDelta:
     """Deltas calculados para una pista individual."""
     guid: str
-    ipod_dbid: int  # uint64
+    ipod_dbid: int
     local_path: Optional[str] = None
     delta_play_count: int = 0
     current_play_count: int = 0
     rating_changed: bool = False
-    new_rating: int = 0  # 0..100
-    new_stars: int = 0   # 0..5
-    new_last_played: int = 0  # Unix timestamp 1970
+    new_rating: int = 0
+    new_stars: int = 0
+    new_last_played: int = 0
     delta_skip_count: int = 0
     current_skip_count: int = 0
-    new_date_skipped: int = 0  # Unix timestamp 1970
+    new_date_skipped: int = 0
 
 
 @dataclass
@@ -69,10 +65,6 @@ class PlaybackDeltaReport:
         return len(self.tracks_with_deltas) > 0
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Lector de Estadísticas del iPod
-# ═══════════════════════════════════════════════════════════════════════════
-
 def read_ipod_playback_stats(mount: Path | str) -> Dict[int, RawPlaybackStat]:
     """Lee y normaliza las estadísticas de reproducción actuales del iPod.
 
@@ -82,11 +74,9 @@ def read_ipod_playback_stats(mount: Path | str) -> Dict[int, RawPlaybackStat]:
     mount_path = Path(mount)
     dynamic_itdb = mount_path / "iPod_Control" / "iTunes" / "iTunes Library.itlp" / "Dynamic.itdb"
 
-    # 1. Vía SQLite (Nano 6G / 7G)
     if dynamic_itdb.is_file():
         return _read_stats_from_dynamic_itdb(dynamic_itdb)
 
-    # 2. Vía iTunesCDB / iTunesDB parser (Clásicos / Fallback)
     itunes_dir = mount_path / "iPod_Control" / "iTunes"
     cdb_file = itunes_dir / "iTunesCDB"
     db_file = itunes_dir / "iTunesDB"
@@ -116,7 +106,6 @@ def _read_stats_from_dynamic_itdb(db_path: Path) -> Dict[int, RawPlaybackStat]:
             total_skips = int(row["skip_count_user"] or 0) + int(row["skip_count_recent"] or 0)
             rating = int(row["user_rating"] or 0)
 
-            # Conversión de época Cocoa (2001) a Unix (1970)
             raw_played = row["date_played"] or 0
             last_played = coredata_to_unix(raw_played) if raw_played != 0 else 0
 
@@ -152,7 +141,6 @@ def _read_stats_from_itunesdb(db_file: Path, mount: Path) -> Dict[int, RawPlayba
         play_count = int(t.get("play_count") or 0)
         rating = int(t.get("rating") or 0)
 
-        # Conversión de época Mac (1904) a Unix (1970)
         raw_played = int(t.get("last_played") or 0)
         last_played = time_ctx.mac_to_unix(raw_played) if raw_played != 0 else 0
 
@@ -170,10 +158,6 @@ def _read_stats_from_itunesdb(db_file: Path, mount: Path) -> Dict[int, RawPlayba
         )
     return stats
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Algoritmo de Cálculo de Deltas
-# ═══════════════════════════════════════════════════════════════════════════
 
 def compute_playback_deltas(
     mount: Path | str,
@@ -206,8 +190,6 @@ def compute_playback_deltas(
         committed_rating = stat.rating
 
         if known is None:
-            # Pista no registrada previamente: sin baseline no hay "cambio desde
-            # el último sync" que evaluar, así que no puede haber conflicto.
             if stat.play_count > 0:
                 delta_play = stat.play_count
             if stat.skip_count > 0:
@@ -215,11 +197,9 @@ def compute_playback_deltas(
             if stat.rating > 0:
                 rating_changed = True
         else:
-            # Pista con línea base conocida
             if stat.play_count > known.known_play_count:
                 delta_play = stat.play_count - known.known_play_count
             elif stat.play_count < known.known_play_count:
-                # Reinicio o restore en el iPod: no generamos delta negativo pero registramos reset
                 delta_play = 0
                 counter_reset = True
 
@@ -233,15 +213,12 @@ def compute_playback_deltas(
             local_diverged = local is not None and local.local_rating != known.known_rating
             if stat.rating != known.known_rating:
                 if local_diverged:
-                    # Posible conflicto real (ambos lados cambiaron): no tocar
-                    # el baseline aquí, queda pendiente para scan_for_conflicts.
                     committed_rating = known.known_rating
                 else:
                     rating_changed = True
             else:
                 committed_rating = known.known_rating
 
-            # Timestamp de reproducción más reciente
             new_last_played = max(stat.last_played, known.known_last_played)
             new_date_skipped = max(stat.date_skipped, known.known_date_skipped)
 
@@ -308,10 +285,6 @@ def commit_playback_deltas(
     with sync_db.transaction() as conn:
         sync_db.upsert_playback_states(new_records, conn=conn)
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Orquestación — punto de entrada único para API/CLI
-# ═══════════════════════════════════════════════════════════════════════════
 
 def sync_playback_stats(mount, device_info, sync_db: Optional[SyncStateDB] = None) -> PlaybackDeltaReport:
     """Escanea + confirma en un solo paso: registra el dispositivo (si hace

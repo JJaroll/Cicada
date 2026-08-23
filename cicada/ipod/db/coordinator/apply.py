@@ -249,8 +249,6 @@ def recover_inflight_commit(
 
     logger.warning("Detectado commit incompleto para GUID %s. Ejecutando rollback desde %s...", guid, archive_path)
     if archive_path.is_file():
-        # .get con default False: markers de antes de la Etapa 4d no tienen
-        # el campo, y esos commits nunca tocaron Artwork/ de todas formas.
         restore_backup(archive_path, resolved_mount, include_artwork=marker.get("include_artwork", False))
     purge_staging_temps(resolved_mount)
     clear_inflight_marker(guid, commit_dir=commit_dir)
@@ -277,22 +275,16 @@ def apply(
             except Exception:
                 pass
 
-    # ═══════════════════════════════════════════════════════════════════════
-    # FASE A: PRECONDICIONES (sin mutación de disco)
-    # ═══════════════════════════════════════════════════════════════════════
     _progress("Validando precondiciones", 0.0)
 
-    # A1. Revalidación del punto de montaje y GUID
     resolved_mount = resolve_mount(expected_guid=plan.guid, candidates=[mount])
     assert_writable(resolved_mount)
 
-    # A2. Gate de procedencia del dispositivo
     if not device_info.guid_is_write_safe:
         raise UnsafeDeviceError(
             f"Procedencia de GUID insegura para escribir: {device_info.guid_provenance!r}"
         )
 
-    # A3. Gate de consentimiento de Music.app
     if plan.consent_needed:
         if not consent_ack:
             raise ConsentRequiredError(
@@ -301,28 +293,20 @@ def apply(
             )
         record_music_app_consent(plan.guid, consent_dir=consent_dir)
 
-    # A4. Verificación de artefactos en staging
     sequence = _install_sequence(plan)
     for stage_rel, target_rel in sequence:
         src = plan.staging_dir / stage_rel
         if not src.is_file():
             raise InconsistentArtifactsError(f"Falta el artefacto de staging requerido: {src}")
-        # Un .ithmb con 0 bytes es un estado válido (ningún track usó ese
-        # formato este ciclo, ver db/artwork/writer.py) — solo los 7
-        # artefactos de base de datos deben ser siempre no-vacíos.
         if src.stat().st_size == 0 and not stage_rel.startswith("Artwork/"):
             raise InconsistentArtifactsError(f"El artefacto de staging está vacío: {src}")
 
-    # A5. Comparación con huella del pre-estado
     if not plan.pre_state.matches(resolved_mount):
         raise StalePlanError(
             "El estado de los archivos de base de datos en el iPod cambió después de generar el plan. "
             "Plan descartado para evitar sobrescribir mutaciones externas."
         )
 
-    # ═══════════════════════════════════════════════════════════════════════
-    # FASE B: BACKUP VERIFICADO (sin mutación de destino)
-    # ═══════════════════════════════════════════════════════════════════════
     _progress("Creando backup de seguridad", 0.2)
     backup_path = create_backup(
         resolved_mount,
@@ -332,9 +316,6 @@ def apply(
         include_artwork=plan.artwork_touched,
     )
 
-    # ═══════════════════════════════════════════════════════════════════════
-    # FASE C: STAGING EN DISPOSITIVO (.cicada-new con fsync)
-    # ═══════════════════════════════════════════════════════════════════════
     _progress("Transfiriendo archivos de base de datos", 0.4)
     staged_device_temps: list[Path] = []
     itunes_dir = resolved_mount / "iPod_Control" / "iTunes"
@@ -363,9 +344,6 @@ def apply(
                 pass
         raise
 
-    # ═══════════════════════════════════════════════════════════════════════
-    # FASE D: COMMIT POR RENAMES (ventana estrecha)
-    # ═══════════════════════════════════════════════════════════════════════
     _progress("Aplicando cambios de base de datos", 0.7)
     set_inflight_marker(
         plan.guid, backup_path, resolved_mount, commit_dir=commit_dir,
@@ -378,7 +356,6 @@ def apply(
             temp_on_device = dest.with_name(dest.name + ".cicada-new")
             os.replace(temp_on_device, dest)
 
-        # Fsync defensivo en directorios padre
         for pdir in (itlp_dir, itunes_dir):
             try:
                 dfd = os.open(str(pdir), os.O_RDONLY)
@@ -401,12 +378,8 @@ def apply(
             error=f"Fallo en commit (restaurado): {exc}",
         )
 
-    # ═══════════════════════════════════════════════════════════════════════
-    # FASE E: VERIFICACIÓN POST-COMMIT
-    # ═══════════════════════════════════════════════════════════════════════
     _progress("Verificando consistencia post-escritura", 0.9)
     try:
-        # E1. Releer iTunesCDB
         cdb_target = itunes_dir / "iTunesCDB"
         lib_data = load_ipod_library(str(cdb_target), mount=str(resolved_mount))
         if not lib_data or len(lib_data.get("mhlt", [])) != plan.tracks_count:
@@ -415,12 +388,10 @@ def apply(
                 f"no coincide con el plan ({plan.tracks_count})."
             )
 
-        # E2. Revalidar HASHAB en iTunesCDB
         if plan.checksum_type is ChecksumType.HASHAB:
             if not verify_hashab(cdb_target.read_bytes(), plan.firewire_id):
                 raise PostCommitVerifyError("verify_hashab falló en el iTunesCDB recién commiteado.")
 
-        # E3. Releer bases SQLite y verificar integridad
         for fn in ("Library.itdb", "Locations.itdb", "Dynamic.itdb", "Extras.itdb", "Genius.itdb"):
             db_path = itlp_dir / fn
             con = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
@@ -430,9 +401,6 @@ def apply(
                 raise PostCommitVerifyError(f"PRAGMA integrity_check falló en {fn}: {res}")
             con.close()
 
-        # E4. Releer ArtworkDB y verificar que todo track con mhii_link tiene
-        # una entrada MHII correspondiente — cierra el requisito de que ningún
-        # track quede referenciando un artwork_id_ref inexistente (Etapa 4d).
         if plan.artwork_touched:
             artworkdb_target = resolved_mount / "iPod_Control" / "Artwork" / "ArtworkDB"
             if not artworkdb_target.is_file():
@@ -463,9 +431,6 @@ def apply(
             error=f"Verificación post-commit fallida (restaurado): {exc}",
         )
 
-    # ═══════════════════════════════════════════════════════════════════════
-    # ÉXITO: Limpieza de marcador y registro de consentimiento
-    # ═══════════════════════════════════════════════════════════════════════
     _progress("Finalizado con éxito", 1.0)
     clear_inflight_marker(plan.guid, commit_dir=commit_dir)
     mark_first_write_committed(plan.guid, consent_dir=consent_dir)

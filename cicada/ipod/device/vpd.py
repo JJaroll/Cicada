@@ -29,9 +29,9 @@ __all__ = ["VpdResult", "query_vpd"]
 @dataclass(frozen=True)
 class VpdResult:
     """Resultado de una consulta VPD por USB."""
-    data: Optional[dict]        # dict con FireWireGUID/FamilyID/SerialNumber, o None
-    error: Optional[str]        # causa cuando data is None (nunca silencioso)
-    transport: Optional[str]    # "iokit_scsi_vpd" | ...
+    data: Optional[dict]
+    error: Optional[str]
+    transport: Optional[str]
 
     @property
     def ok(self) -> bool:
@@ -56,11 +56,11 @@ def query_vpd(*, usb_pid: int = 0, serial_filter: str = "") -> VpdResult:
 def _query_macos(*, usb_pid: int, serial_filter: str) -> VpdResult:
     try:
         from cicada.ipod.device import vpd_iokit
-    except Exception as exc:  # framework/ctypes no disponible
+    except Exception as exc:
         return VpdResult(None, f"IOKit no disponible: {exc}", None)
     try:
         data = vpd_iokit.query_ipod_vpd(usb_pid=usb_pid, serial_filter=serial_filter)
-    except Exception as exc:  # el SCSITaskUserClient pudo ser rechazado
+    except Exception as exc:
         logger.debug("vpd_iokit falló: %s", exc)
         return VpdResult(None, f"IOKit rechazó el SCSITaskUserClient: {exc}", None)
     if not data:

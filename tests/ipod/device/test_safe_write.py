@@ -21,9 +21,6 @@ def ipod(tmp_path):
     return mount
 
 
-# --------------------------------------------------------------------------- #
-# Dentro de iPod_Control -> permitido
-# --------------------------------------------------------------------------- #
 def test_replace_dentro_de_control(ipod):
     itunes = ipod / "iPod_Control" / "iTunes"
     source = itunes / ".nuevo.tmp"
@@ -34,7 +31,7 @@ def test_replace_dentro_de_control(ipod):
     guarded_durable_replace(source, target, ipod)
 
     assert target.read_bytes() == b"datos-nuevos"
-    assert not source.exists()          # replace consumió el source
+    assert not source.exists()
 
 
 def test_unlink_dentro_de_control(ipod):
@@ -44,9 +41,6 @@ def test_unlink_dentro_de_control(ipod):
     assert not victima.exists()
 
 
-# --------------------------------------------------------------------------- #
-# Fuera de iPod_Control -> rechazado, sin escribir
-# --------------------------------------------------------------------------- #
 def test_replace_fuera_de_control_rechazado(ipod, tmp_path):
     source = ipod / "iPod_Control" / "iTunes" / ".nuevo.tmp"
     source.write_bytes(b"datos")
@@ -56,8 +50,8 @@ def test_replace_fuera_de_control_rechazado(ipod, tmp_path):
     with pytest.raises(PathOutsideIpodControlError):
         guarded_durable_replace(source, fuera, ipod)
 
-    assert not fuera.exists()            # nada escrito fuera
-    assert source.exists()               # source intacto (no se movió)
+    assert not fuera.exists()
+    assert source.exists()
 
 
 def test_unlink_fuera_de_control_rechazado(ipod, tmp_path):
@@ -68,12 +62,8 @@ def test_unlink_fuera_de_control_rechazado(ipod, tmp_path):
     assert fuera.exists()
 
 
-# --------------------------------------------------------------------------- #
-# Symlink que apunta fuera -> rechazado
-# --------------------------------------------------------------------------- #
 @pytest.mark.skipif(sys.platform == "win32", reason="symlinks POSIX")
 def test_replace_via_symlink_que_apunta_fuera_rechazado(ipod, tmp_path):
-    # Symlink DENTRO de iPod_Control que escapa del árbol.
     secreto = tmp_path / "secreto"
     secreto.mkdir()
     enlace = ipod / "iPod_Control" / "escape"
@@ -81,10 +71,10 @@ def test_replace_via_symlink_que_apunta_fuera_rechazado(ipod, tmp_path):
 
     source = ipod / "iPod_Control" / "iTunes" / ".nuevo.tmp"
     source.write_bytes(b"datos")
-    target = enlace / "robado"           # resuelve a <secreto>/robado, fuera
+    target = enlace / "robado"
 
     with pytest.raises(PathOutsideIpodControlError):
         guarded_durable_replace(source, target, ipod)
 
-    assert not (secreto / "robado").exists()   # nada escrito a través del symlink
+    assert not (secreto / "robado").exists()
     assert source.exists()

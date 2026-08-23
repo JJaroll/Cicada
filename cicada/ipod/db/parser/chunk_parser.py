@@ -62,9 +62,6 @@ def log_unknown_chunk_summary() -> None:
     )
 
 
-# ── Child-iteration helpers ──────────────────────────────────────────
-
-
 def parse_children(
     data: bytes | bytearray,
     offset: int,
@@ -110,9 +107,6 @@ def _parse_child_list(
     }
 
 
-# ── Top-level dispatcher ────────────────────────────────────────────
-
-
 def parse_chunk(
     data: bytes | bytearray,
     offset: int,
@@ -137,7 +131,6 @@ def parse_chunk(
             from .mhsd_parser import parse_dataset
             result = parse_dataset(data, offset, header_length, length_or_children)
 
-        # Pure-list containers — no dedicated parser needed.
         case "mhlt" | "mhla" | "mhli" | "mhlp":
             result = _parse_child_list(data, offset, header_length, length_or_children)
 
@@ -157,16 +150,10 @@ def parse_chunk(
             from .mhia_parser import parse_album_item
             result = parse_album_item(data, offset, header_length, length_or_children)
         case "mhii":
-            # NOTE: shares the 'mhii' magic with ArtworkDB image items,
-            # but in iTunesDB context this is an artist item.
             from .mhii_parser import parse_artist_item
             result = parse_artist_item(data, offset, header_length, length_or_children)
         case _:
             _unknown_chunk_counts[(chunk_type, offset)] += 1
-            # NOTE: length_or_children may be a child count rather than
-            # a byte length.  For unknown types we naively treat it as a
-            # length — the worst case is skipping too little, which the
-            # parent's child loop will catch on the next iteration.
             result = {
                 "next_offset": offset + length_or_children,
                 "data": {

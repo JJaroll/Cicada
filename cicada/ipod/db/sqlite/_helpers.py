@@ -18,12 +18,8 @@ __all__ = [
     "open_db",
 ]
 
-# ── Timestamp helpers ──────────────────────────────────────────────────
-# SQLite databases use Core Data timestamps: seconds since 2001-01-01 UTC
-# (the Cocoa/Core Foundation reference date).
-CORE_DATA_EPOCH = 978307200  # Unix timestamp of 2001-01-01 00:00:00 UTC
+CORE_DATA_EPOCH = 978307200
 
-#: Máscara para normalizar enteros de 64 bits a su representación sin signo (uint64).
 SQLITE_INT_MASK = 0xFFFFFFFFFFFFFFFF
 
 

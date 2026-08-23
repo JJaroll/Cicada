@@ -28,16 +28,15 @@ def test_nano7g_resuelve_hashab():
 
 
 def test_nano7g_db_format_itunescdb_comprimida_y_sqlite():
-    # Arquitectura dual del Nano 7G (spec §0.1): iTunesCDB comprimido + SQLite.
     caps = capabilities_for_family_gen(*NANO7G)
-    assert caps.supports_compressed_db is True   # el iTunesCDB va comprimido (zlib)
-    assert caps.uses_sqlite_db is True           # + capa SQLite que lee el dispositivo
+    assert caps.supports_compressed_db is True
+    assert caps.uses_sqlite_db is True
 
 
 def test_nano7g_otras_capacidades_conocidas():
     caps = capabilities_for_family_gen(*NANO7G)
-    assert caps.music_dirs == 20                 # F00–F49 -> 20 (según la tabla)
-    assert caps.supports_video is True           # el 7G recupera vídeo
+    assert caps.music_dirs == 20
+    assert caps.supports_video is True
     assert caps.db_version == 0x30
 
 
@@ -50,11 +49,10 @@ def test_fixture_sysinfoextended_trae_las_claves_conocidas():
     """Las capacidades que leeremos del dispositivo (Etapa 2b) están en el
     SysInfoExtended real y coinciden con lo que ya conocemos del Nano 7G."""
     data = plistlib.loads(FIXTURE_SIE.read_bytes())
-    assert data["FamilyID"] == 18                       # Nano 7G
+    assert data["FamilyID"] == 18
     assert data["MaxTracks"] == 65534
     assert data["PlaylistFoldersSupported"] is True
     assert data["DistinguishedSmartPlaylistsSupported"] is True
     assert data["DBVersion"] == 5
-    assert data.get("FireWireGUID")                     # imprescindible para el hash
-    # ModelNumStr NO viene en este dispositivo (se usa FamilyID).
+    assert data.get("FireWireGUID")
     assert "ModelNumStr" not in data

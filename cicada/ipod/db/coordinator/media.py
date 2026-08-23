@@ -34,16 +34,16 @@ __all__ = [
     "push_ratings_to_ipod",
 ]
 
-_MUSIC_BUCKETS = 50            # F00..F49, como iTunes
+_MUSIC_BUCKETS = 50
 _NAME_CHARS = string.ascii_uppercase
 _NAME_LEN = 4
 
 
 @dataclass
 class MediaAssignment:
-    source: Path          # archivo de audio local a copiar
-    ipod_location: str    # ":iPod_Control:Music:F03:ABCD.mp3"
-    dest_relpath: str     # "iPod_Control/Music/F03/ABCD.mp3"
+    source: Path
+    ipod_location: str
+    dest_relpath: str
 
 
 def existing_music_names(mount: str | Path) -> set[str]:
@@ -314,7 +314,6 @@ def set_ipod_playlist(mount, playlist_name, items, *, device_info, consent_ack=F
     _heal_track_lengths(mount, existing_tracks)
     existing_dbids = {ti.db_track_id for ti in existing_tracks}
 
-    # Pistas nuevas de la biblioteca (source_path), dedup por ruta.
     new_by_src = {}
     for it in items:
         sp = it.get("source_path")
@@ -330,7 +329,6 @@ def set_ipod_playlist(mount, playlist_name, items, *, device_info, consent_ack=F
     new_tracks = list(new_by_src.values())
     assignments, src_to_dbid = _prepare_new_tracks(mount, new_tracks) if new_tracks else ([], {})
 
-    # Orden final de dbids (existentes por dbid, nuevas por su dbid asignado).
     ordered = []
     for it in items:
         dbid = it.get("db_track_id")
@@ -506,13 +504,11 @@ def preserve_existing_playlists(mount, lib=None):
     regular = []
     if lib:
         tid2db = _trackid_to_dbid(lib)
-        # Regulares (mhlp tipo 2, incl. On-The-Go): reconstruir desde sus items.
         for pl in lib.get("mhlp", []):
             if pl.get("master_flag"):
                 continue
             regular.append(PlaylistInfo(name=pl.get("Title") or "Playlist",
                                         track_ids=_playlist_dbids(pl, tid2db), master=False))
-    # Smart: preservar con blobs crudos (no se interpretan en v1).
     try:
         from cicada.ipod.sync.playlists import extract_smart_playlists_for_preservation
         smart = extract_smart_playlists_for_preservation(mount) or []
@@ -538,8 +534,6 @@ def _build_playlists(mount, lib, sent_playlists, src_to_dbid):
                 "(quedaron fuera del envío); se crea igualmente con las que sí resolvieron.",
                 np.get("name"), len(paths) - len(tids), len(paths),
             )
-        # Se crea siempre (aunque queden 0 pistas resueltas): nunca se descarta en
-        # silencio una playlist que el usuario pidió explícitamente enviar.
         regular.append(PlaylistInfo(name=np.get("name") or "Playlist", track_ids=tids, master=False))
     return regular, smart
 
@@ -577,10 +571,8 @@ def sync_media_to_ipod(
         if not getattr(ti, "source_path", None):
             raise ValueError("cada track nuevo requiere source_path (archivo local)")
 
-    # 1. Preparar las nuevas: location + tamaño + info de audio + dbid.
     assignments, src_to_dbid = _prepare_new_tracks(mount, new_tracks)
 
-    # 2. Pistas existentes (round-trip) + nuevas.
     existing = []
     lib = None
     if keep_existing:
@@ -591,10 +583,8 @@ def sync_media_to_ipod(
             _heal_track_lengths(mount, existing)
     full = existing + new_tracks
 
-    # 3. Preservar playlists existentes + crear las enviadas.
     reg_playlists, smart_playlists = _build_playlists(mount, lib, playlists, src_to_dbid)
 
-    # 4. Plan dry-run: valida seguridad. Si falla, no se copió nada.
     plan = create_plan(
         mount, full, device_info=device_info,
         master_playlist_name=master_playlist_name,
@@ -606,7 +596,6 @@ def sync_media_to_ipod(
             "Se requiere aceptar la advertencia de Music.app antes de la primera escritura."
         )
 
-    # 4. Copiar audio, luego instalar la base; limpiar audios si la base falla/rollback.
     copied = copy_media(mount, assignments)
     try:
         result = apply(plan, mount=mount, device_info=device_info, consent_ack=consent_ack)

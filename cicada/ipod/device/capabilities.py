@@ -40,7 +40,6 @@ class DeviceCapabilities:
     need to be specified in the lookup table.
     """
 
-    # ── Database format ────────────────────────────────────────────────
     checksum: ChecksumType = ChecksumType.NONE
     is_shuffle: bool = False
     """If True, device uses iTunesSD (flat binary) instead of / in addition
@@ -53,7 +52,6 @@ class DeviceCapabilities:
     """If True, device expects iTunesCDB (zlib-compressed iTunesDB) and will
     generate an empty iTunesDB alongside it.  Nano 5G/6G/7G only."""
 
-    # ── Media type support ─────────────────────────────────────────────
     supports_video: bool = False
     """Device can play video files (mediatype & VIDEO != 0)."""
     supports_tx3g_subtitles: bool = False
@@ -78,7 +76,6 @@ class DeviceCapabilities:
     samplecount, gapless_data, gapless_track_flag).  Introduced with
     iPod 5.5G (Late 2006)."""
 
-    # ── Artwork ────────────────────────────────────────────────────────
     supports_artwork: bool = True
     """Device has an ArtworkDB and .ithmb files for album art."""
     supports_chapter_image: bool = False
@@ -92,7 +89,6 @@ class DeviceCapabilities:
     cover_art_formats: tuple[ArtworkFormat, ...] = ()
     """Supported cover-art thumbnail sizes.  Empty means no artwork."""
 
-    # ── Storage layout ─────────────────────────────────────────────────
     music_dirs: int = 20
     """Number of ``Fxx`` directories under ``iPod_Control/Music/``.
     Varies 0–50 depending on model and storage capacity."""
@@ -103,14 +99,12 @@ class DeviceCapabilities:
     the practical ceiling for iTunesDB/iTunesCDB footprint checks.
     """
 
-    # ── SQLite database ────────────────────────────────────────────────
     uses_sqlite_db: bool = False
     """If True, device uses SQLite databases in
     ``iTunes Library.itlp/`` instead of (or alongside) binary
     iTunesDB/iTunesCDB.  The firmware on Nano 6G/7G reads the SQLite
     databases and ignores iTunesCDB completely."""
 
-    # ── Writer parameters ──────────────────────────────────────────────
     db_version: int = 0x30
     """iTunesDB version to write in mhbd header.  Older iPods need
     lower values (0x0c for Shuffle 1G/2G, 0x13 for pre-Classic)."""
@@ -118,11 +112,9 @@ class DeviceCapabilities:
     """Byte order for database writing.  ``"le"`` for almost all models.
     ``"be"`` for iPod Mobile (Motorola ROKR/SLVR/RAZR)."""
 
-    # ── Screen / display ───────────────────────────────────────────────
     has_screen: bool = True
     """Device has a display.  Shuffles have no screen."""
 
-    # ── Video encoding limits ──────────────────────────────────────────
     max_video_width: int = 0
     """Maximum H.264 decode width (pixels).  0 = no video support.
     This is the firmware decode ceiling, not the screen resolution —
@@ -144,13 +136,8 @@ class DeviceCapabilities:
     Nano 3G/4G are limited to Level 1.3 by their hardware decoder."""
 
 
-# ──────────────────────────────────────────────────────────────────────────
-# The master capabilities table
-# ──────────────────────────────────────────────────────────────────────────
-
 _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
 
-    # ── iPod 1G–3G: earliest models, no podcast, no gapless ───────────
     ("iPod", "1st Gen"): DeviceCapabilities(
         supports_podcast=False,
         supports_artwork=False,
@@ -176,14 +163,12 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         db_version=0x13,
     ),
 
-    # ── iPod 4G mono (Click Wheel): first with podcast support ────────
     ("iPod", "4th Gen (mono)"): DeviceCapabilities(
         supports_artwork=False,
         music_dirs=20,
         db_version=0x13,
     ),
 
-    # ── iPod 4G photo/color (Color Display) ───────────────────────────
     ("iPod", "4th Gen (photo)"): DeviceCapabilities(
         supports_artwork=True,
         cover_art_formats=(
@@ -203,7 +188,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         db_version=0x13,
     ),
 
-    # ── iPod 5th Gen ──────────────────────────────────────────────────
     ("iPod", "5th Gen"): DeviceCapabilities(
         supports_video=True,
         supports_artwork=True,
@@ -217,7 +201,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         max_video_height=480,
     ),
 
-    # ── iPod 5.5th Gen — first with gapless playback ──────────────────
     ("iPod", "5.5th Gen"): DeviceCapabilities(
         supports_video=True,
         supports_gapless=True,
@@ -232,7 +215,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         max_video_height=480,
     ),
 
-    # ── iPod Classic (all gens): HASH58, gapless, video ───────────────
     ("iPod Classic", "6th Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASH58,
         supports_video=True,
@@ -285,7 +267,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         max_video_bitrate=2500,
     ),
 
-    # ── iPod Mini ─────────────────────────────────────────────────────
     ("iPod Mini", "1st Gen"): DeviceCapabilities(
         supports_artwork=False,
         supports_alac=True,
@@ -298,7 +279,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         db_version=0x13,
     ),
 
-    # ── iPod Nano 1G/2G ──────────────────────────────────────────────
     ("iPod Nano", "1st Gen"): DeviceCapabilities(
         supports_artwork=True,
         cover_art_formats=(
@@ -318,7 +298,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         db_version=0x13,
     ),
 
-    # ── iPod Nano 3G ("Fat"): first Nano with video, HASH58 ──────────
     ("iPod Nano", "3rd Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASH58,
         supports_video=True,
@@ -341,7 +320,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         h264_level="1.3",
     ),
 
-    # ── iPod Nano 4G: HASH58 ─────────────────────────────────────────
     ("iPod Nano", "4th Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASH58,
         supports_video=True,
@@ -367,7 +345,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         h264_level="1.3",
     ),
 
-    # ── iPod Nano 5G: HASH72, compressed DB + SQLite ─────────────────
     ("iPod Nano", "5th Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASH72,
         supports_video=True,
@@ -391,7 +368,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         max_video_height=480,
     ),
 
-    # ── iPod Nano 6G: HASHAB, no video ───────────────────────────────
     ("iPod Nano", "6th Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASHAB,
         supports_video=False,
@@ -411,7 +387,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         db_version=0x30,
     ),
 
-    # ── iPod Nano 7G: HASHAB, video returns ──────────────────────────
     ("iPod Nano", "7th Gen"): DeviceCapabilities(
         checksum=ChecksumType.HASHAB,
         supports_video=True,
@@ -430,7 +405,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         max_video_height=576,
     ),
 
-    # ── iPod Shuffle 1G ──────────────────────────────────────────────
     ("iPod Shuffle", "1st Gen"): DeviceCapabilities(
         is_shuffle=True,
         shadow_db_version=1,
@@ -441,7 +415,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         db_version=0x0c,
     ),
 
-    # ── iPod Shuffle 2G ──────────────────────────────────────────────
     ("iPod Shuffle", "2nd Gen"): DeviceCapabilities(
         is_shuffle=True,
         shadow_db_version=1,
@@ -452,7 +425,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         db_version=0x13,
     ),
 
-    # ── iPod Shuffle 3G ──────────────────────────────────────────────
     ("iPod Shuffle", "3rd Gen"): DeviceCapabilities(
         is_shuffle=True,
         shadow_db_version=2,
@@ -463,7 +435,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         db_version=0x19,
     ),
 
-    # ── iPod Shuffle 4G ──────────────────────────────────────────────
     ("iPod Shuffle", "4th Gen"): DeviceCapabilities(
         is_shuffle=True,
         shadow_db_version=2,

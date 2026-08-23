@@ -39,7 +39,6 @@ def parse_dataset(
             "_body_end": offset + header_length,
         }
 
-    # MHSD always has exactly one child.
     mhsd["children"], child_end = parse_children(data, offset + header_length, 1)
     return {
         "next_offset": offset + chunk_length,

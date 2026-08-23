@@ -29,7 +29,7 @@ def select_folder():
             return {"path": path} if path else {"error": "Cancelado"}
         elif sys.platform == "win32":
             script = "Add-Type -AssemblyName System.windows.forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; if ($f.ShowDialog() -eq 'OK') { Write-Output $f.SelectedPath }"
-            kwargs = {'creationflags': 0x08000000} # Evita que se abra una consola negra
+            kwargs = {'creationflags': 0x08000000}
             result = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, **kwargs)
             path = result.stdout.strip()
             return {"path": path} if path else {"error": "Cancelado"}

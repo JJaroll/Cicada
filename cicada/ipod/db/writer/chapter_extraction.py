@@ -66,12 +66,6 @@ def _chapters_from_mp3(file_path: str) -> list[dict] | None:
         start_ms = getattr(frame, "start_time", None)
         if start_ms is None:
             continue
-        # mutagen >=1.4x guarda sub_frames en un ID3Tags dict-like
-        # {frame_id: frame} (no es dict real: isinstance(..., dict) da
-        # False), no una lista como en la versión contra la que se
-        # escribió el código de origen — iterar el objeto tal cual da las
-        # claves (strings), no los frames, y la búsqueda de título fallaba
-        # en silencio.
         sub_frames = getattr(frame, "sub_frames", None) or []
         if hasattr(sub_frames, "values"):
             sub_frames = sub_frames.values()

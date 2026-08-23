@@ -14,11 +14,10 @@ def test_tabla_carga_y_no_esta_vacia():
 def test_entradas_son_artworkformat_con_id_coherente():
     for fmt_id, fmt in ARTWORK_FORMATS_BY_ID.items():
         assert isinstance(fmt, ArtworkFormat)
-        assert fmt.format_id == fmt_id          # la clave coincide con el id
+        assert fmt.format_id == fmt_id
         assert fmt.width > 0 and fmt.height > 0
 
 
 def test_formatos_del_nano7g_presentes():
-    # capabilities del Nano 7G referencia estos IDs de foto (1005, 1007).
     assert 1005 in ARTWORK_FORMATS_BY_ID
     assert 1007 in ARTWORK_FORMATS_BY_ID

@@ -90,8 +90,6 @@ def rgb565_le_to_rgb888(data: bytes, width: int, height: int, stride: Optional[i
     r = ((arr >> 11) & 0x1F).astype(np.uint8)
     g = ((arr >> 5) & 0x3F).astype(np.uint8)
     b = (arr & 0x1F).astype(np.uint8)
-    # Replicar los bits altos en los bajos (5/6 bits -> 8 bits) en vez de
-    # solo desplazar, para que blanco/negro/tonos puros redondeen exacto.
     r8 = (r << 3) | (r >> 2)
     g8 = (g << 2) | (g >> 4)
     b8 = (b << 3) | (b >> 2)

@@ -45,10 +45,6 @@ def _make_mock_device(mount: Path, *, provenance: str = "disk") -> DeviceInfo:
         family_id=18,
         checksum=ChecksumType.HASHAB,
         guid_provenance=provenance,
-        # Capacidades REALES de Nano 7G (no un DeviceCapabilities pelado):
-        # desde 4f-1, cover_art_formats sale de aquí, no de una constante
-        # fija — un objeto sin la tabla poblada dejaría artwork_touched en
-        # False siempre, sin importar la fuente de imagen del track.
         capabilities=capabilities_for_family_gen("iPod Nano", "7th Gen"),
     )
 
@@ -101,17 +97,14 @@ def test_create_plan_success(tmp_path: Path):
     assert plan.checksum_type is ChecksumType.HASHAB
     assert plan.tracks_count == 2
     assert plan.write_safe is True
-    assert plan.consent_needed is True  # No consent yet
+    assert plan.consent_needed is True
 
-    # Staging artifacts existen y están poblados
     assert plan.staging_dir.is_dir()
     assert (plan.staging_dir / "iTunesCDB").is_file()
     assert (plan.staging_dir / "iTunes Library.itlp" / "Library.itdb").is_file()
 
-    # PreStateFingerprint coincide con el estado inicial
     assert plan.pre_state.matches(mount)
 
-    # 7 artefactos registrados en metadatos
     assert len(plan.artifacts) == 7
     for rel in DATABASE_TARGET_RELPATHS:
         assert rel in plan.artifacts
@@ -157,7 +150,6 @@ def test_pre_state_fingerprint_matching_and_drift(tmp_path: Path):
     fp = PreStateFingerprint.capture(mount)
     assert fp.matches(mount)
 
-    # Mutar un archivo en el iPod
     (mount / "iPod_Control" / "iTunes" / "iTunesCDB").write_bytes(b"modified content")
     assert not fp.matches(mount)
 
@@ -175,11 +167,9 @@ def test_staging_artifacts_validity(tmp_path: Path):
         consent_dir=tmp_path / "consent",
     )
 
-    # Verificar HASHAB en el iTunesCDB de staging
     cdb_bytes = (plan.staging_dir / "iTunesCDB").read_bytes()
     assert verify_hashab(cdb_bytes, GUID_BYTES)
 
-    # Verificar lectura de cada .itdb con sqlite3
     itlp_dir = plan.staging_dir / "iTunes Library.itlp"
     for fn in ("Library.itdb", "Locations.itdb", "Dynamic.itdb", "Extras.itdb", "Genius.itdb"):
         db_file = itlp_dir / fn
@@ -206,11 +196,6 @@ def test_custom_staging_base(tmp_path: Path):
 
     assert custom_staging in plan.staging_dir.parents
     assert (plan.staging_dir / "iTunesCDB").is_file()
-
-
-# --------------------------------------------------------------------------- #
-# Artwork (Fase 4, Etapa 4d)
-# --------------------------------------------------------------------------- #
 
 
 def test_create_plan_without_resolvable_art_skips_artwork_entirely(tmp_path: Path):
@@ -260,7 +245,6 @@ def test_create_plan_builds_artwork_from_source_path(tmp_path: Path):
     assert track.artwork_size == len(expected_art_bytes)
     assert track.artwork_count == 1
 
-    # Artefactos de staging: ArtworkDB + 4 .ithmb, todos registrados.
     for rel in NANO_7G_ARTWORK_RELPATHS:
         assert rel in plan.artifacts
     assert len(plan.artifacts) == 7 + len(NANO_7G_ARTWORK_RELPATHS)
@@ -292,7 +276,6 @@ def test_create_plan_falls_back_to_on_device_location_for_artwork(tmp_path: Path
         album="Álbum",
         location=":iPod_Control:Music:F00:EXIST.mp3",
         db_track_id=3002,
-        # source_path=None a propósito: simula un track recargado, no nuevo.
     )
 
     plan = create_plan(mount, [track], device_info=dev, consent_dir=tmp_path / "consent")
@@ -346,11 +329,6 @@ def test_pre_state_fingerprint_covers_artwork_paths(tmp_path: Path):
     assert not fp.matches(mount)
 
 
-# --------------------------------------------------------------------------- #
-# Generalización más allá del Nano 7G (Fase 4, Etapa 4f-1)
-# --------------------------------------------------------------------------- #
-
-
 def _make_mock_device_for(mount: Path, family: str, generation: str, *, provenance: str = "disk") -> DeviceInfo:
     return DeviceInfo(
         mount=mount,
@@ -386,8 +364,6 @@ def test_create_plan_builds_artwork_for_classic_not_nano7g_filenames(tmp_path: P
     assert {fmt.format_id for fmt in CLASSIC_COVER_ART_FORMATS} == {1055, 1060, 1061, 1068}
     for rel in classic_relpaths:
         assert rel in plan.artifacts, f"falta {rel} (formato real de Classic)"
-    # Los nombres de Nano 7G NO deben aparecer — confirma que no quedó
-    # ningún hardcodeo residual sirviendo el set equivocado.
     for rel in NANO_7G_ARTWORK_RELPATHS[1:]:
         assert rel not in plan.artifacts, f"{rel} es de Nano 7G, no de Classic"
 
@@ -419,7 +395,7 @@ def test_create_plan_skips_artwork_for_device_without_artwork_support_even_with_
     track = TrackInfo(
         title="Con Carátula Real", artist="A", album="Al",
         location=":iPod_Control:Music:F00:ART.mp3", db_track_id=9201,
-        source_path=str(ART_MP3),  # la MISMA fixture que sí produce arte en otros tests
+        source_path=str(ART_MP3),
     )
     plan = create_plan(mount, [track], device_info=dev, consent_dir=tmp_path / "consent")
 
@@ -446,7 +422,6 @@ def test_pre_state_fingerprint_uses_classic_formats_not_nano7g(tmp_path: Path):
     fp = PreStateFingerprint.capture(mount, artwork_relpaths=classic_relpaths)
     assert fp.matches(mount)
 
-    # Mutación externa de un archivo que SÍ pertenece a Classic (1055).
     artwork_dir = mount / "iPod_Control" / "Artwork"
     artwork_dir.mkdir(parents=True)
     classic_ithmb = next(r for r in classic_relpaths if "1055" in r)
@@ -456,11 +431,6 @@ def test_pre_state_fingerprint_uses_classic_formats_not_nano7g(tmp_path: Path):
         "La huella de un plan para Classic debe detectar deriva en SUS "
         "propios .ithmb (F1055...), no solo en los de Nano 7G."
     )
-
-
-# --------------------------------------------------------------------------- #
-# Garantía para clean_foreign_artifacts() (Fase 4f, autoridad ajena/§0.3)
-# --------------------------------------------------------------------------- #
 
 
 def test_create_plan_never_produces_foreign_backup_filenames(tmp_path: Path):
@@ -481,9 +451,6 @@ def test_create_plan_never_produces_foreign_backup_filenames(tmp_path: Path):
     _setup_mock_ipod(mount)
     dev = _make_mock_device(mount)
 
-    # Con playlists y varios tracks: más superficie donde un futuro cambio
-    # podría introducir sin querer un archivo ".backup" (p. ej. si alguien
-    # reintroduce el mecanismo de backup-en-sitio de iOpenPod por error).
     tracks = _sample_tracks()
     plan = create_plan(
         mount, tracks, device_info=dev, consent_dir=tmp_path / "consent",
@@ -499,6 +466,5 @@ def test_create_plan_never_produces_foreign_backup_filenames(tmp_path: Path):
         f"Esto volvería inseguro borrarlos automáticamente."
     )
 
-    # Chequeo más amplio, no atado a la lista exacta: ningún .backup en absoluto.
     backup_files = [p for p in plan.staging_dir.rglob("*.backup") if p.is_file()]
     assert not backup_files, f"create_plan() generó archivos .backup: {backup_files}"

@@ -74,21 +74,21 @@ class AudioProcessor:
         elif "TDRC" in tags: meta["year"] = str(tags["TDRC"].text[0])
         if "TBPM" in tags: meta["bpm"] = str(tags["TBPM"].text[0])
         if "TIT1" in tags: meta["grouping"] = str(tags["TIT1"].text[0])
-        
+
         if "TCMP" in tags:
             val = str(tags["TCMP"].text[0])
             meta["compilation"] = (val == "1")
-        
+
         for key in tags.keys():
             if key.startswith("COMM"):
                 meta["comments"] = str(tags[key].text[0])
                 break
-        
+
         if "TRCK" in tags:
             trck = str(tags["TRCK"].text[0]).split("/")
             meta["track_number"] = trck[0]
             if len(trck) > 1: meta["track_count"] = trck[1]
-            
+
         if "TPOS" in tags:
             tpos = str(tags["TPOS"].text[0]).split("/")
             meta["disc_number"] = tpos[0]
@@ -133,7 +133,7 @@ class AudioProcessor:
             if "\xa9grp" in tags: meta["grouping"] = str(tags["\xa9grp"][0])
             if "\xa9cmt" in tags: meta["comments"] = str(tags["\xa9cmt"][0])
             if "cpil" in tags: meta["compilation"] = bool(tags["cpil"][0])
-            
+
             if "trkn" in tags and tags["trkn"]:
                 meta["track_number"] = str(tags["trkn"][0][0])
                 if tags["trkn"][0][1] > 0:
@@ -144,7 +144,6 @@ class AudioProcessor:
                     meta["disc_count"] = str(tags["disk"][0][1])
 
         else:
-            # FLAC / OGG / etc using Vorbis Comments
             tags = getattr(audio, 'tags', audio)
             if tags:
                 if "title" in tags: meta["title"] = tags["title"][0]
@@ -157,24 +156,23 @@ class AudioProcessor:
                 elif "originaldate" in tags: meta["year"] = tags["originaldate"][0]
                 if "bpm" in tags: meta["bpm"] = tags["bpm"][0]
                 if "grouping" in tags: meta["grouping"] = tags["grouping"][0]
-                
+
                 if "comment" in tags: meta["comments"] = tags["comment"][0]
                 elif "description" in tags: meta["comments"] = tags["description"][0]
-                
+
                 if "compilation" in tags: meta["compilation"] = (str(tags["compilation"][0]) == "1")
-                
+
                 if "tracknumber" in tags: meta["track_number"] = tags["tracknumber"][0]
                 if "tracktotal" in tags: meta["track_count"] = tags["tracktotal"][0]
                 if "discnumber" in tags: meta["disc_number"] = tags["discnumber"][0]
                 if "disctotal" in tags: meta["disc_count"] = tags["disctotal"][0]
 
-        # Cleanup
         for k, v in meta.items():
             if v == "0" and k in ["track_number", "track_count", "disc_number", "disc_count"]:
                 meta[k] = ""
             if v == "None":
                 meta[k] = ""
-                
+
         return meta
 
     async def apply_metadata_and_move(self, source_path: str, output_base_dir: str, metadata: Dict[str, Any]) -> str:
@@ -214,15 +212,15 @@ class AudioProcessor:
 
         artist = self.sanitize_filename(metadata.get('artist', 'Unknown Artist'))
         album = self.sanitize_filename(metadata.get('album', 'Unknown Album'))
-        
+
         track_number_str = str(metadata.get('track_number', '00')).zfill(2)
         title = self.sanitize_filename(metadata.get('title', path.stem))
-        
+
         new_filename = f"{track_number_str} - {title}{ext}"
-        
+
         target_dir = Path(output_base_dir) / artist / album
         target_dir.mkdir(parents=True, exist_ok=True)
-        
+
         target_path = target_dir / new_filename
 
         shutil.move(str(source_path), str(target_path))
@@ -248,20 +246,20 @@ class AudioProcessor:
         if metadata.get('artist'): tags.add(TPE1(encoding=3, text=metadata['artist']))
         if metadata.get('album'): tags.add(TALB(encoding=3, text=metadata['album']))
         if metadata.get('album_artist'): tags.add(TPE2(encoding=3, text=metadata['album_artist']))
-        
+
         track_num = str(metadata.get('track_number', '1'))
         track_count = str(metadata.get('track_count', ''))
         tags.add(TRCK(encoding=3, text=f"{track_num}/{track_count}" if track_count else track_num))
-            
+
         if metadata.get('genre'): tags.add(TCON(encoding=3, text=metadata['genre']))
         if metadata.get('grouping'): tags.add(TIT1(encoding=3, text=metadata['grouping']))
         if metadata.get('comments'): tags.add(COMM(encoding=3, lang='eng', desc='', text=metadata['comments']))
-        
+
         disc_num = str(metadata.get('disc_number', ''))
         disc_count = str(metadata.get('disc_count', ''))
         if disc_num:
             tags.add(TPOS(encoding=3, text=f"{disc_num}/{disc_count}" if disc_count else disc_num))
-            
+
         if metadata.get('compilation'):
             tags.add(TCMP(encoding=3, text="1"))
 
@@ -303,10 +301,10 @@ class AudioProcessor:
 
         if audio.tags is None:
             audio.add_tags()
-        
+
         tags = audio.tags
         tags.clear()
-        
+
         self._apply_common_id3_tags(tags, metadata)
         if cover_data: tags.add(APIC(encoding=3, mime='image/jpeg', type=3, desc='Cover', data=cover_data))
 
@@ -320,10 +318,10 @@ class AudioProcessor:
 
         if audio.tags is None:
             audio.add_tags()
-        
+
         tags = audio.tags
         tags.clear()
-        
+
         self._apply_common_id3_tags(tags, metadata)
         if cover_data: tags.add(APIC(encoding=3, mime='image/jpeg', type=3, desc='Cover', data=cover_data))
 
@@ -334,7 +332,7 @@ class AudioProcessor:
         audio.delete()
         if audio.tags is None:
             audio.add_tags()
-        
+
         if metadata.get('title'):
             audio['\xa9nam'] = metadata['title']
         if metadata.get('artist'):
@@ -343,7 +341,7 @@ class AudioProcessor:
             audio['\xa9alb'] = metadata['album']
         if metadata.get('album_artist'):
             audio['aART'] = metadata['album_artist']
-            
+
         track_num = metadata.get('track_number', 0)
         track_count = metadata.get('track_count', 0)
         if track_num:
@@ -359,16 +357,16 @@ class AudioProcessor:
                 audio['disk'] = [(int(disc_num), int(disc_count) if disc_count else 0)]
             except ValueError:
                 pass
-            
+
         if metadata.get('genre'):
             audio['\xa9gen'] = metadata['genre']
-            
+
         if metadata.get('grouping'):
             audio['\xa9grp'] = metadata['grouping']
-            
+
         if metadata.get('comments'):
             audio['\xa9cmt'] = metadata['comments']
-            
+
         if metadata.get('compilation'):
             audio['cpil'] = True
 
@@ -400,7 +398,7 @@ class AudioProcessor:
         audio.delete()
         if audio.tags is None:
             audio.add_tags()
-        
+
         if metadata.get('title'):
             audio['title'] = metadata['title']
         if metadata.get('artist'):
@@ -409,26 +407,26 @@ class AudioProcessor:
             audio['album'] = metadata['album']
         if metadata.get('album_artist'):
             audio['albumartist'] = metadata['album_artist']
-            
+
         if metadata.get('track_number'):
             audio['tracknumber'] = str(metadata['track_number'])
         if metadata.get('track_count'):
             audio['tracktotal'] = str(metadata['track_count'])
-            
+
         if metadata.get('disc_number'):
             audio['discnumber'] = str(metadata['disc_number'])
         if metadata.get('disc_count'):
             audio['disctotal'] = str(metadata['disc_count'])
-            
+
         if metadata.get('genre'):
             audio['genre'] = metadata['genre']
-            
+
         if metadata.get('grouping'):
             audio['grouping'] = metadata['grouping']
-            
+
         if metadata.get('comments'):
             audio['comment'] = metadata['comments']
-            
+
         if metadata.get('compilation'):
             audio['compilation'] = "1"
 
@@ -453,5 +451,5 @@ class AudioProcessor:
             pic.desc = "Front Cover"
             pic.data = cover_data
             audio.add_picture(pic)
-            
+
         audio.save()

@@ -28,9 +28,9 @@ class RatingConflict:
     guid: str
     ipod_dbid: int
     local_path: Optional[str]
-    known_rating: int    # baseline del último sync
-    local_rating: int    # local_playback_state actual
-    device_rating: int   # lectura en vivo del iPod
+    known_rating: int
+    local_rating: int
+    device_rating: int
 
 
 @dataclass
@@ -73,7 +73,7 @@ def scan_for_conflicts(mount: Path | str, sync_db: SyncStateDB, guid: str) -> Co
         if known is None:
             continue
         if local.local_rating == known.known_rating:
-            continue  # el lado local no cambió: nada que evaluar
+            continue
 
         stat = device_stats.get(dbid)
         device_rating = stat.rating if stat is not None else known.known_rating
@@ -88,9 +88,6 @@ def scan_for_conflicts(mount: Path | str, sync_db: SyncStateDB, guid: str) -> Co
                 device_rating=device_rating,
             ))
         else:
-            # device_rating == known_rating (solo local cambió) o
-            # device_rating == local.local_rating (ambos llegaron al mismo
-            # valor): en ambos casos no hay desacuerdo que resolver.
             result.pending_local_pushes.append(PendingLocalPush(
                 guid=guid, ipod_dbid=dbid, local_path=local_path,
                 known_rating=known.known_rating, local_rating=local.local_rating,

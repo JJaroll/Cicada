@@ -60,68 +60,11 @@ app.include_router(spotify_router)
 app.include_router(process_router)
 
 STATIC_DIR = (
-    Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    Path(sys._MEIPASS)
     if getattr(sys, "frozen", False)
     else Path(__file__).resolve().parents[2]
 ) / "static"
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-# --- IPOD ENDPOINTS ---
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 @app.get("/")
@@ -464,7 +407,7 @@ async def get():
                     </div>
                     <button type="button" onclick="closeTrackInfoModal()" class="material-symbols-outlined text-muted/60 hover:text-main transition-colors">close</button>
                 </div>
-                
+
                 <div class="flex gap-4 border-b border-theme pb-2">
                     <button type="button" class="font-label-caps text-[12px] text-accent border-b-2 border-accent pb-1" id="tab-info-details" onclick="switchTrackInfoTab('details')" data-i18n="track_info_tab_details">Detalles</button>
                     <button type="button" class="font-label-caps text-[12px] text-muted/60 hover:text-main pb-1" id="tab-info-artwork" onclick="switchTrackInfoTab('artwork')" data-i18n="track_info_tab_artwork">Carátula</button>
@@ -481,7 +424,7 @@ async def get():
                             <input type="text" id="info_artist" class="cicada-input rounded-lg px-3 py-2 text-[13px]"/>
                         </div>
                     </div>
-                    
+
                     <div class="flex gap-2">
                         <div class="flex-1 flex flex-col gap-1">
                             <label class="font-label-caps text-[10px] text-muted/50">Álbum</label>
@@ -518,7 +461,7 @@ async def get():
                             <input type="text" id="info_bpm" class="cicada-input rounded-lg px-3 py-2 text-[13px]"/>
                         </div>
                     </div>
-                    
+
                     <div class="flex gap-2 items-center">
                         <div class="flex flex-col gap-1">
                             <label class="font-label-caps text-[10px] text-muted/50">Pista</label>
@@ -541,7 +484,7 @@ async def get():
                             <label for="info_compilation" class="font-data-sm text-[12px] text-muted/70">Es compilación</label>
                         </div>
                     </div>
-                    
+
                     <div class="flex flex-col gap-1 mt-1">
                         <label class="font-label-caps text-[10px] text-muted/50">Comentarios</label>
                         <textarea id="info_comments" class="cicada-input rounded-lg px-3 py-2 text-[13px] h-16 resize-none"></textarea>
@@ -813,7 +756,7 @@ async def get():
 
                 <!-- Vista: Sincronizar iPod -->
                 <div id="view-ipod" class="view h-full flex-col gap-4 overflow-hidden">
-                    
+
                     <!-- Top section: Device Info & Storage Bar & Quick Actions -->
                     <div class="glass-card p-5 flex flex-col gap-4 flex-shrink-0">
                         <div class="flex justify-between items-center border-b border-theme pb-3">
@@ -1284,7 +1227,7 @@ async def get():
                         <button type="button" onclick="playNextTrack()" class="material-symbols-outlined text-[24px] text-sidebar/70 hover:text-sidebar">skip_next</button>
                         <button type="button" id="btnRepeat" onclick="toggleRepeat()" class="material-symbols-outlined text-[20px] text-sidebar/40 hover:text-sidebar transition-colors">repeat</button>
                     </div>
-                    
+
                     <div class="flex items-center justify-center gap-3 mt-6 w-full px-4">
                         <span class="material-symbols-outlined text-[16px] text-sidebar/50 hover:text-sidebar cursor-pointer" onclick="setVolume(0)">volume_mute</span>
                         <div class="relative w-full h-1.5 bg-black/10 dark:bg-black/20 rounded-full overflow-hidden cursor-pointer" id="playerVolumeTrack" onclick="setVolumeFromClick(event)">
@@ -1353,7 +1296,6 @@ def print_signature():
     try:
         print(signature)
     except UnicodeEncodeError:
-        # Si la consola de Windows no soporta los caracteres, simplemente lo ignoramos
         pass
 
 if __name__ == "__main__":

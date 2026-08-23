@@ -43,8 +43,6 @@ __all__ = [
     "eject_ipod",
 ]
 
-#: Binario conocido → nombre entendible por el usuario. Sin coincidencia, se usa
-#: el nombre crudo del binario.
 FRIENDLY_NAMES: dict[str, str] = {
     "AMPDevicesAgent": "Música",
     "AMPLibraryAgent": "Música",
@@ -60,14 +58,10 @@ FRIENDLY_NAMES: dict[str, str] = {
     "cloudd": "iCloud",
 }
 
-#: Shells cuyo directorio actual puede estar dentro del punto de montaje. El
-#: usuario no necesita cerrarlas — basta con salir del directorio (`cd ~`).
 _SHELL_NAMES: frozenset[str] = frozenset({
     "zsh", "bash", "sh", "fish", "dash", "csh", "tcsh",
 })
 
-#: Mensaje de éxito en lenguaje de usuario — no el texto crudo de diskutil
-#: (que casi siempre imprime algo tipo "Disk disk4 ejected").
 _EJECT_SUCCESS_MSG = "iPod expulsado correctamente. Puedes desconectarlo."
 
 
@@ -75,11 +69,11 @@ _EJECT_SUCCESS_MSG = "iPod expulsado correctamente. Puedes desconectarlo."
 class Blocker:
     """Un proceso que impide la expulsión."""
     pid: int
-    name: str                       # basename del binario
-    path: Optional[str] = None      # ruta completa si el SO la reporta
+    name: str
+    path: Optional[str] = None
     ppid: Optional[int] = None
     parent: Optional[str] = None
-    source: str = ""                # "diskutil" | "lsof" | ...
+    source: str = ""
 
     @property
     def friendly_name(self) -> str:
@@ -96,9 +90,6 @@ class EjectResult:
     platform: str = ""
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Mensaje al usuario
-# ──────────────────────────────────────────────────────────────────────
 def _busy_message(blockers: list[Blocker]) -> str:
     if not blockers:
         return "El iPod está ocupado y no se pudo expulsar."
@@ -126,9 +117,6 @@ def _busy_message(blockers: list[Blocker]) -> str:
     return " ".join(parts)
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Parser del disidente de diskutil (macOS)
-# ──────────────────────────────────────────────────────────────────────
 _DISSENT_RE = re.compile(r"dissented by PID\s+(\d+)\s+\(([^)]*)\)", re.IGNORECASE)
 _PARENT_RE = re.compile(r"dissenter parent PPID\s+(\d+)\s+\(([^)]*)\)", re.IGNORECASE)
 
@@ -160,9 +148,6 @@ def _parse_diskutil_dissenters(text: str) -> list[Blocker]:
     return blockers
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Fallback lsof (macOS y Linux): quién tiene abierto el punto de montaje
-# ──────────────────────────────────────────────────────────────────────
 def _lsof_blockers(mount: Path, *, timeout: float) -> list[Blocker]:
     if not shutil.which("lsof"):
         return []
@@ -190,9 +175,6 @@ def _lsof_blockers(mount: Path, *, timeout: float) -> list[Blocker]:
     return blockers
 
 
-# ──────────────────────────────────────────────────────────────────────
-# macOS
-# ──────────────────────────────────────────────────────────────────────
 def _diskutil_info(mount: Path, *, timeout: float) -> dict:
     try:
         proc = subprocess.run(
@@ -211,7 +193,6 @@ def _diskutil_info(mount: Path, *, timeout: float) -> dict:
 
 def _eject_macos(mount: Path, *, force: bool, timeout: float) -> EjectResult:
     info = _diskutil_info(mount, timeout=timeout)
-    # Seguridad: nunca expulsar un disco interno / no extraíble.
     if info and not (info.get("Ejectable") or info.get("RemovableMedia")):
         return EjectResult(False, "El volumen no es extraíble; no se expulsa.",
                            platform="darwin")
@@ -257,9 +238,6 @@ def _force_eject_macos(mount: Path, disk: str, blockers: list[Blocker], *,
                        tuple(blockers), forced=True, platform="darwin")
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Linux
-# ──────────────────────────────────────────────────────────────────────
 def _eject_linux(mount: Path, *, force: bool, timeout: float) -> EjectResult:
     cmd = ["umount"] + (["-l"] if force else []) + [str(mount)]
     try:
@@ -278,9 +256,6 @@ def _eject_linux(mount: Path, *, force: bool, timeout: float) -> EjectResult:
                        forced=force, platform="linux")
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Windows — ESBOZADO (ausencia declarada, no ctypes sin verificar)
-# ──────────────────────────────────────────────────────────────────────
 def _eject_windows_stub(mount: Path) -> EjectResult:
     return EjectResult(
         ejected=False,
@@ -293,9 +268,6 @@ def _eject_windows_stub(mount: Path) -> EjectResult:
     )
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Entrada pública
-# ──────────────────────────────────────────────────────────────────────
 def eject_ipod(mount: str | Path, *, force: bool = False,
                timeout: float = 30.0) -> EjectResult:
     """Expulsa el iPod montado en ``mount``, identificando a quien bloquee.

@@ -34,7 +34,6 @@ from cicada.ipod.db.shared.mhbd_defs import (
     MHBD_OFFSET_UNK_0x32 as OFFSET_UNK_0x32,
 )
 
-# AES S-Box (from libgpod itdb_hash58.c lines 45-76)
 TABLE1 = bytes([
     0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5,
     0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76,
@@ -70,7 +69,6 @@ TABLE1 = bytes([
     0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16
 ])
 
-# AES Inverse S-Box (from libgpod itdb_hash58.c lines 78-115)
 TABLE2 = bytes([
     0x52, 0x09, 0x6A, 0xD5, 0x30, 0x36, 0xA5, 0x38,
     0xBF, 0x40, 0xA3, 0x9E, 0x81, 0xF3, 0xD7, 0xFB,
@@ -106,13 +104,11 @@ TABLE2 = bytes([
     0xE1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0C, 0x7D
 ])
 
-# Fixed bytes for key derivation (from libgpod itdb_hash58.c lines 113-115)
 FIXED = bytes([
     0x67, 0x23, 0xFE, 0x30, 0x45, 0x33, 0xF8, 0x90, 0x99,
     0x21, 0x07, 0xC1, 0xD0, 0x12, 0xB2, 0xA1, 0x07, 0x81
 ])
 
-# Hash scheme identifier for HASH58
 ITDB_CHECKSUM_HASH58 = 1
 
 
@@ -150,7 +146,6 @@ def _generate_key(firewire_id: bytes) -> bytes:
         y[i * 4 + 2] = TABLE1[lo]
         y[i * 4 + 3] = TABLE2[lo]
 
-    # SHA1(FIXED + y), then pad to 64 bytes
     h = hashlib.sha1(FIXED + y).digest()
     key = bytearray(64)
     key[:len(h)] = h
@@ -172,12 +167,9 @@ def compute_hash58(firewire_id: bytes, itdb_data: bytes) -> bytes:
     """
     key = _generate_key(firewire_id)
 
-    # HMAC-SHA1: H(K XOR opad, H(K XOR ipad, message))
-    # Inner hash
     inner_key = bytes(b ^ 0x36 for b in key)
     inner_hash = hashlib.sha1(inner_key + itdb_data).digest()
 
-    # Outer hash
     outer_key = bytes(b ^ 0x5c for b in key)
     return hashlib.sha1(outer_key + inner_hash).digest()
 
@@ -207,38 +199,31 @@ def write_hash58(itdb_data: bytearray, firewire_id: bytes) -> None:
     if len(itdb_data) < 0x6C:
         raise ValueError(f"iTunesDB file too small ({len(itdb_data)} bytes), need at least 0x6C")
 
-    # Verify this is an mhbd header
     if itdb_data[:4] != b'mhbd':
         raise ValueError("Invalid iTunesDB: expected 'mhbd' header")
 
-    # Backup fields that will be zeroed
     backup_db_id = bytes(itdb_data[OFFSET_DB_ID:OFFSET_DB_ID + 8])
     backup_unk32 = bytes(itdb_data[OFFSET_UNK_0x32:OFFSET_UNK_0x32 + 20])
 
-    # Zero out fields for hash computation
     itdb_data[OFFSET_DB_ID:OFFSET_DB_ID + 8] = b'\x00' * 8
     itdb_data[OFFSET_UNK_0x32:OFFSET_UNK_0x32 + 20] = b'\x00' * 20
     itdb_data[OFFSET_HASH58:OFFSET_HASH58 + 20] = b'\x00' * 20
 
-    # Set hashing scheme to HASH58
     itdb_data[OFFSET_HASHING_SCHEME:OFFSET_HASHING_SCHEME + 2] = \
         ITDB_CHECKSUM_HASH58.to_bytes(2, 'little')
 
-    # Compute and write hash
     hash_val = compute_hash58(firewire_id, bytes(itdb_data))
     if len(hash_val) != 20:
         raise RuntimeError(f"Hash computation failed: expected 20 bytes, got {len(hash_val)}")
     itdb_data[OFFSET_HASH58:OFFSET_HASH58 + 20] = hash_val
 
-    # Restore backed up fields
     itdb_data[OFFSET_DB_ID:OFFSET_DB_ID + 8] = backup_db_id
     itdb_data[OFFSET_UNK_0x32:OFFSET_UNK_0x32 + 20] = backup_unk32
 
 
-from ._firewire import read_firewire_id  # noqa: E402  (re-exportado, compat)
+from ._firewire import read_firewire_id
 
 if __name__ == "__main__":
-    # Example usage
     import sys
 
     if len(sys.argv) < 3:
@@ -261,10 +246,6 @@ if __name__ == "__main__":
         write_hash58(itdb_data, firewire_id)
         print("Hash computed successfully!")
 
-        # Write back (uncomment to actually write)
-        # with open(itunesdb_path, 'wb') as f:
-        #     f.write(itdb_data)
-        # print("iTunesDB updated!")
 
     except Exception as e:
         print(f"Error: {e}")

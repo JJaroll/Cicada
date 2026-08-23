@@ -49,14 +49,9 @@ __all__ = [
 
 IPOD_CONTROL_DIRNAME = "iPod_Control"
 ITUNES_DIRNAME = "iTunes"
-#: Raíz alternativa a nivel de volumen (no bajo iPod_Control/) — solo Fotos
-#: (Etapa 6h) la usa hoy, ver docstring de assert_within_ipod_control.
 PHOTOS_DIRNAME = "Photos"
 
 
-# --------------------------------------------------------------------------- #
-# Jerarquía de excepciones
-# --------------------------------------------------------------------------- #
 class WriteGuardError(Exception):
     """Base de todos los errores del guardia de escritura."""
 
@@ -85,9 +80,6 @@ class ProtectedPathError(WriteGuardError):
     """Intento de borrado recursivo de un directorio protegido de forma absoluta."""
 
 
-# --------------------------------------------------------------------------- #
-# Descubrimiento / revalidación del montaje
-# --------------------------------------------------------------------------- #
 def _candidate_mounts() -> list[Path]:
     """Puntos de montaje candidatos, dependientes del SO.
 
@@ -157,7 +149,6 @@ def resolve_mount(
             if c.is_dir() and (c / IPOD_CONTROL_DIRNAME).is_dir():
                 found.append(c)
         except OSError:
-            # Un candidato que desaparece a mitad de escaneo simplemente se ignora.
             continue
 
     if not found:
@@ -171,12 +162,9 @@ def resolve_mount(
         if confirmed:
             found = confirmed
         elif any(_read_mount_guid(c) is not None for c in found):
-            # Se pudo leer algún GUID y ninguno coincide: dispositivo equivocado.
             raise WrongDeviceError(
                 f"El iPod montado no coincide con el GUID esperado {expected_guid!r}."
             )
-        # Si no se pudo leer ningún GUID (Fase 0): identidad no confirmable,
-        # se continúa con la heurística de unicidad de abajo.
 
     if len(found) > 1:
         raise AmbiguousMountError(
@@ -186,14 +174,6 @@ def resolve_mount(
     return found[0].resolve()
 
 
-# --------------------------------------------------------------------------- #
-# Validación de rutas
-# --------------------------------------------------------------------------- #
-#: Únicas raíces seguras que assert_within_ipod_control() acepta en `root=`.
-#: Cerrado a propósito: NO es un parámetro de confinamiento genérico a
-#: cualquier nombre de subdirectorio — es una elección entre dos raíces
-#: conocidas y auditadas. Un caller no puede confinar a un tercer árbol
-#: "de facto" sin que alguien edite esta lista y la revise.
 _ALLOWED_ROOTS = frozenset({IPOD_CONTROL_DIRNAME, PHOTOS_DIRNAME})
 
 
@@ -256,9 +236,6 @@ def assert_writable(mount: os.PathLike | str) -> None:
     mount_path = Path(mount)
     control = mount_path / IPOD_CONTROL_DIRNAME
     probe_dir = control if control.is_dir() else mount_path
-    # Nombre reconocible (no aleatorio opaco) para que, si un proceso muere entre
-    # la creación y el unlink, un huérfano en el dispositivo se identifique al
-    # instante como una sonda de Cicada. El sufijo pid/hilo evita colisiones.
     prefix = f".cicada_write_test_{os.getpid()}_"
     try:
         fd, name = tempfile.mkstemp(prefix=prefix, dir=str(probe_dir))
@@ -269,16 +246,12 @@ def assert_writable(mount: os.PathLike | str) -> None:
     try:
         os.close(fd)
     finally:
-        # Limpieza garantizada aunque algo falle tras crear el archivo.
         try:
             os.unlink(name)
         except OSError:
             pass
 
 
-# --------------------------------------------------------------------------- #
-# Prohibición absoluta de borrado recursivo
-# --------------------------------------------------------------------------- #
 def _protected_dirs(mount: os.PathLike | str) -> set[Path]:
     """Directorios cuyo borrado recursivo está prohibido de forma absoluta."""
     control = Path(mount) / IPOD_CONTROL_DIRNAME

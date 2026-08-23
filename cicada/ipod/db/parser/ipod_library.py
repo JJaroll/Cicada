@@ -105,8 +105,6 @@ def load_ipod_library(itunesdb_path: str,
         data = extract_datasets(raw)
 
         _inline_track_strings(data)
-        # artwork_links depende de artworkdb_parser (Fase 4), no vendorizado en
-        # 3a. Import guardado: sin artwork, se lista igual.
         try:
             from .artwork_links import hydrate_track_artwork_refs
             hydrate_track_artwork_refs(data.get("mhlt", []), itunesdb_path)
@@ -120,8 +118,6 @@ def load_ipod_library(itunesdb_path: str,
             _merge_play_counts(data, itunesdb_path, device_time_context)
         data["playcounts_timezone_changed"] = timezone_changed
 
-        # Import On-The-Go playlists from OTGPlaylistInfo files.
-        # These are device-created playlists stored outside the iTunesDB.
         from .otg import load_otg_playlists
         itunes_dir = os.path.dirname(itunesdb_path)
         otg = load_otg_playlists(itunes_dir, data.get("mhlt", []))
@@ -134,22 +130,15 @@ def load_ipod_library(itunesdb_path: str,
         return None
 
 
-# ── Internal helpers ────────────────────────────────────────────────────────
-
-
 def _inline_track_strings(data: dict) -> None:
     for track in data.get("mhlt", []):
         children = track.pop("children", [])
         strings = extract_mhod_strings(children)
         track.update(strings)
         track.update(extract_track_extras(children))
-        # filetype u32 → ASCII
         ft = track.get("filetype")
         if isinstance(ft, int) and ft > 0:
             track["filetype"] = filetype_to_string(ft)
-        # sample_rate_1 is already converted from 16.16 fixed-point to Hz
-        # by the read_transform (fixed_to_sample_rate) in mhit_defs.py
-        # sort_mhod_indicators raw bytes → list for JSON serialization
         raw = track.get("sort_mhod_indicators", b"")
         if isinstance(raw, (bytes, bytearray)):
             track["sort_mhod_indicators"] = list(raw)
@@ -172,8 +161,6 @@ def _inline_playlist_strings(data: dict) -> None:
             pl.update(strings)
             extras = extract_playlist_extras(mhod_children)
             pl.update(extras)
-            # Flatten MHIP children → items list.
-            # parse_children always returns {"chunk_type": ..., "data": {...}}.
             items = []
             for mhip in pl.pop("mhip_children", []):
                 if "data" in mhip:

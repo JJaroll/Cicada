@@ -21,13 +21,11 @@ from ._helpers import unix_to_coredata as _unix_to_coredata
 logger = logging.getLogger(__name__)
 
 
-# ── Audio format codes ─────────────────────────────────────────────────
-# avformat_info.audio_format values observed in real databases
-AUDIO_FORMAT_MP3 = 0x012D   # 301
-AUDIO_FORMAT_AAC = 0x01F6   # 502
-AUDIO_FORMAT_ALAC = 0x01F7  # 503
-AUDIO_FORMAT_WAV = 0x006E   # 110
-AUDIO_FORMAT_AIFF = 0x006F  # 111
+AUDIO_FORMAT_MP3 = 0x012D
+AUDIO_FORMAT_AAC = 0x01F6
+AUDIO_FORMAT_ALAC = 0x01F7
+AUDIO_FORMAT_WAV = 0x006E
+AUDIO_FORMAT_AIFF = 0x006F
 
 _FILETYPE_TO_AUDIO_FORMAT = {
     'mp3': AUDIO_FORMAT_MP3,
@@ -41,9 +39,6 @@ _FILETYPE_TO_AUDIO_FORMAT = {
     'aiff': AUDIO_FORMAT_AIFF,
 }
 
-# ── Media kind flags ───────────────────────────────────────────────────
-# item.media_kind in the SQLite database. These differ from the binary
-# iTunesDB media_type values.
 MEDIA_KIND_SONG = 1
 MEDIA_KIND_AUDIOBOOK = 8
 MEDIA_KIND_MUSIC_VIDEO = 32
@@ -52,16 +47,15 @@ MEDIA_KIND_TV_SHOW = 64
 MEDIA_KIND_PODCAST = 4
 MEDIA_KIND_RINGTONE = 0x4000
 
-# Map from binary iTunesDB media_type to SQLite media_kind
 _ITDB_MEDIATYPE_TO_MEDIA_KIND = {
-    0x01: MEDIA_KIND_SONG,           # audio
-    0x02: MEDIA_KIND_MOVIE,          # video/movie
-    0x04: MEDIA_KIND_PODCAST,        # podcast
-    0x06: MEDIA_KIND_PODCAST,        # video podcast
-    0x08: MEDIA_KIND_AUDIOBOOK,      # audiobook
-    0x20: MEDIA_KIND_MUSIC_VIDEO,    # music video
-    0x40: MEDIA_KIND_TV_SHOW,        # TV show
-    0x4000: MEDIA_KIND_RINGTONE,     # ringtone
+    0x01: MEDIA_KIND_SONG,
+    0x02: MEDIA_KIND_MOVIE,
+    0x04: MEDIA_KIND_PODCAST,
+    0x06: MEDIA_KIND_PODCAST,
+    0x08: MEDIA_KIND_AUDIOBOOK,
+    0x20: MEDIA_KIND_MUSIC_VIDEO,
+    0x40: MEDIA_KIND_TV_SHOW,
+    0x4000: MEDIA_KIND_RINGTONE,
 }
 
 
@@ -70,7 +64,6 @@ def _media_kind(track: TrackInfo) -> int:
     return _ITDB_MEDIATYPE_TO_MEDIA_KIND.get(track.media_type, MEDIA_KIND_SONG)
 
 
-# All media_kind values that produce an is_* = 1 flag in the item table.
 _MEDIA_KIND_FLAGS = (
     MEDIA_KIND_SONG, MEDIA_KIND_AUDIOBOOK, MEDIA_KIND_MUSIC_VIDEO,
     MEDIA_KIND_MOVIE, MEDIA_KIND_TV_SHOW, MEDIA_KIND_RINGTONE, MEDIA_KIND_PODCAST,
@@ -151,10 +144,6 @@ def _insert_container(
         'smart_criteria': smart_criteria,
     })
 
-
-# ── Schema DDL ─────────────────────────────────────────────────────────
-# These CREATE TABLE statements match a real Nano 6G Library.itdb exactly.
-# We issue them in dependency order.
 
 _LIBRARY_SCHEMA = """
 CREATE TABLE IF NOT EXISTS version_info (
@@ -500,7 +489,6 @@ CREATE TABLE IF NOT EXISTS track_size_calc (
 );
 """
 
-# Indexes match those found on a real Nano 6G Library.itdb
 _LIBRARY_INDEXES = """
 CREATE INDEX IF NOT EXISTS idx_item_album_pid ON item (album_pid);
 CREATE INDEX IF NOT EXISTS idx_item_track_artist_pid ON item (track_artist_pid);
@@ -541,9 +529,7 @@ def _compute_sort_orders(tracks: list[TrackInfo]) -> dict:
         'album': lambda t: t.sort_album or t.album,
         'genre': lambda t: t.genre,
         'composer': lambda t: t.sort_composer or t.composer,
-        # libgpod ORDER_ALBUM_ARTIST: sort_artist → artist (simple)
         'album_artist': lambda t: t.sort_artist or t.artist,
-        # libgpod ORDER_ALBUM_BY_ARTIST: sort_albumartist → albumartist → sort_artist → artist
         'album_by_artist': lambda t: (t.sort_album_artist or t.album_artist
                                       or t.sort_artist or t.artist),
     }
@@ -594,21 +580,14 @@ def write_library_itdb(
     conn, cur = open_db(path, extra_pragmas=["encoding='UTF-8'"])
     try:
 
-        # Create schema
         cur.executescript(_LIBRARY_SCHEMA)
 
-        # ── version_info ───────────────────────────────────────────────────
-        # Values from a real iTunes-synced Nano 6G database:
-        #   major=1, minor=111, device_update_level=1104, platform=2
         cur.execute(
             "INSERT INTO version_info (id, major, minor, compatibility, "
             "update_level, device_update_level, platform) "
             "VALUES (1, 1, 111, 0, 0, 1104, 2)"
         )
 
-        # ── db_info ────────────────────────────────────────────────────────
-        # primary_container_pid will be the master playlist pid
-        # media_folder_url=NULL, audio/subtitle_language=-1: matches iTunes ref
         master_pid = db_pid if db_pid else 1
         cur.execute(
             "INSERT INTO db_info (pid, primary_container_pid, media_folder_url, "
@@ -617,19 +596,13 @@ def write_library_itdb(
             (_s64(db_pid), _s64(master_pid))
         )
 
-        # ── location_kind_map ──────────────────────────────────────────────
-        # IDs and names must match what iTunes writes (from real Nano 6G backup)
         cur.execute("INSERT INTO location_kind_map (id, kind) VALUES (1, 'MPEG audio file')")
         cur.execute("INSERT INTO location_kind_map (id, kind) VALUES (2, 'Purchased AAC audio file')")
         cur.execute("INSERT INTO location_kind_map (id, kind) VALUES (3, 'AAC audio file')")
 
-        # ── Compute sort orders ────────────────────────────────────────────
-        # Replicates libgpod's compute_key_orders: for each field type, collect
-        # all unique sort keys, sort alphabetically, assign rank = (pos+1)*100.
         orders = _compute_sort_orders(tracks)
 
-        # ── Collect categories (for podcasts) ─────────────────────────────
-        category_map: dict[str, int] = {}    # category_name → category_id
+        category_map: dict[str, int] = {}
         category_id_counter = 1
         for track in tracks:
             cat = track.category or ""
@@ -643,8 +616,7 @@ def write_library_itdb(
                 (cat_id, cat_name)
             )
 
-        # ── Collect genres ─────────────────────────────────────────────────
-        genre_map: dict[str, int] = {}    # genre_name → genre_id
+        genre_map: dict[str, int] = {}
         genre_id_counter = 1
         for track in tracks:
             g = track.genre or ""
@@ -652,16 +624,14 @@ def write_library_itdb(
                 genre_map[g] = genre_id_counter
                 genre_id_counter += 1
 
-        # Compute genre_order (alphabetical rank), calc fields
         genre_sorted = sorted(genre_map.keys(), key=str.lower)
         genre_order_map: dict[str, int] = {
             g: i + 1 for i, g in enumerate(genre_sorted)
         }
 
-        # Compute genre calc fields: artist_count, album_count, compilation_count
-        genre_artists: dict[str, set] = {}    # genre → set of artist names
-        genre_albums: dict[str, set] = {}     # genre → set of album keys
-        genre_comp_albums: dict[str, set] = {}  # genre → set of compilation album keys
+        genre_artists: dict[str, set] = {}
+        genre_albums: dict[str, set] = {}
+        genre_comp_albums: dict[str, set] = {}
         for track in tracks:
             g = track.genre or ""
             if not g:
@@ -685,53 +655,43 @@ def write_library_itdb(
                 (gid, genre_name, g_order, a_count, al_count, c_count)
             )
 
-        # ── Collect albums, artists, composers ─────────────────────────────
-        # We use stable PIDs based on name hashing.
-        # Album key: (album_name, album_artist or artist, show_name)
-        album_map: dict[tuple[str, str, str], int] = {}   # (album, artist, show) → pid
-        artist_map: dict[str, int] = {}               # artist_name → pid
-        track_artist_map: dict[str, int] = {}         # track_artist_name → pid
-        composer_map: dict[str, int] = {}             # composer_name → pid
-        pid_counter = 100  # Start above small IDs used for other things
+        album_map: dict[tuple[str, str, str], int] = {}
+        artist_map: dict[str, int] = {}
+        track_artist_map: dict[str, int] = {}
+        composer_map: dict[str, int] = {}
+        pid_counter = 100
 
-        # db_track_id → track_id map for playlist references
         db_track_id_to_track_idx: dict[int, int] = {}
 
         for idx, track in enumerate(tracks):
             db_track_id_to_track_idx[track.db_track_id] = idx
 
-            # Album
             album_name, album_artist_name, show_name = _album_identity_fields(track)
             album_key = (album_name, album_artist_name, show_name)
             if album_key not in album_map:
                 pid_counter += 1
                 album_map[album_key] = pid_counter
 
-            # Artist (album artist)
             if album_artist_name and album_artist_name not in artist_map:
                 pid_counter += 1
                 artist_map[album_artist_name] = pid_counter
 
-            # Track artist
             ta = track.artist or ""
             if ta and ta not in track_artist_map:
                 pid_counter += 1
                 track_artist_map[ta] = pid_counter
 
-            # Composer
             comp = track.composer or ""
             if comp and comp not in composer_map:
                 pid_counter += 1
                 composer_map[comp] = pid_counter
 
-        # ── Write albums ───────────────────────────────────────────────────
-        # Count items per album for item_count, determine if compilation
         album_item_counts: dict[tuple[str, str, str], int] = {}
         album_has_compilation: dict[tuple[str, str, str], bool] = {}
         album_artist_pids: dict[tuple[str, str, str], int] = {}
         album_artwork_pids: dict[tuple[str, str, str], int] = {}
         album_feed_urls: dict[tuple[str, str, str], str] = {}
-        artist_artwork_album_pids: dict[str, int] = {}  # artist_name → album_pid with art
+        artist_artwork_album_pids: dict[str, int] = {}
 
         for track in tracks:
             album_name, album_artist_name, show_name = _album_identity_fields(track)
@@ -739,17 +699,13 @@ def write_library_itdb(
             album_item_counts[key] = album_item_counts.get(key, 0) + 1
             if track.compilation_flag:
                 album_has_compilation[key] = True
-            # Store album artist pid
             if album_artist_name and album_artist_name in artist_map:
                 album_artist_pids[key] = artist_map[album_artist_name]
-            # Store artwork item pid (first track in album with artwork)
             if track.mhii_link and key not in album_artwork_pids:
                 album_artwork_pids[key] = track.db_track_id
-            # Store feed_url for podcast albums
             if track.podcast_rss_url and key not in album_feed_urls:
                 album_feed_urls[key] = track.podcast_rss_url
 
-        # Compute album sort orders: name_order = rank by sort_name, sort_order = same
         album_sort_names: dict[tuple[str, str, str], str] = {}
         for key in album_map:
             album_sort_names[key] = strip_article(key[0]) if key[0] else key[0]
@@ -768,13 +724,11 @@ def write_library_itdb(
             is_unknown = 1 if not album_name else 0
             a_name_order = album_name_orders.get(key, 0)
             a_sort_name = album_sort_names.get(key) or None
-            # artist_order for album = the album_artist order rank
             a_artist_order = _lookup_order(orders, 'album_artist', album_artist_name)
 
             a_feed_url = album_feed_urls.get(key)
             album_art_status = 1 if artwork_pid else 0
 
-            # Track the first album with artwork for each artist
             if artwork_pid and album_artist_name not in artist_artwork_album_pids:
                 artist_artwork_album_pids[album_artist_name] = album_pid
 
@@ -792,7 +746,6 @@ def write_library_itdb(
                  item_count)
             )
 
-        # ── Write artists ──────────────────────────────────────────────────
         artist_sorted = sorted(artist_map.keys(), key=_sort_key)
         artist_name_orders: dict[str, int] = {
             k: (i + 1) * 100 for i, k in enumerate(artist_sorted)
@@ -812,7 +765,6 @@ def write_library_itdb(
                  is_unknown)
             )
 
-        # ── Write track artists ────────────────────────────────────────────
         ta_sorted = sorted(track_artist_map.keys(), key=_sort_key)
         ta_name_orders: dict[str, int] = {
             k: (i + 1) * 100 for i, k in enumerate(ta_sorted)
@@ -830,7 +782,6 @@ def write_library_itdb(
                  is_unknown)
             )
 
-        # ── Write composers ────────────────────────────────────────────────
         comp_sorted = sorted(composer_map.keys(), key=_sort_key)
         comp_name_orders: dict[str, int] = {
             k: (i + 1) * 100 for i, k in enumerate(comp_sorted)
@@ -847,7 +798,6 @@ def write_library_itdb(
                  is_unknown)
             )
 
-        # ── Write items (tracks) ──────────────────────────────────────────
         now_cd = _unix_to_coredata(int(time.time()))
 
         total_audio_size = 0
@@ -855,7 +805,6 @@ def write_library_itdb(
         total_mv_size = 0
 
         for idx, track in enumerate(tracks):
-            # Resolve foreign keys
             album_name, album_artist_name, show_name = _album_identity_fields(track)
             album_key = (album_name, album_artist_name, show_name)
             album_pid = album_map.get(album_key, 0)
@@ -873,7 +822,6 @@ def write_library_itdb(
 
             media_kind = _media_kind(track)
 
-            # Accumulate track_size_calc
             if media_kind == MEDIA_KIND_MUSIC_VIDEO:
                 total_mv_size += track.size
             elif media_kind in (MEDIA_KIND_MOVIE, MEDIA_KIND_TV_SHOW):
@@ -881,17 +829,14 @@ def write_library_itdb(
             else:
                 total_audio_size += track.size
 
-            # Timestamps
             date_mod = _unix_to_coredata(track.last_modified or track.date_added) if (track.last_modified or track.date_added) else now_cd
             date_released = _unix_to_coredata(track.date_released) if track.date_released else 0
 
-            # Artwork: iTunes uses artwork_status=1 when art is present
             art_status = 1 if track.mhii_link else 0
             art_cache_id = track.mhii_link or 0
 
             has_lyrics = 1 if (track.has_lyrics or track.lyrics) else 0
 
-            # Sort fields: fall back to article-stripped name (matches iTunes/libgpod)
             sort_title = track.sort_name or strip_article(track.title) if track.title else None
             sort_artist = track.sort_artist or strip_article(track.artist) if track.artist else None
             sort_album = track.sort_album or strip_article(track.album) if track.album else None
@@ -900,7 +845,6 @@ def write_library_itdb(
                        (track.sort_artist or strip_article(track.artist) if track.artist else None))
             sort_composer = track.sort_composer or strip_article(track.composer) if track.composer else None
 
-            # Order ranks from pre-computed sort orders
             title_order = _lookup_order(orders, 'title', track.sort_name or track.title)
             artist_order = _lookup_order(orders, 'artist', track.sort_artist or track.artist)
             album_order = _lookup_order(orders, 'album', track.sort_album or track.album)
@@ -1002,16 +946,10 @@ def write_library_itdb(
                 )
             )
 
-            # ── avformat_info ──────────────────────────────────────────────
             ft = track.filetype.lower()
             audio_format = _FILETYPE_TO_AUDIO_FORMAT.get(ft, AUDIO_FORMAT_MP3)
-            # Detect ALAC: M4A container + high bitrate (ALAC >= ~500 kbps,
-            # AAC caps at ~330 kbps)
             if ft in ('m4a', 'm4b') and track.bitrate > 500:
                 audio_format = AUDIO_FORMAT_ALAC
-            # Duration in avformat_info is in SAMPLES, not milliseconds.
-            # libgpod writes 0 ("iTunes sometimes set it to 0"); we compute
-            # when sample_rate is available, else 0.
             duration_samples = int(track.length * track.sample_rate / 1000) if track.sample_rate else 0
 
             cur.execute(
@@ -1032,7 +970,6 @@ def write_library_itdb(
                 )
             )
 
-            # ── podcast_info (podcast tracks only) ────────────────────────
             if media_kind == MEDIA_KIND_PODCAST:
                 cur.execute(
                     """INSERT INTO podcast_info (
@@ -1046,8 +983,6 @@ def write_library_itdb(
                     )
                 )
 
-        # ── track_size_calc ────────────────────────────────────────────────
-        # Three rows: audio, video, music_video with total file sizes
         cur.execute("INSERT INTO track_size_calc (pid, kind, size) VALUES (1, 'audio', ?)",
                     (total_audio_size,))
         cur.execute("INSERT INTO track_size_calc (pid, kind, size) VALUES (2, 'video', ?)",
@@ -1055,9 +990,6 @@ def write_library_itdb(
         cur.execute("INSERT INTO track_size_calc (pid, kind, size) VALUES (3, 'music_video', ?)",
                     (total_mv_size,))
 
-        # ── Write containers (playlists) ───────────────────────────────────
-        # Master playlist: distinguished_kind=0, is_hidden=1 (SQLite schema), smart fields=NULL
-        # (matches iTunes reference — NOT distinguished_kind=2)
         container_pos = 0
         _insert_container(
             cur, pid=master_pid, name=master_playlist_name,
@@ -1066,7 +998,6 @@ def write_library_itdb(
         )
         container_pos += 1
 
-        # Master playlist contains all tracks
         for idx, track in enumerate(tracks):
             cur.execute(
                 "INSERT INTO item_to_container (item_pid, container_pid, physical_order, shuffle_order) "
@@ -1074,7 +1005,6 @@ def write_library_itdb(
                 (_s64(track.db_track_id), _s64(master_pid), idx)
             )
 
-        # User playlists
         all_playlist_pids: list[int] = [master_pid]
         playlist_pid_counter = master_pid + 1
         for pl in (playlists or []):
@@ -1097,18 +1027,16 @@ def write_library_itdb(
                         (_s64(db_track_id), _s64(pl_pid), order)
                     )
 
-        # Smart playlists
         for spl in (smart_playlists or []):
             spl_pid = playlist_pid_counter
             playlist_pid_counter += 1
             all_playlist_pids.append(spl_pid)
 
-            # Determine smart playlist SQLite fields from SmartPlaylistPrefs
             spl_is_limited = 0
-            spl_limit_kind = 2   # default: MB
-            spl_limit_order = 2  # default: random
+            spl_limit_kind = 2
+            spl_limit_order = 2
             spl_limit_value = 25
-            spl_eval_order = 1   # default: 1 (from ref)
+            spl_eval_order = 1
             spl_reverse = 0
             spl_criteria = None
 
@@ -1118,32 +1046,20 @@ def write_library_itdb(
                 spl_limit_order = spl.smart_prefs.limit_sort
                 spl_limit_value = spl.smart_prefs.limit_value
 
-            # Build smart_criteria blob from rules (SLst format)
             if spl.smart_rules is not None:
                 from cicada.ipod.db.writer.mhod_spl_writer import write_mhod51
-                # write_mhod51 returns a full MHOD (24-byte header + SLst body).
-                # smart_criteria in SQLite stores the raw SLst blob (starts with
-                # b'SLst'), so we strip the 24-byte MHOD header.
                 mhod51_data = write_mhod51(spl.smart_rules)
                 if len(mhod51_data) > 24:
                     spl_criteria = mhod51_data[24:]
 
-            # Distinguished kind for smart playlists (from ref):
-            #   4 = Music, 5 = Audiobooks
             dk = 0
-            if spl.mhsd5_type == 4:   # music
+            if spl.mhsd5_type == 4:
                 dk = 4
-            elif spl.mhsd5_type == 5:  # audiobooks
+            elif spl.mhsd5_type == 5:
                 dk = 5
 
-            # media_kinds: 1=music, 0=audiobooks (from ref)
             spl_media_kinds = 1 if dk == 4 else (0 if dk == 5 else 1)
 
-            # is_hidden maps from PlaylistInfo.master:
-            #   - For ds5 built-in categories (Music, Audiobooks, ...),
-            #     master=True → is_hidden=1.  This matches Apple's reference
-            #     SQLite databases where system categories are hidden.
-            #   - For regular user smart playlists, master=False → is_hidden=0.
             _insert_container(
                 cur, pid=spl_pid, name=spl.name,
                 name_order=(container_pos + 1) * 100,
@@ -1161,7 +1077,6 @@ def write_library_itdb(
             )
             container_pos += 1
 
-            # Add evaluated track list for smart playlists
             for order, db_track_id in enumerate(spl.track_ids):
                 if db_track_id in db_track_id_to_track_idx:
                     cur.execute(
@@ -1170,7 +1085,6 @@ def write_library_itdb(
                         (_s64(db_track_id), _s64(spl_pid), order)
                     )
 
-        # ── Create indexes ─────────────────────────────────────────────────
         cur.executescript(_LIBRARY_INDEXES)
 
         conn.commit()

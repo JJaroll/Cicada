@@ -59,7 +59,7 @@ def built(tmp_path):
     src.mkdir()
     (src / "iPod_Control").symlink_to(FIXTURE)
     orig = load_ipod_library(str(src / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(src))["mhlt"]
-    ctx = read_device_time_context(str(src))          # MISMO contexto que el parser
+    ctx = read_device_time_context(str(src))
 
     tis = [track_dict_to_info(t) for t in orig]
     tis.append(TrackInfo(title="Cicada Test Track",
@@ -77,7 +77,6 @@ def built(tmp_path):
     return orig, cdb, new
 
 
-# --------------------------------------------------------------------------- #
 @skip_no_fixture
 def test_construye_e_incrementa_tracks(built):
     orig, cdb, new = built
@@ -116,7 +115,6 @@ def test_sin_contexto_horario_las_fechas_se_desplazan(tmp_path):
     tis = [track_dict_to_info(t) for t in orig]
     caps = capabilities_for_family_gen("iPod Nano", "7th Gen")
 
-    # Con contexto: fechas preservadas.
     cdb_ok = build_itunescdb(tis, firewire_id=GUID, checksum=ChecksumType.HASHAB,
                              capabilities=caps, time_context=ctx)
     out = tmp_path / "ok" / "iPod_Control" / "iTunes"; out.mkdir(parents=True)

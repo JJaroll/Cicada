@@ -38,17 +38,12 @@ def ipod(tmp_path):
     return mount
 
 
-# --------------------------------------------------------------------------- #
-# resolve_mount
-# --------------------------------------------------------------------------- #
 def test_resolve_mount_encuentra_ipod(ipod):
     assert resolve_mount(candidates=[ipod]) == ipod.resolve()
 
 
 def test_resolve_mount_desaparecido_lanza_excepcion_especifica(ipod):
-    # Montado -> OK.
     assert resolve_mount(candidates=[ipod]) == ipod.resolve()
-    # Se desmonta a mitad de uso: el directorio desaparece.
     import shutil
     shutil.rmtree(ipod)
     with pytest.raises(MountNotFoundError):
@@ -63,7 +58,6 @@ def test_resolve_mount_directorio_sin_ipod_control_no_cuenta(tmp_path):
 
 
 def test_resolve_mount_no_cachea(ipod):
-    # Dos llamadas revalidan de verdad: si desaparece entre medias, la 2ª falla.
     resolve_mount(candidates=[ipod])
     import shutil
     shutil.rmtree(ipod)
@@ -94,9 +88,6 @@ def test_resolve_mount_guid_no_coincide(ipod, monkeypatch):
         resolve_mount("OTROGUID", candidates=[ipod])
 
 
-# --------------------------------------------------------------------------- #
-# assert_within_ipod_control
-# --------------------------------------------------------------------------- #
 def test_ruta_legitima_dentro_de_music_f04_aceptada(ipod):
     destino = ipod / "iPod_Control" / "Music" / "F04" / "ABCD.mp3"
     resuelta = assert_within_ipod_control(destino, ipod)
@@ -110,13 +101,11 @@ def test_ruta_fuera_de_ipod_control_rechazada(ipod, tmp_path):
 
 
 def test_ruta_en_raiz_del_mount_fuera_de_control_rechazada(ipod):
-    # <mount>/algo NO está en iPod_Control/ -> rechazado.
     with pytest.raises(PathOutsideIpodControlError):
         assert_within_ipod_control(ipod / "algo.txt", ipod)
 
 
 def test_traversal_doble_puntopunto_rechazado(ipod):
-    # iPod_Control/Music/../../.. sale del árbol; resolverlo lo delata.
     trampa = ipod / "iPod_Control" / "Music" / ".." / ".." / ".." / "etc"
     with pytest.raises(PathOutsideIpodControlError):
         assert_within_ipod_control(trampa, ipod)
@@ -133,7 +122,6 @@ def test_symlink_que_apunta_fuera_rechazado(ipod, tmp_path):
     secreto = tmp_path / "secreto"
     secreto.mkdir()
     (secreto / "passwd").write_bytes(b"x")
-    # Symlink DENTRO de iPod_Control que escapa del árbol.
     enlace = ipod / "iPod_Control" / "escape"
     enlace.symlink_to(secreto)
     with pytest.raises(PathOutsideIpodControlError):
@@ -142,7 +130,6 @@ def test_symlink_que_apunta_fuera_rechazado(ipod, tmp_path):
 
 @pytest.mark.skipif(sys.platform == "win32", reason="symlinks POSIX")
 def test_symlink_interno_valido_aceptado(ipod):
-    # Un symlink que apunta DENTRO del árbol sí se acepta.
     real = ipod / "iPod_Control" / "Music" / "F04"
     enlace = ipod / "iPod_Control" / "atajo"
     enlace.symlink_to(real)
@@ -150,16 +137,13 @@ def test_symlink_interno_valido_aceptado(ipod):
     assert resuelta == (real / "x.mp3").resolve()
 
 
-# --------------------------------------------------------------------------- #
-# Prohibición de borrado recursivo
-# --------------------------------------------------------------------------- #
 def test_borrado_recursivo_de_ipod_control_rechazado(ipod):
     control = ipod / "iPod_Control"
     with pytest.raises(ProtectedPathError):
         assert_deletable(control, ipod)
     with pytest.raises(ProtectedPathError):
         safe_rmtree(control, ipod)
-    assert control.is_dir()  # sigue intacto
+    assert control.is_dir()
 
 
 def test_borrado_recursivo_de_itunes_rechazado(ipod):
@@ -168,11 +152,10 @@ def test_borrado_recursivo_de_itunes_rechazado(ipod):
         assert_deletable(itunes, ipod)
     with pytest.raises(ProtectedPathError):
         safe_rmtree(itunes, ipod)
-    assert itunes.is_dir()  # intacto
+    assert itunes.is_dir()
 
 
 def test_borrado_de_itunes_via_traversal_tambien_rechazado(ipod):
-    # iPod_Control/Music/../iTunes resuelve a iPod_Control/iTunes -> protegido.
     trampa = ipod / "iPod_Control" / "Music" / ".." / "iTunes"
     with pytest.raises(ProtectedPathError):
         safe_rmtree(trampa, ipod)
@@ -180,20 +163,17 @@ def test_borrado_de_itunes_via_traversal_tambien_rechazado(ipod):
 
 
 def test_borrado_recursivo_del_mount_rechazado_por_estar_fuera(ipod):
-    # rmtree del mount entero: fuera de iPod_Control -> rechazado (no protegido,
-    # sino fuera del árbol permitido).
     with pytest.raises(PathOutsideIpodControlError):
         safe_rmtree(ipod, ipod)
     assert ipod.is_dir()
 
 
 def test_borrado_recursivo_de_subdir_permitido(ipod):
-    # Un subdirectorio NO protegido dentro de iTunes sí se puede borrar.
     victima = ipod / "iPod_Control" / "iTunes" / "iTunes Library.itlp"
     assert victima.is_dir()
     safe_rmtree(victima, ipod)
     assert not victima.exists()
-    assert (ipod / "iPod_Control" / "iTunes").is_dir()  # el padre protegido intacto
+    assert (ipod / "iPod_Control" / "iTunes").is_dir()
 
 
 def test_is_protected_path(ipod):
@@ -202,11 +182,8 @@ def test_is_protected_path(ipod):
     assert is_protected_path(ipod / "iPod_Control" / "Music" / "F04", ipod) is False
 
 
-# --------------------------------------------------------------------------- #
-# assert_writable
-# --------------------------------------------------------------------------- #
 def test_writable_ok(ipod):
-    assert_writable(ipod)  # tmp_path es escribible -> no lanza
+    assert_writable(ipod)
 
 
 @pytest.mark.skipif(
@@ -216,7 +193,7 @@ def test_writable_ok(ipod):
 def test_writable_solo_lectura_rechazado(ipod):
     control = ipod / "iPod_Control"
     original = control.stat().st_mode
-    os.chmod(control, 0o500)  # r-x: sin permiso de escritura
+    os.chmod(control, 0o500)
     try:
         with pytest.raises(ReadOnlyFilesystemError):
             assert_writable(ipod)
@@ -224,9 +201,6 @@ def test_writable_solo_lectura_rechazado(ipod):
         os.chmod(control, original)
 
 
-# --------------------------------------------------------------------------- #
-# Jerarquía de excepciones
-# --------------------------------------------------------------------------- #
 def test_todas_las_excepciones_derivan_de_writeguarderror():
     for exc in (MountNotFoundError, AmbiguousMountError, WrongDeviceError,
                 PathOutsideIpodControlError, ReadOnlyFilesystemError,
@@ -235,19 +209,14 @@ def test_todas_las_excepciones_derivan_de_writeguarderror():
 
 
 def test_se_puede_distinguir_desmontaje_de_ruta_invalida(ipod, tmp_path):
-    # Quien captura debe poder separar los dos casos.
     import shutil
     shutil.rmtree(ipod)
     with pytest.raises(MountNotFoundError):
         resolve_mount(candidates=[ipod])
-    # ...vs ruta inválida es otra rama del árbol de excepciones.
     assert not issubclass(PathOutsideIpodControlError, MountNotFoundError)
     assert not issubclass(MountNotFoundError, PathOutsideIpodControlError)
 
 
-# --------------------------------------------------------------------------- #
-# root= (Etapa 6h) — Photos/ vive a nivel de volumen, fuera de iPod_Control/
-# --------------------------------------------------------------------------- #
 def test_root_default_sigue_siendo_ipod_control(ipod):
     """Sin root=, el comportamiento es idéntico al de antes de 6h (nada
     regresó para el resto del proyecto, que nunca pasa root=)."""
@@ -305,9 +274,3 @@ def test_safe_rmtree_con_root_photos_borra_subdirectorio_no_protegido(ipod):
     (stale / "leftover.bin").write_bytes(b"x")
     safe_rmtree(stale, ipod, root=PHOTOS_DIRNAME)
     assert not stale.exists()
-
-
-# --------------------------------------------------------------------------- #
-# Sanity check de mutación (aplicado manualmente sobre write_guard.py,
-# resultado registrado en docs/VENDORED.md Paquete 9 Etapa 6h)
-# --------------------------------------------------------------------------- #

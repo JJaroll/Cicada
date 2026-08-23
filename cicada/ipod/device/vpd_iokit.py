@@ -36,7 +36,6 @@ if sys.platform != "darwin":
 
 log = logging.getLogger(__name__)
 
-# ── IOKit / CoreFoundation via ctypes ────────────────────────────────
 
 _cf = ctypes.cdll.LoadLibrary(
     "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
@@ -45,7 +44,6 @@ _iok = ctypes.cdll.LoadLibrary(
     "/System/Library/Frameworks/IOKit.framework/IOKit"
 )
 
-# CFString helpers
 _cf.CFStringGetCString.argtypes = [c_void_p, c_char_p, c_int32, c_uint32]
 _cf.CFStringGetCString.restype = ctypes.c_bool
 _cf.CFRelease.argtypes = [c_void_p]
@@ -66,7 +64,6 @@ _cf.CFStringCreateWithCString.argtypes = [c_void_p, c_char_p, c_uint32]
 _cf.CFStringCreateWithCString.restype = c_void_p
 kCFStringEncodingUTF8 = 0x08000100
 
-# IOKit registry
 _iok.IOServiceMatching.restype = c_void_p
 _iok.IOServiceMatching.argtypes = [c_char_p]
 _iok.IOServiceGetMatchingServices.argtypes = [c_uint32, c_void_p, POINTER(c_uint32)]
@@ -89,8 +86,6 @@ _iok.IOCreatePlugInInterfaceForService.restype = c_int32
 
 kIOServicePlane = b"IOService"
 
-# ── UUIDs ────────────────────────────────────────────────────────────
-
 
 def _make_uuid(*b: int) -> c_void_p:
     return _cf.CFUUIDGetConstantUUIDWithBytes(None, *[c_uint8(x) for x in b])
@@ -104,14 +99,10 @@ _kIOCFPlugInInterfaceID = _make_uuid(
     0xC2, 0x44, 0xE8, 0x58, 0x10, 0x9C, 0x11, 0xD4,
     0x91, 0xD4, 0x00, 0x50, 0xE4, 0xC6, 0x42, 0x6F,
 )
-# Actual SCSITaskDeviceInterfaceID (from binary disassembly — differs
-# from the documented kSCSITaskDeviceInterfaceID = 6BD48AE0-…).
 _kSCSITaskDeviceInterfaceID_bytes = bytes([
     0x1B, 0xBC, 0x41, 0x32, 0x08, 0xA5, 0x11, 0xD5,
     0x90, 0xED, 0x00, 0x30, 0x65, 0x7D, 0x05, 0x2A,
 ])
-
-# ── SCSI structures ─────────────────────────────────────────────────
 
 
 class _IOVirtualRange(Structure):
@@ -123,30 +114,6 @@ class _SCSISenseData(Structure):
 
 
 _kSCSIDataTransfer_FromTargetToInitiator = 2
-
-# ── COM vtable helpers ───────────────────────────────────────────────
-#
-# IOKit CFPlugIn interfaces use COM-style vtables:
-#   obj → *vtable → [NULL, QI, AddRef, Release, version(0x1), method5, ...]
-#
-# SCSITaskDeviceInterface vtable (slots 5–10):
-#   [5] IsExclusiveAccessAvailable  [6] AddCallbackDispatcherToRunLoop
-#   [7] RemoveCallbackDispatcherFromRunLoop  [8] ObtainExclusiveAccess
-#   [9] ReleaseExclusiveAccess  [10] CreateSCSITask
-#
-# SCSITaskInterface vtable (slots 5–24):
-#   [5] IsTaskActive  [6] SetTaskAttribute  [7] GetTaskAttribute
-#   [8] SetCommandDescriptorBlock(self, uint8*, uint8)
-#   [9] GetCommandDescriptorBlockSize  [10] GetCommandDescriptorBlock
-#   [11] SetScatterGatherEntries(self, IOVirtualRange*, uint8, uint64, uint8)
-#   [12] SetTimeoutDuration(self, uint32)
-#   [13] GetTimeoutDuration  [14] SetTaskCompletionCallback
-#   [15] ExecuteTaskAsync
-#   [16] ExecuteTaskSync(self, SenseData*, TaskStatus*, uint64*)
-#   [17] AbortTask  [18] GetServiceResponse  [19] GetTaskState
-#   [20] GetTaskStatus  [21] GetRealizedDataTransferCount
-#   [22] GetAutoSenseData  [23] SetSenseDataBuffer
-#   [24] ResetForNewTask
 
 
 def _vt_ptr(obj: c_void_p, slot: int):
@@ -161,8 +128,6 @@ def _vt_call(obj: c_void_p, slot: int, restype, argtypes, *args):
     fn = ctypes.CFUNCTYPE(restype, c_void_p, *argtypes)(fptr)
     return fn(obj, *args)
 
-
-# ── IOKit registry helpers ───────────────────────────────────────────
 
 def _cf_property_string(entry: int, key: str) -> str | None:
     """Read a string property from an IOKit registry entry."""
@@ -203,7 +168,6 @@ def _cf_property_int(entry: int, key: str) -> int | None:
             if _cf.CFGetTypeID(cf_val) != _cf.CFNumberGetTypeID():
                 return None
             val = c_int32(0)
-            # kCFNumberSInt32Type = 3
             _cf.CFNumberGetValue(cf_val, 3, byref(val))
             return val.value
         finally:
@@ -216,15 +180,12 @@ def _walk_parents_for_usb_info(service: int) -> dict:
     """Walk IOKit registry parents to find USB device properties."""
     result: dict = {}
     entry = service
-    # Walk up to 10 levels — wrapped in try/finally so the last
-    # parent IOKit handle is always released even on unexpected errors.
     try:
         for _ in range(10):
             parent = c_uint32(0)
             kr = _iok.IORegistryEntryGetParentEntry(entry, kIOServicePlane, byref(parent))
             if kr != 0:
                 break
-            # Check for USB device properties
             pid = _cf_property_int(parent.value, "idProduct")
             if pid is not None and "usb_pid" not in result:
                 result["usb_pid"] = pid
@@ -248,8 +209,6 @@ def _walk_parents_for_usb_info(service: int) -> dict:
     return result
 
 
-# ── SCSI command helpers ─────────────────────────────────────────────
-
 class _SCSISession:
     """Manages exclusive access to one iPod's SCSI interface."""
 
@@ -262,7 +221,6 @@ class _SCSISession:
 
     def open(self) -> bool:
         """Create plugin → QueryInterface → ObtainExclusiveAccess → CreateTask."""
-        # 1. Create plugin
         plugin = c_void_p(0)
         score = c_int32(0)
         kr = _iok.IOCreatePlugInInterfaceForService(
@@ -277,7 +235,6 @@ class _SCSISession:
             return False
         self._plugin = plugin
 
-        # 2. QueryInterface for SCSITaskDeviceInterface
         uuid_lo, uuid_hi = struct.unpack("<QQ", _kSCSITaskDeviceInterfaceID_bytes)
         device_if = c_void_p(0)
         hr = _vt_call(
@@ -290,14 +247,12 @@ class _SCSISession:
             return False
         self._device_if = device_if
 
-        # 3. ObtainExclusiveAccess [8]
         kr = _vt_call(device_if, 8, c_int32, [])
         if kr != 0:
             log.debug("ObtainExclusiveAccess failed: 0x%08X", kr)
             return False
         self._exclusive = True
 
-        # 4. CreateSCSITask [10]
         task = _vt_call(device_if, 10, c_void_p, [])
         if not task:
             log.debug("CreateSCSITask returned NULL")
@@ -310,25 +265,25 @@ class _SCSISession:
         in one does not prevent cleanup of the others."""
         if self._task:
             try:
-                _vt_call(c_void_p(self._task), 3, c_uint32, [])  # Release
+                _vt_call(c_void_p(self._task), 3, c_uint32, [])
             except Exception:
                 log.debug("SCSISession: task Release failed", exc_info=True)
             self._task = None
         if self._exclusive and self._device_if:
             try:
-                _vt_call(self._device_if, 9, c_int32, [])  # ReleaseExclusive
+                _vt_call(self._device_if, 9, c_int32, [])
             except Exception:
                 log.debug("SCSISession: ReleaseExclusive failed", exc_info=True)
             self._exclusive = False
         if self._device_if:
             try:
-                _vt_call(self._device_if, 3, c_uint32, [])  # Release
+                _vt_call(self._device_if, 3, c_uint32, [])
             except Exception:
                 log.debug("SCSISession: device_if Release failed", exc_info=True)
             self._device_if = None
         if self._plugin:
             try:
-                _vt_call(self._plugin, 3, c_uint32, [])  # Release
+                _vt_call(self._plugin, 3, c_uint32, [])
             except Exception:
                 log.debug("SCSISession: plugin Release failed", exc_info=True)
             self._plugin = None
@@ -346,10 +301,8 @@ class _SCSISession:
 
         task = c_void_p(self._task)
 
-        # ResetForNewTask [24]
         _vt_call(task, 24, c_int32, [])
 
-        # SetCDB [8]
         cdb = (c_uint8 * 16)(
             0x12,
             0x01 if evpd else 0x00,
@@ -367,7 +320,6 @@ class _SCSISession:
         if kr != 0:
             return None
 
-        # SetScatterGatherEntries [11]
         resp = create_string_buffer(alloc_len)
         iovr = _IOVirtualRange(address=ctypes.addressof(resp), length=alloc_len)
         kr = _vt_call(
@@ -379,10 +331,8 @@ class _SCSISession:
         if kr != 0:
             return None
 
-        # SetTimeoutDuration [12]
         _vt_call(task, 12, c_int32, [c_uint32], c_uint32(10000))
 
-        # ExecuteTaskSync [16]
         sense = _SCSISenseData()
         status = c_uint32(0)
         realized = c_uint64(0)
@@ -397,18 +347,14 @@ class _SCSISession:
         return bytes(resp)[: realized.value]
 
 
-# ── VPD parsing ──────────────────────────────────────────────────────
-
 def _read_vpd_pages(session: _SCSISession) -> bytes:
     """Read and concatenate VPD data pages (0xC2+) from iPod."""
-    # Page 0xC0 lists the available data pages
     data_pages: list[int] = []
     c0 = session.inquiry(evpd=True, page=0xC0)
     if c0 and len(c0) >= 4:
         count = c0[3]
         data_pages = [p for p in c0[4:4 + count] if p >= 0xC2]
     if not data_pages:
-        # Fallback: try 0xC2–0xFF
         data_pages = list(range(0xC2, 0x100))
 
     raw = bytearray()
@@ -422,7 +368,6 @@ def _read_vpd_pages(session: _SCSISession) -> bytes:
             continue
         raw.extend(payload)
 
-    # Strip trailing nulls
     return bytes(raw).rstrip(b"\x00")
 
 
@@ -432,14 +377,12 @@ def _parse_vpd_xml(raw: bytes) -> dict:
     if not raw:
         return result
 
-    # Find XML start
     for marker in (b"<?xml", b"<plist"):
         idx = raw.find(marker)
         if idx >= 0:
             raw = raw[idx:]
             break
 
-    # Ensure plist is closed (may be truncated)
     if b"</plist>" not in raw:
         raw = raw + b"\n</dict>\n</plist>"
 
@@ -448,7 +391,6 @@ def _parse_vpd_xml(raw: bytes) -> dict:
         if isinstance(plist, dict):
             result = plist
     except Exception:
-        # Fallback: regex extraction
         result = _parse_vpd_regex(raw)
 
     return result
@@ -471,8 +413,6 @@ def _parse_vpd_regex(raw: bytes) -> dict:
             result[key] = val
     return result
 
-
-# ── Public API ───────────────────────────────────────────────────────
 
 def query_ipod_vpd(
     usb_pid: int = 0, serial_filter: str = ""
@@ -558,16 +498,12 @@ def query_all_ipods() -> list[dict]:
     return results
 
 
-# ── Internal ─────────────────────────────────────────────────────────
-
 def _query_one_service(
     service: int, usb_pid: int, serial_filter: str
 ) -> dict | None:
     """Query one iPod IOKit service.  Returns dict or None."""
-    # Get USB info from IOKit registry parents
     usb_info = _walk_parents_for_usb_info(service)
 
-    # Apply filters
     if usb_pid and usb_info.get("usb_pid") != usb_pid:
         return None
     if serial_filter:
@@ -585,7 +521,6 @@ def _query_one_service(
             "_transport": "iokit_scsi_vpd",
         }
 
-        # USB identifiers
         if "usb_vid" in usb_info:
             info["usb_vid"] = usb_info["usb_vid"]
         if "usb_pid" in usb_info:
@@ -593,21 +528,18 @@ def _query_one_service(
         if "usb_serial" in usb_info:
             info["usb_serial"] = usb_info["usb_serial"]
 
-        # Standard INQUIRY
         std = session.inquiry(evpd=False, page=0, alloc_len=96)
         if std and len(std) >= 36:
             info["scsi_vendor"] = std[8:16].decode("ascii", errors="replace").strip()
             info["scsi_product"] = std[16:32].decode("ascii", errors="replace").strip()
             info["scsi_revision"] = std[32:36].decode("ascii", errors="replace").strip()
 
-        # VPD page 0x80 — Unit Serial Number
         p80 = session.inquiry(evpd=True, page=0x80)
         if p80 and len(p80) > 4:
             sn = p80[4:].split(b"\x00", 1)[0].decode("ascii", errors="replace").strip()
             if sn:
                 info["vpd_serial"] = sn
 
-        # VPD data pages → XML plist
         raw_xml = _read_vpd_pages(session)
         if raw_xml:
             info["vpd_raw_xml"] = raw_xml

@@ -85,9 +85,6 @@ def delete_otg_files(itunes_dir: str) -> None:
         logger.warning("Could not delete OTGPlaylistInfo: %s", exc)
 
 
-# ── Internal helpers ─────────────────────────────────────────────────────────
-
-
 def _collect_otg_paths(itunes_dir: str) -> list[str]:
     """Return the ordered list of OTGPlaylistInfo paths that exist.
 
@@ -168,13 +165,9 @@ def _parse_one_otg_file(
         if tid:
             items.append({"track_id": tid})
 
-    # Consistent with libgpod: don't create a playlist for an empty file.
     if not items:
         return None
 
-    # Stable playlist_id derived from file content so that re-scanning the
-    # same OTG file before a sync produces the same ID each time, preventing
-    # duplicates in the deduplication step of read_existing_database.
     playlist_id = int.from_bytes(hashlib.md5(raw).digest()[:8], "little")
 
     name = f"On-The-Go {pl_num}"

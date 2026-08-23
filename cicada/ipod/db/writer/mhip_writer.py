@@ -101,7 +101,6 @@ def write_mhod_position(position: int) -> bytes:
     total_len = _MHOD_HEADER_SIZE + MHOD100_POSITION_BODY_SIZE
     header = write_mhod_header(100, total_len)
 
-    # Data section: position(4) + padding(16)
     data = struct.pack('<I', _u32(position)) + (b'\x00' * 16)
 
     return header + data
@@ -142,9 +141,9 @@ def write_mhip_podcast_group(album_name: str, group_id: int) -> bytes:
     write_generic_header(header, 0, b'mhip', MHIP_HEADER_SIZE, total_length)
     write_fields(header, 0, 'mhip', {
         'child_count': 1,
-        'podcast_group_flag': 256,  # 0x100 = podcast group header
+        'podcast_group_flag': 256,
         'group_id': group_id,
-        'track_id': 0,             # group headers don't reference a track
+        'track_id': 0,
     }, MHIP_HEADER_SIZE)
 
     return bytes(header) + mhod_title

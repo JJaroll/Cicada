@@ -33,7 +33,6 @@ from .locations_writer import write_locations_itdb
 
 __all__ = ["build_sqlite_databases", "ITLP_FILES"]
 
-#: Los archivos que componen el itlp/ (para install/rotación del coordinador).
 ITLP_FILES = (
     "Library.itdb", "Locations.itdb", "Dynamic.itdb",
     "Extras.itdb", "Genius.itdb", "Locations.itdb.cbk",
@@ -77,7 +76,6 @@ def build_sqlite_databases(
         write_extras_itdb(path=str(dest / "Extras.itdb"), tracks=tracks)
         write_genius_itdb(path=str(dest / "Genius.itdb"))
 
-        # .cbk (checksums SHA1 de bloque + cabecera HASHAB) — firmado sobre Locations.itdb.
         write_locations_cbk(
             cbk_path=str(dest / "Locations.itdb.cbk"),
             locations_itdb_path=str(loc_path),

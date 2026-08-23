@@ -35,7 +35,6 @@ def extract_embedded_artwork(file_path: Path) -> Tuple[Optional[bytes], Optional
                 return pic.data, pic.mime
             return None, None
 
-        # ID3 (mp3, wav, aiff)
         if audio.tags is not None:
             for key in list(audio.tags.keys()):
                 if str(key).startswith("APIC"):

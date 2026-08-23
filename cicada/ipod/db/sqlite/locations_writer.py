@@ -21,26 +21,22 @@ from ._helpers import s64 as _s64
 logger = logging.getLogger(__name__)
 
 
-# location_type = 0x46494C45 = "FILE" as big-endian int
 LOCATION_TYPE_FILE = 0x46494C45
 
-# Extension codes — same as FILETYPE_CODES (big-endian 4-byte ASCII)
 _EXTENSION_CODES = FILETYPE_CODES
 
-# kind_id mapping — matches location_kind_map in Library.itdb
-# IDs from real iTunes-written databases on Nano 6G
 _KIND_ID = {
-    'mp3': 1,   # "MPEG audio file"
-    'aac': 3,   # "AAC audio file"
-    'm4a': 3,   # "AAC audio file" (or ALAC in M4A container)
-    'm4p': 2,   # "Purchased AAC audio file"
-    'm4b': 3,   # "AAC audio file" (audiobook)
-    'm4v': 3,   #
-    'mp4': 3,   #
-    'wav': 1,   #
-    'aif': 1,   #
-    'aiff': 1,  #
-    'alac': 3,  # ALAC is in M4A container
+    'mp3': 1,
+    'aac': 3,
+    'm4a': 3,
+    'm4p': 2,
+    'm4b': 3,
+    'm4v': 3,
+    'mp4': 3,
+    'wav': 1,
+    'aif': 1,
+    'aiff': 1,
+    'alac': 3,
 }
 
 
@@ -53,15 +49,10 @@ def _ipod_path_to_location(ipod_path: str) -> str:
     The location field stores the path relative to the base_location
     ("iPod_Control/Music"), using forward slashes.
     """
-    # Strip leading colon and split
     parts = ipod_path.strip(':').split(':')
-    # Skip "iPod_Control" and "Music" prefix
-    # The path format is :iPod_Control:Music:Fxx:filename
-    # We want: Fxx/filename
     if len(parts) >= 4 and parts[0] == 'iPod_Control' and parts[1] == 'Music':
         return '/'.join(parts[2:])
     elif len(parts) >= 2:
-        # Fallback: just take the last two parts
         return '/'.join(parts[-2:])
     else:
         return ipod_path.strip(':').replace(':', '/')
@@ -107,12 +98,10 @@ def write_locations_itdb(
 
     cur.executescript(_LOCATIONS_SCHEMA)
 
-    # Single base_location entry
     cur.execute(
         "INSERT INTO base_location (id, path) VALUES (1, 'iPod_Control/Music')"
     )
 
-    # One location per track
     now = int(time.time())
 
     for track in tracks:
@@ -121,7 +110,6 @@ def write_locations_itdb(
         extension = _EXTENSION_CODES.get(ft, _EXTENSION_CODES.get('mp3', 0x4D503320))
         kind_id = _KIND_ID.get(ft, 0)
 
-        # date_created: Core Data timestamp of when the file was added
         date_added = track.date_added or now
         date_cd = unix_to_coredata(date_added)
 

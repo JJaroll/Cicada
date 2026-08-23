@@ -108,7 +108,7 @@ def _truncate_utf16le_payload(mhod_type: int, value: str) -> str:
     if len(encoded) <= limit:
         return value
 
-    limit &= ~1  # UTF-16 code units are two bytes.
+    limit &= ~1
     truncated = encoded[:limit].decode('utf-16-le', errors='ignore')
     logger.debug(
         "Truncated MHOD type %d string from %d to %d UTF-16 bytes",
@@ -223,8 +223,6 @@ def write_mhod_string(mhod_type: int, value: Any,
 
     header = write_mhod_header(mhod_type, total_len)
 
-    # String sub-header: encoding(4) + string_length(4) + unk0x20(4) + unk0x24(4)
-    # encoding=1 means UTF-16LE
     type_header = struct.pack('<IIII', 1, string_len, unk_0x20, unk_0x24)
 
     return header + type_header + string_data
@@ -355,7 +353,6 @@ def write_mhod_chapter_data(
     if not chapters:
         return b''
 
-    # Build the atom tree body (all big-endian).
     atoms = bytearray()
 
     valid_chapter_count = 0
@@ -370,7 +367,6 @@ def write_mhod_chapter_data(
             title_utf16 = title_utf16[:_U16_MAX * 2]
         title_units = len(title_utf16) // 2
 
-        # name atom: size(4) + "name"(4) + unk=1(4) + unk=0(4) + unk=0(4) + strlen(2) + string
         name_size = 22 + len(title_utf16)
         name_atom = struct.pack(">I", name_size)
         name_atom += NAME_ATOM
@@ -378,7 +374,6 @@ def write_mhod_chapter_data(
         name_atom += struct.pack(">H", title_units)
         name_atom += title_utf16
 
-        # chap atom: size(4) + "chap"(4) + startpos(4) + children=1(4) + unk=0(4) + name_atom
         chap_size = 20 + name_size
         chap_atom = struct.pack(">I", chap_size)
         chap_atom += CHAP_ATOM
@@ -387,23 +382,20 @@ def write_mhod_chapter_data(
 
         atoms.extend(chap_atom)
 
-    # hedr terminator atom (28 bytes)
     hedr_atom = struct.pack(">I", HEDR_SIZE)
     hedr_atom += HEDR_ATOM
     hedr_atom += struct.pack(">IIIII", 1, 0, 0, 0, 1)
     atoms.extend(hedr_atom)
 
-    # sean atom header wraps everything
     if not valid_chapter_count:
         return b''
 
-    num_children = valid_chapter_count + 1  # chapters + hedr
+    num_children = valid_chapter_count + 1
     sean_size = 20 + len(atoms)
     sean_header = struct.pack(">I", sean_size)
     sean_header += SEAN_ATOM
     sean_header += struct.pack(">III", 1, num_children, 0)
 
-    # Preamble (little-endian, 12 bytes)
     preamble = struct.pack(
         "<III",
         _u32_or_zero(unk024),
@@ -411,10 +403,8 @@ def write_mhod_chapter_data(
         _u32_or_zero(unk032),
     )
 
-    # Complete body = preamble + sean_header + atoms
     body = preamble + sean_header + bytes(atoms)
 
-    # MHOD header + body
     total_length = MHOD_HEADER_SIZE + len(body)
     header = write_mhod_header(MHOD_TYPE_CHAPTER_DATA, total_length)
 
@@ -438,7 +428,6 @@ def build_chapter_blob(
     full = write_mhod_chapter_data(chapters, unk024, unk028, unk032)
     if not full:
         return b''
-    # Strip the MHOD header to get just the atom tree
     return full[MHOD_HEADER_SIZE:]
 
 
@@ -509,11 +498,9 @@ def write_track_mhods(
     """
     chunks: list[bytes] = []
 
-    # Required MHODs
     _append_chunk(chunks, write_mhod_title(title))
     _append_chunk(chunks, write_mhod_location(location))
 
-    # Optional string MHODs
     if artist:
         _append_chunk(chunks, write_mhod_artist(artist))
     if album:
@@ -543,7 +530,6 @@ def write_track_mhods(
     if keywords:
         _append_chunk(chunks, write_mhod_string(MHOD_TYPE_KEYWORDS, keywords))
 
-    # Sort MHODs
     if sort_artist:
         _append_chunk(chunks, write_mhod_sort_artist(sort_artist))
     if sort_name:
@@ -561,19 +547,16 @@ def write_track_mhods(
     if grouping:
         _append_chunk(chunks, write_mhod_string(MHOD_TYPE_GROUPING, grouping))
 
-    # Podcast URL MHODs (different format: UTF-8, no sub-header)
     if podcast_enclosure_url:
         _append_chunk(chunks, write_mhod_podcast_url(MHOD_TYPE_PODCAST_ENCLOSURE_URL, podcast_enclosure_url))
     if podcast_rss_url:
         _append_chunk(chunks, write_mhod_podcast_url(MHOD_TYPE_PODCAST_RSS_URL, podcast_rss_url))
 
-    # EQ and lyrics
     if eq_setting:
         _append_chunk(chunks, write_mhod_string(MHOD_TYPE_EQ_SETTING, eq_setting))
     if lyrics:
         _append_chunk(chunks, write_mhod_string(MHOD_TYPE_LYRICS, lyrics))
 
-    # Chapter data (type 17, big-endian atom tree)
     if chapter_data and chapter_data.get("chapters"):
         chapters = _normalized_chapters_for_track(chapter_data["chapters"])
         if not chapters:

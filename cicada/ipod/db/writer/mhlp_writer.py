@@ -95,7 +95,6 @@ def write_mhlp_with_playlists(
     """
     chunks = []
 
-    # Master playlist MUST be first
     master = write_master_playlist(
         track_ids, tracks=tracks, db_id_2=db_id_2,
         capabilities=capabilities, name=master_playlist_name,
@@ -103,7 +102,6 @@ def write_mhlp_with_playlists(
     )
     chunks.append(master)
 
-    # Write all user playlists (regular and smart).
     for pl in playlists:
         chunks.append(write_playlist(pl, db_id_2=db_id_2))
 
@@ -154,7 +152,6 @@ def write_mhlp_with_playlists_type3(
     """
     chunks = []
 
-    # Master playlist — identical to type 2
     master = write_master_playlist(
         track_ids, tracks=tracks, db_id_2=db_id_2,
         capabilities=capabilities, name=master_playlist_name,

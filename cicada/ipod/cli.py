@@ -79,28 +79,22 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="cicada ipod", description="Gestión y sincronización del iPod")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    # 1. status / identify
     p_id = sub.add_parser("status", aliases=["identify"], help="Muestra la identidad y estado del iPod montado")
     p_id.add_argument("--usb", action="store_true", help="Permite leer el FireWireGUID por USB si no está en disco")
 
-    # 2. tracks
     p_tr = sub.add_parser("tracks", help="Lista las pistas en la base de datos actual del iPod")
     p_tr.add_argument("--json", action="store_true", help="Salida en formato JSON")
 
-    # 3. plan
     p_plan = sub.add_parser("plan", help="Genera un plan dry-run en staging off-device")
     p_plan.add_argument("--tracks-file", required=True, help="Ruta al archivo JSON con la lista de pistas")
 
-    # 4. sync / apply
     p_sync = sub.add_parser("sync", aliases=["apply"], help="Ejecuta la sincronización transaccional sobre el iPod")
     p_sync.add_argument("--tracks-file", required=True, help="Ruta al archivo JSON con la lista de pistas")
     p_sync.add_argument("--ack-consent", "--yes", "-y", action="store_true", help="Acepta la advertencia de Music.app")
 
-    # 5. consent
     p_consent = sub.add_parser("consent", help="Consulta u otorga consentimiento para la advertencia de Music.app")
     p_consent.add_argument("action", choices=["show", "grant", "revoke"], help="Acción de consentimiento")
 
-    # 6. backup / restore / list-backups
     p_backup = sub.add_parser("backup", help="Crea un snapshot de seguridad del iPod")
     p_backup.add_argument(
         "--full",
@@ -332,8 +326,6 @@ def _cmd_sync_playback(args: argparse.Namespace) -> int:
         return 1
 
     if args.dry_run:
-        # Puro SELECT (get_all_playback_states/get_track_map): no requiere
-        # el device pre-registrado, así que un dry-run no escribe nada.
         report = compute_playback_deltas(mount, SyncStateDB(), dev.firewire_guid)
     else:
         report = sync_playback_stats(mount, dev)

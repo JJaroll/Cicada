@@ -68,7 +68,6 @@ def default_consent_dir() -> Path:
     return cicada_home() / "consent"
 
 
-#: Alias retrocompatible — la lógica vive en cicada.ipod.paths.guid_hash.
 _guid_hash = guid_hash
 
 

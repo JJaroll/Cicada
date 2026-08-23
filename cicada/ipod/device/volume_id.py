@@ -34,9 +34,9 @@ _ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 
 @dataclass(frozen=True)
 class VolumeFingerprint:
-    value: str          # sha256 hex de la fuente elegida
-    strength: str       # "strong" | "weak"
-    source: str         # p. ej. "diskutil_volumeuuid" | "devicenode+volumename"
+    value: str
+    strength: str
+    source: str
 
 
 def _diskutil_info(mount: Path, *, timeout: float = 10.0) -> dict:
@@ -72,7 +72,6 @@ def volume_fingerprint(mount: str | Path) -> Optional[VolumeFingerprint]:
                 strength="strong",
                 source="diskutil_volumeuuid",
             )
-        # Fallback débil con datos de diskutil.
         node = str(info.get("DeviceNode") or "").strip()
         name = str(info.get("VolumeName") or "").strip()
         if node or name:
@@ -81,7 +80,6 @@ def volume_fingerprint(mount: str | Path) -> Optional[VolumeFingerprint]:
                 strength="weak",
                 source="devicenode+volumename",
             )
-    # No-macOS (o diskutil no dio nada): huella débil por nombre de montaje.
     try:
         name = mount.name
         if name:

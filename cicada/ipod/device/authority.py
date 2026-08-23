@@ -35,7 +35,7 @@ from typing import TYPE_CHECKING, Optional
 
 from cicada.ipod.paths import cicada_home
 
-if TYPE_CHECKING:  # pragma: no cover - solo tipos; info.py llega en Etapa 2b
+if TYPE_CHECKING:
     from cicada.ipod.device.info import DeviceInfo
 
 logger = logging.getLogger(__name__)
@@ -56,19 +56,10 @@ __all__ = [
     "read_cached_sysinfo_extended",
 ]
 
-#: Nombre de nuestro JSON de autoridad (off-device).
 AUTHORITY_FILENAME = "authority.json"
 
-#: Archivo de autoridad de iOpenPod en el dispositivo — ajeno, otro formato.
 FOREIGN_AUTHORITY_FILENAME = "iOpenPodSysInfoAuthority"
 
-#: .backup en sitio de los 7 archivos de base de datos — mecanismo propio de
-#: write_itunesdb/write_sqlite_databases de iOpenPod (backup=True antes de
-#: sobrescribir). El camino activo de escritura de Cicada
-#: (build_itunescdb/build_sqlite_databases, vía create_plan) nunca produce
-#: estos nombres — ver test_create_plan_never_produces_foreign_backup_filenames
-#: en tests/ipod/db/coordinator/test_plan.py, que protege este supuesto contra
-#: cambios futuros en vez de confiar en un grep de hoy.
 FOREIGN_BACKUP_RELPATHS: tuple[str, ...] = (
     "iPod_Control/iTunes/iTunesCDB.backup",
     "iPod_Control/iTunes/iTunes Library.itlp/Library.itdb.backup",
@@ -79,13 +70,10 @@ FOREIGN_BACKUP_RELPATHS: tuple[str, ...] = (
     "iPod_Control/iTunes/iTunes Library.itlp/Locations.itdb.cbk.backup",
 )
 
-# ── Ranking de procedencia (de más a menos fiable) ─────────────────────
 _SOURCE_ORDER: list[str] = [
-    # Seguras: sondeos de hardware en vivo
     "scsi_vpd", "windows_scsi", "linux_scsi", "sysfs_vpd", "udev_scsi_id",
     "usb_vendor", "vpd", "iokit", "ioctl", "device_tree", "ioreg", "sysfs",
     "udev", "wmi",
-    # Adivinanzas: lookups, derivaciones, archivos
     "itunes", "serial_lookup", "usb_pid", "disk_size", "model_table",
     "inferred", "sysinfo_extended", "sysinfo", "hashing", "unknown",
 ]
@@ -93,9 +81,8 @@ SOURCE_RANK: dict[str, int] = {src: i for i, src in enumerate(_SOURCE_ORDER)}
 """source → rango (menor = más fiable)."""
 
 _WORST_RANK: int = len(_SOURCE_ORDER)
-_SURE_THRESHOLD: int = SOURCE_RANK["itunes"]  # rango < esto = fuente "segura"
+_SURE_THRESHOLD: int = SOURCE_RANK["itunes"]
 
-# ── Mapeo clave SysInfo ↔ campo DeviceInfo ─────────────────────────────
 SYSINFO_FIELDS: list[tuple[str, str]] = [
     ("pszSerialNumber", "serial"),
     ("FirewireGuid", "firewire_guid"),
@@ -116,9 +103,6 @@ _CORE_FIELDS: frozenset[str] = frozenset({
 })
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Raíz del caché (off-device) — centralizada en cicada.ipod.paths
-# ──────────────────────────────────────────────────────────────────────
 def _sysinfo_cache_root() -> Path:
     return cicada_home() / "sysinfo"
 
@@ -128,9 +112,6 @@ def _cache_dir_for_guid(guid: str) -> Path:
     return _sysinfo_cache_root() / digest
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Índice puntero: huella de volumen -> GUID (para resolver sin USB)
-# ──────────────────────────────────────────────────────────────────────
 def _pointer_path(volume_fp: str) -> Path:
     digest = hashlib.sha256(volume_fp.encode("utf-8")).hexdigest()[:16]
     return _sysinfo_cache_root() / "index" / f"{digest}.json"
@@ -183,9 +164,6 @@ def store_sysinfo_extended_for_guid(guid: str, raw_xml: bytes | str) -> None:
     os.replace(tmp, payload)
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Lectura de identidad del dispositivo (para indexar por GUID)
-# ──────────────────────────────────────────────────────────────────────
 def _device_dir(ipod_path: str | os.PathLike) -> Path:
     return Path(ipod_path) / "iPod_Control" / "Device"
 
@@ -212,7 +190,7 @@ def _read_device_guid(ipod_path: str | os.PathLike) -> Optional[str]:
             guid = _normalise_guid(plist.get("FireWireGUID"))
             if guid:
                 return guid
-        except Exception as exc:  # plist inválido: seguimos con SysInfo
+        except Exception as exc:
             logger.debug("SysInfoExtended sin GUID legible: %s", exc)
     sysinfo = device / "SysInfo"
     if sysinfo.is_file():
@@ -284,9 +262,6 @@ def _rank(source: str) -> int:
     return SOURCE_RANK.get(source, _WORST_RANK)
 
 
-# ──────────────────────────────────────────────────────────────────────
-# I/O del caché off-device
-# ──────────────────────────────────────────────────────────────────────
 def _read_authority_for_guid(guid: str) -> dict:
     path = _cache_dir_for_guid(guid) / AUTHORITY_FILENAME
     if not path.is_file():
@@ -298,7 +273,6 @@ def _read_authority_for_guid(guid: str) -> dict:
         return {}
     if not isinstance(data, dict):
         return {}
-    # Defensa ante colisión del hash de 16 chars: el GUID real vive dentro.
     if data.get("firewire_guid") and data["firewire_guid"] != guid:
         return {}
     return data
@@ -313,16 +287,13 @@ def _write_authority_for_guid(guid: str, authority: dict) -> None:
     target = directory / AUTHORITY_FILENAME
     tmp = target.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(authority, indent=2, sort_keys=True), encoding="utf-8")
-    os.replace(tmp, target)  # publicación atómica (fuera del iPod)
+    os.replace(tmp, target)
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Interfaz pública (misma firma que espera info.py) — path-based
-# ──────────────────────────────────────────────────────────────────────
 def read_authority(ipod_path: str) -> dict:
     """Lee nuestra autoridad (off-device) del dispositivo en ``ipod_path``.
 
@@ -407,8 +378,6 @@ def update_sysinfo(info: "DeviceInfo") -> None:
     field_sources = getattr(info, "_field_sources", {}) or {}
     now = _now()
 
-    # Manipulación externa: si el SysInfo del dispositivo cambió, la procedencia
-    # cacheada es obsoleta.
     stored_hashes = authority.get("file_hashes", {})
     current_hashes = _current_file_hashes(ipod_path)
     if stored_hashes and any(
@@ -426,7 +395,6 @@ def update_sysinfo(info: "DeviceInfo") -> None:
         if entry is None:
             fields[sysinfo_key] = {"value": str(new_value), "source": new_source, "updated": now}
             continue
-        # Conserva la fuente más fiable (rango menor).
         old_source = str(entry.get("source", "unknown"))
         if _rank(new_source) <= _rank(old_source):
             fields[sysinfo_key] = {"value": str(new_value), "source": new_source, "updated": now}
@@ -457,7 +425,6 @@ def cache_sysinfo_extended(
     guid = _read_device_guid(ipod_path)
     if not guid:
         return False
-    # Rechaza cachear si el identificador de volumen esperado no coincide.
     if expected_volume_identity_key and _normalise_guid(expected_volume_identity_key) not in (None, guid):
         logger.info("SysInfoExtended no cacheado: identidad de volumen no coincide.")
         return False
@@ -487,8 +454,8 @@ def _normalise_sysinfo_extended(raw_xml: bytes | str) -> bytes:
     raw = raw_xml.encode("utf-8", errors="replace") if isinstance(raw_xml, str) else bytes(raw_xml or b"")
     if not raw:
         return b""
-    try:  # el parser real llega en Etapa 2b; si no está, limpieza por marcador
-        from cicada.ipod.device.sysinfo import parse_sysinfo_extended  # type: ignore
+    try:
+        from cicada.ipod.device.sysinfo import parse_sysinfo_extended
         parsed = parse_sysinfo_extended(raw)
         if getattr(parsed, "plist", None) and getattr(parsed, "raw_xml", None):
             return parsed.raw_xml
@@ -505,9 +472,6 @@ def _normalise_sysinfo_extended(raw_xml: bytes | str) -> bytes:
     return raw
 
 
-# ──────────────────────────────────────────────────────────────────────
-# Limpieza del archivo de autoridad ajeno (iOpenPod) — vía write_guard
-# ──────────────────────────────────────────────────────────────────────
 def clean_foreign_artifacts(ipod_path: str) -> list[str]:
     """Elimina artefactos ajenos conocidos del dispositivo, vía write_guard.
 

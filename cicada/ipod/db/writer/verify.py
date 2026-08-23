@@ -31,15 +31,15 @@ from cicada.ipod.db.writer.hashab import HASHAB_SIZE, compute_hashab
 
 __all__ = ["HashVerifyResult", "verify_hashab", "canonical_hashab_sha1"]
 
-_ITDB_CHECKSUM_HASHAB = 4  # valor de hashing_scheme para HASHAB
+_ITDB_CHECKSUM_HASHAB = 4
 
 
 @dataclass(frozen=True)
 class HashVerifyResult:
     """Resultado de verificar una firma HASHAB, con ambos bytes para comparar."""
     valid: bool
-    stored: bytes     # 57 bytes existentes en el iTunesCDB (offset 0xAB)
-    computed: bytes   # 57 bytes que produce nuestra implementación
+    stored: bytes
+    computed: bytes
 
     @property
     def stored_hex(self) -> str:

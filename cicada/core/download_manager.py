@@ -16,8 +16,6 @@ from cicada.core.app_paths import get_app_data_dir
 
 logger = logging.getLogger(__name__)
 
-# Acepta open.spotify.com/track|album|playlist/{id}, incluyendo variantes con
-# locale ("/intl-es/") y query strings ("?si=...") al final.
 _SPOTIFY_URL_RE = re.compile(
     r"open\.spotify\.com/(?:intl-\w+/)?(track|album|playlist)/([a-zA-Z0-9]+)"
 )
@@ -45,7 +43,6 @@ class DownloadManager:
 
     def upgrade_ytdlp(self) -> None:
         try:
-            # --- FIX: Bloquear actualización automática si la app está compilada ---
             if not getattr(sys, 'frozen', False):
                 subprocess.run(
                     [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"],
@@ -55,7 +52,7 @@ class DownloadManager:
                 )
         except Exception as e:
             logger.warning(f"No se pudo auto-actualizar yt-dlp en el inicio: {e}")
-            
+
     @staticmethod
     def _get_client_credentials() -> Tuple[str, str]:
         client_id = os.environ.get("SPOTIFY_CLIENT_ID")
@@ -82,7 +79,7 @@ class DownloadManager:
             "redirect_uri": self.REDIRECT_URI,
         }
         return f"{self.AUTHORIZE_URL}?{urlencode(params, quote_via=quote)}"
-        
+
     def _load_token_data(self) -> Dict[str, Any]:
         if not self.TOKEN_FILE.exists():
             return {}
@@ -341,7 +338,6 @@ class DownloadManager:
                 "id": item.get("id", ""),
                 "name": item.get("name", ""),
                 "description": item.get("description") or "",
-                # Spotify migró el campo "tracks" a "items" en el objeto de playlist simplificado; probamos ambos.
                 "track_count": (item.get("items") or item.get("tracks") or {}).get("total", 0),
                 "image_url": self._best_image(item.get("images")),
             })

@@ -24,7 +24,6 @@ from cicada.ipod.device.checksum import ChecksumType
 
 logger = logging.getLogger(__name__)
 
-# Block size for checksumming
 BLOCK_SIZE = 1024
 
 
@@ -71,17 +70,14 @@ def write_locations_cbk(
     with open(locations_itdb_path, 'rb') as f:
         locations_data = f.read()
 
-    # Compute block SHA1s
     block_sha1s = _compute_block_sha1s(locations_data)
 
-    # Compute final SHA1 = SHA1(concatenation of all block SHA1s)
     all_sha1s = b''.join(block_sha1s)
     final_sha1 = hashlib.sha1(all_sha1s).digest()
 
     logger.debug("Locations.itdb: %d bytes, %d blocks, final SHA1: %s",
                  len(locations_data), len(block_sha1s), final_sha1.hex())
 
-    # Generate header signature based on checksum type
     if checksum_type == ChecksumType.HASHAB:
         if not firewire_id or len(firewire_id) < 8:
             raise ValueError("FireWire ID required for HASHAB cbk signature")
@@ -108,7 +104,6 @@ def write_locations_cbk(
             read_hash_info,
         )
 
-        # Try centralized store first
         hash_info = None
         try:
             from iopenpod.device import get_current_device_for_path
@@ -132,7 +127,6 @@ def write_locations_cbk(
             except Exception:
                 pass
 
-        # Fallback: extract from existing iTunesCDB on device
         if hash_info is None and ipod_path:
             try:
                 from iopenpod.device import resolve_itdb_path
@@ -162,7 +156,6 @@ def write_locations_cbk(
             )
 
     elif checksum_type == ChecksumType.NONE:
-        # Positively identified older devices need no signed CBK header.
         header = final_sha1
     else:
         raise ValueError(
@@ -170,7 +163,6 @@ def write_locations_cbk(
             f"{checksum_type.name}"
         )
 
-    # Write the cbk file: header + final_sha1 + block_sha1s
     with open(cbk_path, 'wb') as f:
         f.write(header)
         f.write(final_sha1)

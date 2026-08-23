@@ -43,7 +43,6 @@ class MetadataManager:
 
     async def identify_audio(self, file_path: str) -> Dict[str, Any]:
         async with self.semaphore:
-            # Demora artificial para no disparar el rate limit no documentado de Shazam
             await asyncio.sleep(0.5)
             try:
                 out = await self.shazam.recognize(file_path)
@@ -70,7 +69,6 @@ class MetadataManager:
         try:
             stem = Path(file_path).stem
 
-            # Descarta anotaciones típicas de descargas/rips: "(Official Video)", "[HD]", "www.site.com"
             junk_patterns = [
                 r"\[[^\]]{0,60}\]",
                 r"\((?:official\s*)?(?:video|audio|lyrics?|music\s*video|visualizer|hd|hq|4k)\)",
@@ -82,10 +80,8 @@ class MetadataManager:
             stem = re.sub(r"[_.]+", " ", stem)
             stem = re.sub(r"\s{2,}", " ", stem).strip()
 
-            # Separa por guiones: "Artista - Título" o "Track - Artista - Título"
             parts = [p.strip() for p in re.split(r"\s+-\s+", stem) if p.strip()]
 
-            # Descarta un posible número de pista inicial ("01", "Track 03", etc.)
             if parts and re.fullmatch(r"(?:track\s*)?\d{1,3}", parts[0], flags=re.IGNORECASE):
                 parts = parts[1:]
 
@@ -109,13 +105,12 @@ class MetadataManager:
 
             return titulo, artista
         except Exception:
-            # Nunca dejar que un nombre de archivo raro tumbe el pipeline
             nombre_limpio = self.clean_text(Path(file_path).stem)[:120] if file_path else ""
             return (nombre_limpio or "Unknown Title"), "Unknown Artist"
 
     async def fetch_itunes_metadata(self, title: str, artist: str) -> Dict[str, Any]:
         async with self.semaphore:
-            await asyncio.sleep(1.0)  # Respeta el límite no oficial de iTunes (~20 req/min según IP)
+            await asyncio.sleep(1.0)
             term = f"{title} {artist}"
 
             async with httpx.AsyncClient() as client:
@@ -134,7 +129,6 @@ class MetadataManager:
 
                     track_data = data['results'][0]
 
-                    # iTunes expone portada en alta resolución cambiando el tamaño en la URL
                     artwork_url = track_data.get('artworkUrl100', '')
                     if artwork_url:
                         artwork_url = artwork_url.replace('100x100bb', '600x600bb')
@@ -149,7 +143,6 @@ class MetadataManager:
                         "track_count": track_data.get('trackCount'),
                         "genre": track_data.get('primaryGenreName'),
                         "release_date": track_data.get('releaseDate'),
-                        # Misma fecha bajo la clave que espera AudioProcessor._extract_original_release_date
                         "original_release_date": track_data.get('releaseDate'),
                         "artwork_url": artwork_url
                     }
@@ -194,7 +187,6 @@ class MetadataManager:
                 if logger_callback:
                     await logger_callback(f"📄 Plan C: usando '{title} - {artist}' extraído del nombre de archivo.")
 
-        # Plan D: sin importar el origen del título/artista, se busca portada y datos de álbum en iTunes
         if logger_callback: await logger_callback(f"🔍 Identificado como: {title} - {artist}. Buscando arte de alta calidad en iTunes...")
         itunes_res = await self.fetch_itunes_metadata(title, artist)
 
@@ -213,7 +205,6 @@ class MetadataManager:
                 if not metadata.get(k):
                     incomplete.append(f"Missing {k}")
 
-            # iTunes normalmente entrega album_artist por release; si no vino, usamos el artist de la pista
             if not metadata.get('album_artist'):
                 metadata['album_artist'] = metadata['artist']
 

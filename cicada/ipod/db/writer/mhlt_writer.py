@@ -34,7 +34,6 @@ def write_mhlt(tracks: list[TrackInfo], start_track_id: int, db_id_2: int,
         Tuple of (complete MHLT chunk bytes, next available track ID)
     """
 
-    # Build all track chunks first
     track_chunks = []
     track_id = start_track_id
 

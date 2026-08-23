@@ -78,14 +78,9 @@ def write_dynamic_itdb(
 
     cur.executescript(_DYNAMIC_SCHEMA)
 
-    # ── item_stats ─────────────────────────────────────────────────────
     for track in tracks:
         has_been_played = 1 if track.play_count > 0 else 0
 
-        # Una pista nunca reproducida/saltada no lleva fecha: date_played=0.
-        # Es la convención de iOpenPod/libgpod (el fixture lo confirma) y evita
-        # que el centinela "2001-01-01" se reconvierta y se desplace por la zona
-        # horaria (el formato de fechas ya nos mordió en 2a; ver §0.3).
         date_played = unix_to_coredata(track.last_played or 0) if has_been_played else 0
         date_skipped = (
             unix_to_coredata(track.last_skipped or 0) if track.skip_count > 0 else 0
@@ -112,8 +107,6 @@ def write_dynamic_itdb(
             )
         )
 
-    # ── container_ui ───────────────────────────────────────────────────
-    # One row per playlist PID (master + user + smart)
     for pid in (playlist_pids or []):
         cur.execute(
             "INSERT INTO container_ui (container_pid, play_order, is_reversed, "

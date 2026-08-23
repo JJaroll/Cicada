@@ -30,13 +30,10 @@ from .exceptions import CorruptHeaderError
 
 logger = logging.getLogger(__name__)
 
-# Recognized mhbd magic at file offset 0.
 _MHBD_MAGIC = b"mhbd"
 
-# Minimum length to contain the mhbd generic header (magic + header_len + total_len + compressed).
 _MIN_MHBD_HEADER = 16
 
-# iTunesCDB compressed-flag value (mhbd offset 0x0C).
 _COMPRESSED_DB_FLAG = 0x02
 
 
@@ -68,12 +65,8 @@ def decompress_itunescdb(data: bytes | bytearray) -> bytes | bytearray:
     try:
         decompressed = zlib.decompress(data[header_length:])
     except zlib.error:
-        return data  # not actually compressed — return as-is
+        return data
 
-    # Reconstruct: original (unmodified) header + decompressed children.
-    # Header's total_length (offset 8) and compression flag are preserved
-    # as-is.  MHBD children are parsed by child_count so the stale
-    # total_length is harmless.
     logger.debug("iTunesCDB decompressed: %d -> %d payload bytes",
                  len(data) - header_length, len(decompressed))
     return data[:header_length] + decompressed
@@ -122,7 +115,6 @@ def parse_itunesdb(
     if not data:
         raise CorruptHeaderError(0, "empty file")
 
-    # Transparently handle iTunesCDB (compressed database)
     data = decompress_itunescdb(data)
 
     reset_unknown_chunk_summary()

@@ -36,33 +36,25 @@ def library(mount):
     return load_ipod_library(str(mount / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mount))
 
 
-# --------------------------------------------------------------------------- #
-# Descompresión
-# --------------------------------------------------------------------------- #
 @skip_no_fixture
 def test_decompress_itunescdb():
     raw = CDB.read_bytes()
     out = decompress_itunescdb(raw)
-    assert out[:4] == b"mhbd"                 # header preservado
-    assert len(out) > len(raw)                # el cuerpo se infló
+    assert out[:4] == b"mhbd"
+    assert len(out) > len(raw)
     header_len = struct.unpack_from("<I", raw, 0x04)[0]
-    assert out[:header_len] == raw[:header_len]  # cabecera idéntica (en claro)
+    assert out[:header_len] == raw[:header_len]
 
 
-# --------------------------------------------------------------------------- #
-# Listado de tracks y playlists (aceptación #1)
-# --------------------------------------------------------------------------- #
 @skip_no_fixture
 def test_lista_25_tracks(library):
     tracks = library["mhlt"]
     assert len(tracks) == 25
-    # Strings inlined correctamente.
     t0 = tracks[0]
     assert t0["Title"] == "LoveDrug (Apple Music Live)"
     assert t0["Artist"] == "Lady Gaga"
     assert t0["Filetype"] == "MP3"
     assert t0["Location"].endswith("JPOM.mp3")
-    # Todos con título y artista no vacíos.
     assert all(t.get("Title") for t in tracks)
     assert all(t.get("Artist") for t in tracks)
 
@@ -71,48 +63,36 @@ def test_lista_25_tracks(library):
 def test_lista_3_playlists(library):
     pls = library["mhlp"]
     assert len(pls) == 3
-    # La master ("iPod") contiene los 25 tracks.
     master = next(p for p in pls if p.get("Title") == "iPod")
     assert len(master["items"]) == 25
-    # Las otras dos son playlists de usuario con items.
     otras = [p for p in pls if p.get("Title") != "iPod"]
     assert len(otras) == 2
     assert all(len(p["items"]) > 0 for p in otras)
 
 
-# --------------------------------------------------------------------------- #
-# Play Counts — análisis (Nano 7G, contra el supuesto del spec)
-# --------------------------------------------------------------------------- #
 @skip_no_fixture
 def test_play_counts_existe_con_25_entradas(mount):
     pc = parse_playcounts(str(mount / "iPod_Control" / "iTunes" / "Play Counts"))
     assert pc is not None
-    assert len(pc) == 25          # una por track — pese a ser Nano 7G
+    assert len(pc) == 25
 
 
 @skip_no_fixture
 def test_play_counts_sin_datos_reales(mount):
-    # Existe pero está "vacío": todos los contadores en cero / centinela.
     pc = parse_playcounts(str(mount / "iPod_Control" / "iTunes" / "Play Counts"))
     assert all(e.play_count == 0 for e in pc)
     assert all(e.skip_count == 0 for e in pc)
-    assert all(e.rating == -1 for e in pc)          # -1 = sin rating (centinela)
-    # last_played_mac es una fecha por defecto (2001-01-01) idéntica en todas.
+    assert all(e.rating == -1 for e in pc)
     assert len({e.last_played_mac for e in pc}) == 1
 
 
 @skip_no_fixture
 def test_play_counts_corresponde_con_tracks(library, mount):
     pc = parse_playcounts(str(mount / "iPod_Control" / "iTunes" / "Play Counts"))
-    # 1:1 con los tracks del iTunesCDB.
     assert len(pc) == len(library["mhlt"]) == 25
-    # El propio iTunesCDB tampoco trae reproducciones reales.
     assert all(t.get("play_count_1", 0) == 0 for t in library["mhlt"])
 
 
-# --------------------------------------------------------------------------- #
-# mount explícito + robustez
-# --------------------------------------------------------------------------- #
 @skip_no_fixture
 def test_mount_explicito_funciona(mount):
     data = load_ipod_library(

@@ -22,7 +22,6 @@ def parse_playlist(
     """Parse an MHYP (Playlist) chunk with MHOD + MHIP child groups."""
     mhyp = idb.read_fields(data, offset, "mhyp", header_length)
 
-    # MHODs come first, then MHIPs — parsed sequentially with shared offset.
     body_start = offset + header_length
     mhyp["mhod_children"], mhip_start = parse_children(
         data, body_start, mhyp["mhod_child_count"],

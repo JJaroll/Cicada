@@ -78,9 +78,6 @@ def mock_ipod(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     return mount
 
 
-#: dbid de 64 bits típico de random.getrandbits(64) — supera 2^53, el límite exacto
-#: de un JS Number. Sirve para probar que el backend NO depende de que el dbid
-#: llegue como int por JSON (el navegador lo redondearía); debe viajar como str.
 BIG_DBID = 9223372036854774808
 
 
@@ -179,7 +176,6 @@ async def test_api_plan_and_apply_flow(async_client: httpx.AsyncClient, mock_ipo
         },
     ]
 
-    # 1. Generar plan dry-run
     resp_plan = await async_client.post("/api/ipod/plan", json={"tracks": new_tracks})
     assert resp_plan.status_code == 200
     plan_data = resp_plan.json()
@@ -188,12 +184,10 @@ async def test_api_plan_and_apply_flow(async_client: httpx.AsyncClient, mock_ipo
     assert plan_data["consent_needed"] is True
     plan_id = plan_data["plan_id"]
 
-    # 2. Apply sin consent_ack falla con 403 Forbidden
     resp_apply_fail = await async_client.post("/api/ipod/apply", json={"plan_id": plan_id, "consent_ack": False})
     assert resp_apply_fail.status_code == 403
     assert resp_apply_fail.json()["detail"]["code"] == "CONSENT_REQUIRED"
 
-    # 3. Apply con consent_ack tiene éxito
     resp_apply_ok = await async_client.post("/api/ipod/apply", json={"tracks": new_tracks, "consent_ack": True})
     assert resp_apply_ok.status_code == 200
     apply_data = resp_apply_ok.json()
@@ -201,7 +195,6 @@ async def test_api_plan_and_apply_flow(async_client: httpx.AsyncClient, mock_ipo
     assert apply_data["tracks_written"] == 2
     assert apply_data["backup_path"] is not None
 
-    # 4. Verificar que /tracks ahora refleja las 2 pistas
     resp_tracks = await async_client.get("/api/ipod/tracks")
     assert resp_tracks.status_code == 200
     assert resp_tracks.json()["tracks_count"] == 2
@@ -211,11 +204,9 @@ async def test_api_plan_and_apply_flow(async_client: httpx.AsyncClient, mock_ipo
 async def test_api_plan_apply_preserva_playlists(
     async_client: httpx.AsyncClient, mock_ipod_with_playlist: Path
 ):
-    # Regresión: el botón "Sincronizar" (plan/apply crudo, sin tocar audio) NO debe
-    # borrar las playlists de usuario — antes create_plan() no recibía playlists=.
     resp_tracks = await async_client.get("/api/ipod/tracks")
     tracks = resp_tracks.json()["tracks"]
-    assert tracks[0]["db_track_id"] == str(BIG_DBID)   # viaja como string, sin perder precisión
+    assert tracks[0]["db_track_id"] == str(BIG_DBID)
 
     resp_apply = await async_client.post("/api/ipod/apply", json={"tracks": tracks, "consent_ack": True})
     assert resp_apply.status_code == 200
@@ -225,7 +216,7 @@ async def test_api_plan_apply_preserva_playlists(
     names = {p["title"] for p in resp_pl.json()["playlists"]}
     assert "Mi Playlist" in names
     pl = next(p for p in resp_pl.json()["playlists"] if p["title"] == "Mi Playlist")
-    assert len(pl["tracks"]) == 1   # su pista sigue ahí (no quedó vacía)
+    assert len(pl["tracks"]) == 1
 
 
 @pytest.mark.asyncio
@@ -241,7 +232,7 @@ async def test_api_track_remove(async_client: httpx.AsyncClient, mock_ipod_with_
 
     resp_pl = await async_client.get("/api/ipod/playlists")
     pl = next(p for p in resp_pl.json()["playlists"] if p["title"] == "Mi Playlist")
-    assert pl["tracks"] == []   # ya no referencia la pista borrada
+    assert pl["tracks"] == []
 
 
 @pytest.fixture
@@ -293,7 +284,6 @@ async def test_api_sync_playback(async_client: httpx.AsyncClient, mock_ipod_with
     assert state is not None
     assert state.known_rating == 80
 
-    # Segunda llamada: ya no hay cambios pendientes (línea base al día).
     resp2 = await async_client.post("/api/ipod/sync/playback")
     assert resp2.json()["tracks_changed"] == 0
 
@@ -306,7 +296,7 @@ async def test_api_sync_playback_dry_run_no_persiste(async_client: httpx.AsyncCl
 
     from cicada.ipod.sync.state import SyncStateDB, default_sync_db_path
     db = SyncStateDB(default_sync_db_path())
-    assert db.get_playback_state(GUID_STR, 777) is None   # no persistió
+    assert db.get_playback_state(GUID_STR, 777) is None
 
 
 @pytest.mark.asyncio
@@ -357,7 +347,6 @@ async def test_api_conflicts_vacio_sin_local_playback_state(
 async def test_api_conflicts_lista_conflicto_real_con_titulo(
     async_client: httpx.AsyncClient, mock_ipod_with_rating: Path
 ):
-    # mock_ipod_with_rating: dbid=777, device rating=80 (real, leído del Dynamic.itdb).
     await _seed_conflict(async_client, 777, known=50, local=20)
 
     resp = await async_client.get("/api/ipod/conflicts")
@@ -382,13 +371,12 @@ async def test_api_conflicts_resolve_local_gana(async_client: httpx.AsyncClient,
     assert resp.status_code == 200
     assert resp.json()["success"] is True
 
-    # El conflicto ya no aparece (baseline y local quedaron alineados).
     resp2 = await async_client.get("/api/ipod/conflicts")
     assert resp2.json()["count"] == 0
 
     resp_tracks = await async_client.get("/api/ipod/tracks")
     track = next(t for t in resp_tracks.json()["tracks"] if t["db_track_id"] == "777")
-    assert track["rating"] == 20   # el iPod ahora tiene el valor LOCAL
+    assert track["rating"] == 20
 
 
 @pytest.mark.asyncio
@@ -397,7 +385,6 @@ async def test_api_conflicts_resolve_device_gana_sin_consent(
 ):
     await _seed_conflict(async_client, 777, known=50, local=20)
 
-    # resolution="device" no escribe en el iPod -> no debería requerir consent_ack.
     resp = await async_client.post("/api/ipod/conflicts/resolve", json={
         "ipod_dbid": "777", "resolution": "device", "consent_ack": False,
     })
@@ -406,7 +393,7 @@ async def test_api_conflicts_resolve_device_gana_sin_consent(
 
     resp_tracks = await async_client.get("/api/ipod/tracks")
     track = next(t for t in resp_tracks.json()["tracks"] if t["db_track_id"] == "777")
-    assert track["rating"] == 80   # el iPod no cambió
+    assert track["rating"] == 80
 
 
 @pytest.mark.asyncio
@@ -469,7 +456,6 @@ async def test_api_apply_stale_plan_409(async_client: httpx.AsyncClient, mock_ip
     assert resp_plan.status_code == 200
     plan_id = resp_plan.json()["plan_id"]
 
-    # Mutar el disco para que el plan quede obsoleto
     (mock_ipod / "iPod_Control" / "iTunes" / "iTunesCDB").write_bytes(b"stale change")
 
     resp_apply = await async_client.post("/api/ipod/apply", json={"plan_id": plan_id, "consent_ack": True})
@@ -481,8 +467,6 @@ async def test_api_apply_stale_plan_409(async_client: httpx.AsyncClient, mock_ip
 async def test_api_playlists_returns_dbid_as_string(
     async_client: httpx.AsyncClient, mock_ipod_with_playlist: Path
 ):
-    # GET /playlists debe exponer el dbid como string (no como Number: un dbid de
-    # 64 bits pierde precisión al pasar por JSON->JS Number en el navegador real).
     resp = await async_client.get("/api/ipod/playlists")
     assert resp.status_code == 200
     pl = next(p for p in resp.json()["playlists"] if p["title"] == "Mi Playlist")
@@ -493,10 +477,6 @@ async def test_api_playlists_returns_dbid_as_string(
 async def test_api_playlist_set_agrega_sin_perder_pistas_grandes(
     async_client: httpx.AsyncClient, mock_ipod_with_playlist: Path, tmp_path: Path
 ):
-    # Regresión: al agregar una canción nueva a una playlist, la pista existente
-    # (con dbid > 2^53, como los que genera random.getrandbits(64) en producción)
-    # NO debe perderse. El dbid se envía como string, tal como lo hace ahora el
-    # frontend, para no perder precisión.
     src = tmp_path / "nueva.mp3"
     src.write_bytes(b"AUDIO" * 40)
 
@@ -515,27 +495,23 @@ async def test_api_playlist_set_agrega_sin_perder_pistas_grandes(
     resp2 = await async_client.get("/api/ipod/playlists")
     pl = next(p for p in resp2.json()["playlists"] if p["title"] == "Mi Playlist")
     titles = {t["title"] for t in pl["tracks"]}
-    assert titles == {"Existing Big", "Nueva"}   # la pista original NO se perdió
+    assert titles == {"Existing Big", "Nueva"}
 
 
 @pytest.mark.asyncio
 async def test_api_consent_endpoints(async_client: httpx.AsyncClient, mock_ipod: Path):
-    # GET inicial -> False
     resp = await async_client.get(f"/api/ipod/consent/{GUID_STR}")
     assert resp.status_code == 200
     assert resp.json()["has_consent"] is False
 
-    # POST -> Otorgar
     resp_grant = await async_client.post(f"/api/ipod/consent/{GUID_STR}")
     assert resp_grant.status_code == 200
     assert resp_grant.json()["has_consent"] is True
 
-    # GET -> True
     resp2 = await async_client.get(f"/api/ipod/consent/{GUID_STR}")
     assert resp2.status_code == 200
     assert resp2.json()["has_consent"] is True
 
-    # DELETE -> Revocar
     resp_rev = await async_client.delete(f"/api/ipod/consent/{GUID_STR}")
     assert resp_rev.status_code == 200
     assert resp_rev.json()["has_consent"] is False
@@ -543,28 +519,21 @@ async def test_api_consent_endpoints(async_client: httpx.AsyncClient, mock_ipod:
 
 @pytest.mark.asyncio
 async def test_api_backups_and_restore(async_client: httpx.AsyncClient, mock_ipod: Path):
-    # Crear backup manual
     resp_bkp = await async_client.post("/api/ipod/backup", json={"full": False})
     assert resp_bkp.status_code == 200
     bkp_data = resp_bkp.json()
     assert bkp_data["guid"] == GUID_STR
     archive_path = bkp_data["path"]
 
-    # Listar backups
     resp_list = await async_client.get("/api/ipod/backups")
     assert resp_list.status_code == 200
     assert len(resp_list.json()["backups"]) >= 1
 
-    # Restaurar backup
     resp_rest = await async_client.post("/api/ipod/restore", json={"archive_path": archive_path})
     assert resp_rest.status_code == 200
     assert resp_rest.json()["success"] is True
 
 
-# --------------------------------------------------------------------------- #
-# Endpoints de soporte de la UI: imagen de modelo, storage, y stubs de media /
-# playlists (deben ser HONESTOS: 501 para lo no implementado, no éxito falso).
-# --------------------------------------------------------------------------- #
 @pytest.mark.asyncio
 async def test_api_status_incluye_imagen_y_storage(async_client: httpx.AsyncClient, mock_ipod: Path):
     resp = await async_client.get("/api/ipod/status")
@@ -638,7 +607,6 @@ async def test_api_media_sync_copia_y_escribe(async_client: httpx.AsyncClient, m
     })
     assert resp.status_code == 200, resp.text
     assert resp.json()["success"] is True
-    # El audio se copió a Music/ y la base ahora incluye la pista nueva.
     assert list((mock_ipod / "iPod_Control" / "Music").rglob("*.mp3"))
     resp_tracks = await async_client.get("/api/ipod/tracks")
     titles = {t["title"] for t in resp_tracks.json()["tracks"]}

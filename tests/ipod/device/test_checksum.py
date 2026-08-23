@@ -20,7 +20,6 @@ FIXTURE_CDB = Path(__file__).resolve().parents[2] / "fixtures" / "nano7g-iopenpo
 
 
 def test_mapa_wire_hashab_es_4():
-    # HASHAB es enum 3 pero valor de wire 4 en el campo hashing_scheme.
     assert CHECKSUM_MHBD_SCHEME[ChecksumType.HASHAB] == 4
     assert MHBD_SCHEME_TO_CHECKSUM[4] is ChecksumType.HASHAB
     assert ChecksumType.HASHAB.value == 3
@@ -36,7 +35,6 @@ def test_mapa_wire_completo():
 
 
 def test_hashab_se_resuelve_por_family_gen_no_por_mhbd():
-    # La vía autoritativa para nuestro dispositivo: por capacidad.
     assert checksum_type_for_family_gen("iPod Nano", "7th Gen") is ChecksumType.HASHAB
 
 
@@ -48,8 +46,6 @@ def test_fixture_mhbd_0x30_no_basta_para_hashab():
     data = FIXTURE_CDB.read_bytes()
     scheme = struct.unpack_from("<H", data, 0x30)[0]
     assert scheme == 3
-    # 3 no es una clave del mapa wire -> no resuelve a HASHAB directamente.
     assert MHBD_SCHEME_TO_CHECKSUM.get(scheme) is not ChecksumType.HASHAB
     assert MHBD_SCHEME_TO_CHECKSUM.get(scheme) is None
-    # La firma HASHAB (57 bytes) sí vive en 0xAB del header.
     assert len(data) > 0xAB + 57

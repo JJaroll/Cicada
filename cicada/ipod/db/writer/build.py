@@ -56,7 +56,6 @@ def build_itunescdb(
     if not firewire_id or len(firewire_id) < 8:
         raise ValueError("firewire_id de 8+ bytes requerido para firmar")
 
-    # 1. Builder puro → iTunesDB descomprimido, bajo el contexto horario del device.
     ctx = time_context or DeviceTimeContext.utc()
     with use_device_time_context(ctx):
         raw = write_mhbd(
@@ -69,15 +68,13 @@ def build_itunescdb(
             master_playlist_name=master_playlist_name,
         )
 
-    # 2. Comprimir a iTunesCDB (§0.3).
     hdr_len = struct.unpack_from("<I", raw, 4)[0]
     payload = bytes(raw[hdr_len:])
-    compressed = zlib.compress(payload, 1)  # Z_BEST_SPEED — como libgpod/iTunes
+    compressed = zlib.compress(payload, 1)
     cdb = bytearray(raw[:hdr_len]) + bytearray(compressed)
-    struct.pack_into("<I", cdb, 8, len(cdb))     # total_length = tamaño comprimido
-    struct.pack_into("<H", cdb, 0xA8, 1)         # unk_0xA8 = 1 (payload comprimido)
+    struct.pack_into("<I", cdb, 8, len(cdb))
+    struct.pack_into("<H", cdb, 0xA8, 1)
 
-    # 3. Firmar SOBRE EL COMPRIMIDO.
     if checksum is ChecksumType.HASHAB:
         write_hashab(cdb, firewire_id)
     elif checksum is ChecksumType.HASH58:

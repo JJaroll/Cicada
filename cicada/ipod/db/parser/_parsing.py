@@ -22,10 +22,6 @@ from cicada.ipod.db.shared.field_base import GENERIC_HEADER_SIZE, GENERIC_HEADER
 
 from .exceptions import CorruptHeaderError, InsufficientDataError
 
-# ── Pre-compiled struct objects ──────────────────────────────────────
-# Used by callers (e.g. mhod_parser) that do inline struct reads.
-# The Shared defs module still uses ad-hoc struct.unpack calls; these
-# are for Parser-local code.
 
 UINT16_LE = struct.Struct("<H")
 UINT32_LE = struct.Struct("<I")

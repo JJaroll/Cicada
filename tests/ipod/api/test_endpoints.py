@@ -30,9 +30,6 @@ def ipod_mount(tmp_path, monkeypatch):
     return m
 
 
-# --------------------------------------------------------------------------- #
-# scan — 3 estados
-# --------------------------------------------------------------------------- #
 @skip_no_fixture
 def test_scan_ready(ipod_mount):
     r = api.scan_ipods()
@@ -53,7 +50,6 @@ def test_scan_no_device(monkeypatch):
 
 
 def test_scan_no_ipod_control(tmp_path, monkeypatch):
-    # Volumen que parece iPod (nombre) pero sin iPod_Control.
     vol = tmp_path / "IPOD"
     vol.mkdir()
     monkeypatch.setattr(wg, "_candidate_mounts", lambda: [vol])
@@ -63,9 +59,6 @@ def test_scan_no_ipod_control(tmp_path, monkeypatch):
     assert len(r["volumes_without_control"]) == 1
 
 
-# --------------------------------------------------------------------------- #
-# tracks / playlists (contrato canónico del router)
-# --------------------------------------------------------------------------- #
 @skip_no_fixture
 def test_tracks(ipod_mount):
     r = api.get_ipod_tracks()
@@ -87,7 +80,6 @@ def test_playlists(ipod_mount):
 
 
 def test_tracks_sin_ipod_lanza_error(monkeypatch):
-    # El router revalida el montaje con resolve_mount() -> 404 si no hay iPod.
     monkeypatch.setattr(wg, "_candidate_mounts", lambda: [])
     with pytest.raises(HTTPException) as exc:
         api.get_ipod_tracks()
@@ -96,10 +88,9 @@ def test_tracks_sin_ipod_lanza_error(monkeypatch):
 
 @skip_no_fixture
 def test_lectura_revalida_montaje(ipod_mount):
-    # Si el iPod se desmonta entre el scan y la lectura -> error (revalidación).
     scan = api.scan_ipods()
     assert scan["state"] == "ready"
-    shutil.rmtree(ipod_mount)                       # se desmonta
+    shutil.rmtree(ipod_mount)
     with pytest.raises(HTTPException) as exc:
         api.get_ipod_tracks()
     assert exc.value.status_code == 404

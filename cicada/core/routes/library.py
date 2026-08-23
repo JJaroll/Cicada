@@ -106,7 +106,7 @@ async def show_in_folder(request: TrackActionRequest):
             subprocess.run(['open', '-R', path])
         elif sys_plat == 'Windows':
             subprocess.run(['explorer', '/select,', path])
-        else: # Linux
+        else:
             subprocess.run(['dbus-send', '--session', '--dest=org.freedesktop.FileManager1', '--type=method_call', '--print-reply', '/org/freedesktop/FileManager1', 'org.freedesktop.FileManager1.ShowItems', f'array:string:"file://{path}"', 'string:""'])
         return {"message": "Carpeta abierta"}
     except Exception as e:
@@ -143,7 +143,7 @@ async def update_track_info(request: TrackInfoUpdateRequest):
     import os
     if not os.path.exists(request.path):
         raise HTTPException(status_code=404, detail="El archivo original no existe.")
-    
+
     config = load_app_config()
     library_dir = config.get("library_dir")
     if not library_dir:

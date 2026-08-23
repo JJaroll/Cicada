@@ -80,7 +80,6 @@ def write_mhia(album_id: int, album_name: str, album_artist: str,
     Returns:
         Complete MHIA chunk with MHODs
     """
-    # Build child MHODs
     children = bytearray()
     child_count = 0
 
@@ -114,14 +113,11 @@ def write_mhia(album_id: int, album_name: str, album_artist: str,
             write_mhod_string(MHOD_TYPE_ALBUM_SHOW, show_name),
         )
 
-    # Total chunk length
     total_length = MHIA_HEADER_SIZE + len(children)
 
-    # Build header
     header = bytearray(MHIA_HEADER_SIZE)
     write_generic_header(header, 0, b'mhia', MHIA_HEADER_SIZE, total_length)
 
-    # CRITICAL: sql_id must be non-zero! Clean iTunes DBs have random u64 values here.
     sql_id = random.getrandbits(64)
     write_fields(header, 0, 'mhia', {
         'child_count': child_count,
@@ -158,9 +154,8 @@ def write_mhla(
     """
     groups = group_tracks_by_album_identity(tracks, album_identity_from_track)
 
-    # Build album items
     album_items = bytearray()
-    album_map: dict[tuple[str, str], int] = {}  # (album, artist) -> album_id
+    album_map: dict[tuple[str, str], int] = {}
 
     def _album_sort_key(group):
         identity = group.identity
@@ -175,15 +170,12 @@ def write_mhla(
         album_name = identity.album or ""
         album_artist = identity.album_artist or identity.artist or ""
         album_map[(album_name, album_artist)] = album_id
-        # Use sort_albumartist from track first, fall back to sort_artist (per libgpod mk_mhia)
         sort_artist = _pick_first(group.tracks, "sort_album_artist")
         if not sort_artist:
             sort_artist = _pick_first(group.tracks, "sort_artist")
         podcast_url = _pick_first(group.tracks, "podcast_rss_url")
         show_name = identity.show_name or _pick_first(group.tracks, "show_name")
-        # Album is a compilation if any track in it has compilation_flag=True
         is_compilation = any(t.compilation_flag for t in group.tracks)
-        # Use first track's db_track_id as the representative track for this album
         rep_db_track_id = group.tracks[0].db_track_id if group.tracks else 0
         for track in group.tracks:
             track.album_id = album_id

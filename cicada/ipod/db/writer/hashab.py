@@ -57,13 +57,11 @@ from cicada.ipod.db.shared.mhbd_defs import (
 logger = logging.getLogger(__name__)
 
 HASHAB_SIZE = 57
-ITDB_CHECKSUM_HASHAB = 4     # hashing_scheme value for HASHAB
+ITDB_CHECKSUM_HASHAB = 4
 
-# Path to the WASM module (shipped alongside this file)
 _WASM_DIR = Path(__file__).parent / "wasm"
 _WASM_PATH = _WASM_DIR / "calcHashAB.wasm"
 
-# Lazy-loaded WASM engine (expensive to create — reuse across calls)
 _wasm_instance = None
 _wasm_store = None
 
@@ -128,35 +126,27 @@ def compute_hashab(sha1_digest: bytes, uuid: bytes) -> bytes:
 
     store, instance = _get_wasm_instance()
 
-    # Get exported functions and memory
-    # wasmtime stubs type exports() return as a union; runtime types are correct
-    exports = instance.exports(store)  # type: ignore[arg-type]
+    exports = instance.exports(store)
     memory = exports["memory"]
     get_input_sha1 = exports["getInputSha1"]
     get_input_uuid = exports["getInputUuid"]
     get_output = exports["getOutput"]
     calculate_hash = exports["calculateHash"]
 
-    # Get pointers into WASM linear memory
-    sha1_ptr = get_input_sha1(store)  # type: ignore[misc]
-    uuid_ptr = get_input_uuid(store)  # type: ignore[misc]
-    output_ptr = get_output(store)  # type: ignore[misc]
+    sha1_ptr = get_input_sha1(store)
+    uuid_ptr = get_input_uuid(store)
+    output_ptr = get_output(store)
 
-    # Write inputs into WASM memory
-    mem_data = memory.data_ptr(store)  # type: ignore[union-attr]
+    mem_data = memory.data_ptr(store)
 
-    # Write SHA1 (20 bytes)
     for i in range(20):
         mem_data[sha1_ptr + i] = sha1_digest[i]
 
-    # Write UUID (8 bytes)
     for i in range(8):
         mem_data[uuid_ptr + i] = uuid[i]
 
-    # Execute the hash computation
-    calculate_hash(store)  # type: ignore[misc]
+    calculate_hash(store)
 
-    # Read 57-byte output
     result = bytes(mem_data[output_ptr + i] for i in range(HASHAB_SIZE))
 
     logger.debug("HASHAB computed: %s…", result[:4].hex())
@@ -207,7 +197,7 @@ def write_hashab(itdb_data: bytearray, firewire_id: bytes) -> None:
     Raises:
         ValueError: If iTunesDB is too small or FireWire ID is invalid
     """
-    min_size = OFFSET_HASHAB + HASHAB_SIZE  # 0xAB + 57 = 0xE4 = 228
+    min_size = OFFSET_HASHAB + HASHAB_SIZE
     if len(itdb_data) < min_size:
         raise ValueError(
             f"iTunesDB file too small ({len(itdb_data)} bytes), "
@@ -222,18 +212,14 @@ def write_hashab(itdb_data: bytearray, firewire_id: bytes) -> None:
             f"FireWire ID must be at least 8 bytes, got {len(firewire_id)}"
         )
 
-    # Backup fields that will be zeroed for SHA1 computation
     backup_db_id = bytes(itdb_data[OFFSET_DB_ID:OFFSET_DB_ID + 8])
     backup_unk32 = bytes(itdb_data[OFFSET_UNK_0x32:OFFSET_UNK_0x32 + 20])
 
-    # Set hashing scheme to HASHAB (4)
     itdb_data[OFFSET_HASHING_SCHEME:OFFSET_HASHING_SCHEME + 2] = \
         ITDB_CHECKSUM_HASHAB.to_bytes(2, 'little')
 
-    # Compute SHA1 with hash fields zeroed
     sha1_digest = _compute_itunesdb_sha1_for_hashab(itdb_data)
 
-    # Compute HASHAB via WASM
     signature = compute_hashab(sha1_digest, firewire_id[:8])
 
     if len(signature) != HASHAB_SIZE:
@@ -241,10 +227,8 @@ def write_hashab(itdb_data: bytearray, firewire_id: bytes) -> None:
             f"WASM returned {len(signature)} bytes, expected {HASHAB_SIZE}"
         )
 
-    # Write signature to mhbd header
     itdb_data[OFFSET_HASHAB:OFFSET_HASHAB + HASHAB_SIZE] = signature
 
-    # Restore backed-up fields
     itdb_data[OFFSET_DB_ID:OFFSET_DB_ID + 8] = backup_db_id
     itdb_data[OFFSET_UNK_0x32:OFFSET_UNK_0x32 + 20] = backup_unk32
 
@@ -252,7 +236,7 @@ def write_hashab(itdb_data: bytearray, firewire_id: bytes) -> None:
                 OFFSET_HASHAB, HASHAB_SIZE)
 
 
-from ._firewire import read_firewire_id  # noqa: E402  (re-exportado, compat)
+from ._firewire import read_firewire_id
 
 if __name__ == "__main__":
     import sys

@@ -8,7 +8,7 @@ NOTE: This chunk shares the ``mhii`` magic with ArtworkDB image items,
 but in the iTunesDB context it represents an artist record.
 """
 
-from __future__ import annotations  # noqa: I001
+from __future__ import annotations
 
 import cicada.ipod.db.shared as idb
 

@@ -21,12 +21,6 @@ class ChecksumType(IntEnum):
     UNKNOWN = 99
 
 
-# ── MHBD hashing scheme ↔ ChecksumType mapping ──────────────────────────
-#
-# The mhbd header at offset 0x30 stores a 16-bit ``hashing_scheme`` value.
-# These constants map between our ``ChecksumType`` enum and the raw wire
-# values.  Note: HASHAB is enum 3 but wire 4.
-
 CHECKSUM_MHBD_SCHEME: dict[ChecksumType, int] = {
     ChecksumType.NONE: 0,
     ChecksumType.HASH58: 1,

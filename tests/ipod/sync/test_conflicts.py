@@ -67,8 +67,6 @@ def sync_db(tmp_path: Path) -> SyncStateDB:
 
 
 def test_sin_baseline_no_es_conflicto(mock_ipod_dynamic: Path, sync_db: SyncStateDB):
-    # local diverge, pero no hay known_rating (primer sync) -> se ignora,
-    # no hay "cambio desde el último sync" que evaluar.
     sync_db.upsert_local_playback_state(LocalPlaybackStateRecord(guid=GUID, ipod_dbid=101, local_rating=40))
     result = scan_for_conflicts(mock_ipod_dynamic, sync_db, GUID)
     assert result.conflicts == []
@@ -76,7 +74,6 @@ def test_sin_baseline_no_es_conflicto(mock_ipod_dynamic: Path, sync_db: SyncStat
 
 
 def test_local_sin_cambios_no_es_nada(mock_ipod_dynamic: Path, sync_db: SyncStateDB):
-    # local == known: el usuario no tocó nada localmente.
     sync_db.upsert_playback_state(PlaybackStateRecord(guid=GUID, ipod_dbid=101, known_rating=80))
     sync_db.upsert_local_playback_state(LocalPlaybackStateRecord(guid=GUID, ipod_dbid=101, local_rating=80))
     result = scan_for_conflicts(mock_ipod_dynamic, sync_db, GUID)
@@ -85,10 +82,7 @@ def test_local_sin_cambios_no_es_nada(mock_ipod_dynamic: Path, sync_db: SyncStat
 
 
 def test_solo_local_cambio_es_pending_push(mock_ipod_dynamic: Path, sync_db: SyncStateDB):
-    # known=50 (baseline), device sigue en 80 (== baseline original del device,
-    # simulemos que el device nunca cambió: known coincide con lo leído).
     sync_db.upsert_playback_state(PlaybackStateRecord(guid=GUID, ipod_dbid=101, known_rating=80))
-    # El usuario calificó distinto en Cicada.
     sync_db.upsert_local_playback_state(LocalPlaybackStateRecord(guid=GUID, ipod_dbid=101, local_rating=40))
 
     result = scan_for_conflicts(mock_ipod_dynamic, sync_db, GUID)
@@ -104,7 +98,6 @@ def test_solo_local_cambio_es_pending_push(mock_ipod_dynamic: Path, sync_db: Syn
 def test_ambos_cambiaron_al_mismo_valor_es_pending_push_no_conflicto(
     mock_ipod_dynamic: Path, sync_db: SyncStateDB
 ):
-    # known=50, device (leído)=80, local=80 -> coinciden entre sí, no hay desacuerdo.
     sync_db.upsert_playback_state(PlaybackStateRecord(guid=GUID, ipod_dbid=101, known_rating=50))
     sync_db.upsert_local_playback_state(LocalPlaybackStateRecord(guid=GUID, ipod_dbid=101, local_rating=80))
 
@@ -114,7 +107,6 @@ def test_ambos_cambiaron_al_mismo_valor_es_pending_push_no_conflicto(
 
 
 def test_conflicto_real_ambos_cambiaron_y_difieren(mock_ipod_dynamic: Path, sync_db: SyncStateDB):
-    # known=50, device (leído)=80, local=20 -> los tres distintos: conflicto real.
     sync_db.upsert_playback_state(PlaybackStateRecord(guid=GUID, ipod_dbid=101, known_rating=50))
     sync_db.upsert_local_playback_state(LocalPlaybackStateRecord(guid=GUID, ipod_dbid=101, local_rating=20))
 
@@ -131,7 +123,6 @@ def test_conflicto_real_ambos_cambiaron_y_difieren(mock_ipod_dynamic: Path, sync
 
 
 def test_scan_clasifica_varias_pistas_independientemente(mock_ipod_dynamic: Path, sync_db: SyncStateDB):
-    # 101: conflicto real. 103: solo local cambió (device sigue en su known).
     sync_db.upsert_playback_state(PlaybackStateRecord(guid=GUID, ipod_dbid=101, known_rating=50))
     sync_db.upsert_local_playback_state(LocalPlaybackStateRecord(guid=GUID, ipod_dbid=101, local_rating=20))
 
@@ -144,8 +135,6 @@ def test_scan_clasifica_varias_pistas_independientemente(mock_ipod_dynamic: Path
 
 
 def test_pista_ausente_del_device_usa_known_como_device_rating(sync_db: SyncStateDB, tmp_path: Path):
-    # Si la pista ya no está en el iPod (p.ej. se borró), no debe crashear:
-    # se trata como si el device no hubiera cambiado (known_rating).
     empty_mount = tmp_path / "empty_mount"
     (empty_mount / "iPod_Control" / "iTunes" / "iTunes Library.itlp").mkdir(parents=True)
 
@@ -154,13 +143,9 @@ def test_pista_ausente_del_device_usa_known_como_device_rating(sync_db: SyncStat
 
     result = scan_for_conflicts(empty_mount, sync_db, GUID)
     assert result.conflicts == []
-    assert len(result.pending_local_pushes) == 1   # tratado como "solo local cambió"
+    assert len(result.pending_local_pushes) == 1
 
 
-# --------------------------------------------------------------------------- #
-# resolve_conflicts — escribe al iPod real (vía push_ratings_to_ipod) y
-# alinea playback_state + local_playback_state. Requiere wasmtime (HASHAB).
-# --------------------------------------------------------------------------- #
 @pytest.fixture
 def real_ipod_two_tracks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     wasmtime = pytest.importorskip("wasmtime", reason="wasmtime no instalado")
@@ -214,12 +199,10 @@ def test_resolve_conflicts_local_gana_escribe_al_ipod(real_ipod_two_tracks, tmp_
     res = resolve_conflicts(mount, sync_db, [conflict], "local", device_info=dev, consent_ack=True)
     assert res.success is True
 
-    # El iPod ahora tiene el rating LOCAL (20), no el que tenía antes (80).
     lib = load_ipod_library(str(mount / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mount))
     track = next(t for t in lib["mhlt"] if t.get("db_track_id") == 101)
     assert track.get("rating") == 20
 
-    # Ambas tablas locales quedan alineadas al valor ganador.
     assert sync_db.get_playback_state(GUID, 101).known_rating == 20
     assert sync_db.get_local_playback_state(GUID, 101).local_rating == 20
 
@@ -233,13 +216,12 @@ def test_resolve_conflicts_device_gana_no_escribe_al_ipod(real_ipod_two_tracks, 
 
     conflict = RatingConflict(guid=GUID, ipod_dbid=101, local_path=None,
                               known_rating=50, local_rating=20, device_rating=80)
-    # SIN consent_ack: si "device" intentara escribir, esto fallaría. No falla -> no escribió.
     res = resolve_conflicts(mount, sync_db, [conflict], "device", device_info=dev, consent_ack=False)
     assert res.success is True
 
     lib = load_ipod_library(str(mount / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mount))
     track = next(t for t in lib["mhlt"] if t.get("db_track_id") == 101)
-    assert track.get("rating") == 80   # el iPod no cambió (ya tenía ese valor)
+    assert track.get("rating") == 80
 
     assert sync_db.get_playback_state(GUID, 101).known_rating == 80
     assert sync_db.get_local_playback_state(GUID, 101).local_rating == 80
@@ -259,7 +241,7 @@ def test_resolve_conflicts_batch_una_sola_escritura(real_ipod_two_tracks, tmp_pa
     ]
     res = resolve_conflicts(mount, sync_db, conflicts, "local", device_info=dev, consent_ack=True)
     assert res.success is True
-    assert res.tracks_written == 2   # una sola escritura para ambas pistas, no dos
+    assert res.tracks_written == 2
 
     lib = load_ipod_library(str(mount / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mount))
     ratings = {t.get("db_track_id"): t.get("rating") for t in lib["mhlt"]}

@@ -22,11 +22,10 @@ __all__ = ["FamilyEntry", "FAMILY_IDS", "lookup_family_id"]
 class FamilyEntry:
     family: str
     generation: str
-    verified: bool     # True = confirmado contra un iPod real
-    source: str        # procedencia de la entrada
+    verified: bool
+    source: str
 
 
-#: FamilyID (entero de SysInfoExtended) → identidad del modelo.
 FAMILY_IDS: dict[int, FamilyEntry] = {
     18: FamilyEntry(
         family="iPod Nano",

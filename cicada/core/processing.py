@@ -55,7 +55,6 @@ async def process_library(input_dir: str, output_dir: str):
     total_files = len(files_to_process)
     await manager.broadcast(json.dumps({"type": "info", "message": f"Se encontraron {total_files} archivos."}))
 
-    # --- MEMORIA DE ESTADO ---
     state_file = output_path / ".cicada_state.json"
     processed_files = set()
     if state_file.exists():
@@ -87,7 +86,6 @@ async def process_library(input_dir: str, output_dir: str):
 
         current = idx + 1
 
-        # Saltar archivos ya procesados con éxito en ejecuciones anteriores
         if str(file_path) in processed_files:
             await manager.broadcast(json.dumps({
                 "type": "progress",
@@ -104,7 +102,6 @@ async def process_library(input_dir: str, output_dir: str):
         eta_str = "Calculando ETA..."
         if session_processed_count > 1:
             avg_time = elapsed / (session_processed_count - 1)
-            # Considerar los archivos restantes independientemente de los saltados
             rem_time = avg_time * (total_files - current + 1)
             m, s = divmod(int(rem_time), 60)
             eta_str = f"ETA: {m}m {s}s"
@@ -161,7 +158,6 @@ async def process_library(input_dir: str, output_dir: str):
                 "error": f"Error applying tags / moving: {str(e)}"
             })
 
-        # --- RETRASO INTENCIONAL ---
         if current < total_files:
             await log_callback("⏳ Esperando 3 segundos entre canciones (Programación defensiva)...")
             await asyncio.sleep(3)

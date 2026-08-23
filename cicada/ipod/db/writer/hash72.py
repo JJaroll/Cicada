@@ -31,12 +31,10 @@ import hashlib
 import os
 from pathlib import Path
 
-# Cicada: metadata_write (sesión de escritura a Device/) NO se vendoriza. Solo lo
-# usa la vía de escritura directa de hash72, que Cicada no llama. Import perezoso.
-try:  # pragma: no cover - vía de escritura directa no usada por Cicada
+try:
     from iopenpod.device.metadata_write import guarded_device_metadata_session
 except ImportError:
-    guarded_device_metadata_session = None  # type: ignore[assignment]
+    guarded_device_metadata_session = None
 from cicada.ipod.db.shared.mhbd_defs import (
     MHBD_OFFSET_DB_ID as OFFSET_DB_ID,
 )
@@ -50,16 +48,13 @@ from cicada.ipod.db.shared.mhbd_defs import (
     MHBD_OFFSET_HASHING_SCHEME as OFFSET_HASHING_SCHEME,
 )
 
-# AES-128 key (from libgpod itdb_hash72.c line 40)
 AES_KEY = bytes([
     0x61, 0x8c, 0xa1, 0x0d, 0xc7, 0xf5, 0x7f, 0xd3,
     0xb4, 0x72, 0x3e, 0x08, 0x15, 0x74, 0x63, 0xd7
 ])
 
-# Hash scheme identifier for HASH72
 ITDB_CHECKSUM_HASH72 = 2
 
-# HashInfo file structure
 HASHINFO_HEADER = b"HASHv0"
 HASHINFO_HEADER_LEN = 6
 HASHINFO_UUID_LEN = 20
@@ -97,7 +92,6 @@ def read_hash_info(ipod_path: str) -> HashInfo | None:
     Returns:
         HashInfo object or None if file doesn't exist
     """
-    # Check centralized device_info store first
     try:
         from iopenpod.device import get_current_device_for_path
         dev = get_current_device_for_path(ipod_path)
@@ -106,7 +100,6 @@ def read_hash_info(ipod_path: str) -> HashInfo | None:
     except Exception:
         pass
 
-    # Fallback: read from disk
     path = _get_hash_info_path(ipod_path)
 
     if not os.path.exists(path):
@@ -121,7 +114,6 @@ def read_hash_info(ipod_path: str) -> HashInfo | None:
     if data[:6] != HASHINFO_HEADER:
         return None
 
-    # Parse structure
     uuid = data[6:26]
     rndpart = data[26:38]
     iv = data[38:54]
@@ -183,11 +175,8 @@ def _compute_itunesdb_sha1(itdb_data: bytearray) -> bytes:
     libgpod backs it up and restores it, but since it's never zeroed,
     we don't need to do anything with it.
     """
-    # Work on a copy to avoid modifying original
     data = bytearray(itdb_data)
 
-    # Zero fields for hash computation (same as libgpod)
-    # hash58 lives at offset 0x58 (20 bytes), hash72 at 0x72 (46 bytes)
     data[OFFSET_DB_ID:OFFSET_DB_ID + 8] = b'\x00' * 8
     data[OFFSET_HASH58:OFFSET_HASH58 + 20] = b'\x00' * 20
     data[OFFSET_HASH72:OFFSET_HASH72 + 46] = b'\x00' * 46
@@ -216,21 +205,18 @@ def _hash_generate(sha1: bytes, iv: bytes, rndpart: bytes) -> bytes:
         from Crypto.Cipher import AES
     except ImportError:
         try:
-            from Cryptodome.Cipher import AES  # type: ignore[import-not-found]
+            from Cryptodome.Cipher import AES
         except ImportError as err:
             raise ImportError(
                 "PyCryptodome is required for HASH72. "
                 "Install with: pip install pycryptodome"
             ) from err
 
-    # Plaintext: sha1 (20 bytes) + rndpart (12 bytes) = 32 bytes
     plaintext = sha1 + rndpart
 
-    # AES-CBC encrypt
     cipher = AES.new(AES_KEY, AES.MODE_CBC, iv)
     encrypted = cipher.encrypt(plaintext)
 
-    # Build signature
     signature = bytearray(46)
     signature[0] = 0x01
     signature[1] = 0x00
@@ -277,7 +263,7 @@ def _hash_extract(signature: bytes, sha1: bytes) -> tuple | None:
         from Crypto.Cipher import AES
     except ImportError:
         try:
-            from Cryptodome.Cipher import AES  # type: ignore[import-not-found]
+            from Cryptodome.Cipher import AES
         except ImportError as err:
             raise ImportError(
                 "PyCryptodome is required for HASH72. "
@@ -287,27 +273,20 @@ def _hash_extract(signature: bytes, sha1: bytes) -> tuple | None:
     if len(signature) < 46 or signature[0] != 0x01 or signature[1] != 0x00:
         return None
 
-    # Build plaintext = sha1 + rndpart (matches libgpod)
     rndpart = signature[2:14]
     plaintext = bytearray(32)
     plaintext[:20] = sha1
     plaintext[20:32] = rndpart
 
-    # Initialize output as copy of plaintext (matches libgpod: memcpy(output, plaintext, 32))
     output = bytearray(plaintext)
 
-    # AES-CBC decrypt first 16 bytes only, using sha1[:16] as IV
-    # This recovers the real IV through the XOR cancellation described above
     cipher = AES.new(AES_KEY, AES.MODE_CBC, bytes(plaintext[:16]))
     decrypted_block = cipher.decrypt(bytes(signature[14:30]))
     output[:16] = decrypted_block
 
-    # Sanity check from libgpod - always passes since output[16:32] was
-    # copied from plaintext[16:32] and never modified
     if bytes(plaintext[16:32]) != bytes(output[16:32]):
         return None
 
-    # The IV is now in output[:16]
     iv = bytes(output[:16])
 
     return (iv, bytes(rndpart))
@@ -333,26 +312,20 @@ def extract_hash_info(ipod_path: str, valid_itdb_data: bytes) -> bool:
     if valid_itdb_data[:4] != b'mhbd':
         return False
 
-    # Get existing hash72 from CORRECT offset (0x72)
     hash72 = bytes(valid_itdb_data[OFFSET_HASH72:OFFSET_HASH72 + 46])
 
-    # Check for valid signature marker
     if hash72[0:2] != bytes([0x01, 0x00]):
-        # Not a valid hash72 signature
         return False
 
-    # Compute SHA1
     itdb_copy = bytearray(valid_itdb_data)
     sha1 = _compute_itunesdb_sha1(itdb_copy)
 
-    # Extract IV and rndpart
     result = _hash_extract(hash72, sha1)
     if result is None:
         return False
 
     iv, rndpart = result
 
-    # Get UUID from device (or use zeros if not available)
     try:
         from ._firewire import read_firewire_id
         fw_id = read_firewire_id(ipod_path)
@@ -382,18 +355,14 @@ def extract_hash_info_to_dict(valid_itdb_data: bytes) -> dict | None:
     if valid_itdb_data[:4] != b'mhbd':
         return None
 
-    # Get existing hash72 from CORRECT offset (0x72)
     hash72 = bytes(valid_itdb_data[OFFSET_HASH72:OFFSET_HASH72 + 46])
 
-    # Check for valid signature marker
     if hash72[0:2] != bytes([0x01, 0x00]):
         return None
 
-    # Compute SHA1
     itdb_copy = bytearray(valid_itdb_data)
     sha1 = _compute_itunesdb_sha1(itdb_copy)
 
-    # Extract IV and rndpart
     result = _hash_extract(hash72, sha1)
     if result is None:
         return None
@@ -446,11 +415,9 @@ def write_hash72(itdb_data: bytearray, ipod_path: str) -> None:
     if itdb_data[:4] != b'mhbd':
         raise ValueError("Invalid iTunesDB: expected 'mhbd' header")
 
-    # Set hashing scheme
     itdb_data[OFFSET_HASHING_SCHEME:OFFSET_HASHING_SCHEME + 2] = \
         ITDB_CHECKSUM_HASH72.to_bytes(2, 'little')
 
-    # Compute and write signature
     signature = compute_hash72(ipod_path, bytes(itdb_data))
     itdb_data[OFFSET_HASH72:OFFSET_HASH72 + 46] = signature
 
@@ -467,7 +434,6 @@ if __name__ == "__main__":
     itunesdb_path = sys.argv[2]
 
     try:
-        # Check for HashInfo
         hash_info = read_hash_info(ipod_path)
         if hash_info:
             print(f"HashInfo found: IV={hash_info.iv.hex()[:16]}...")
@@ -489,10 +455,6 @@ if __name__ == "__main__":
         write_hash72(itdb_data, ipod_path)
         print("Hash computed successfully!")
 
-        # Write back (uncomment to actually write)
-        # with open(itunesdb_path, 'wb') as f:
-        #     f.write(itdb_data)
-        # print("iTunesDB updated!")
 
     except Exception as e:
         print(f"Error: {e}")

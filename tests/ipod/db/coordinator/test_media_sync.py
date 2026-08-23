@@ -71,8 +71,7 @@ def test_update_ipod_playlist_reordena(tmp_path, monkeypatch):
     pl = next(p for p in lib["mhlp"] if p.get("Title") == "PL")
     tid2db = {t.get("track_id"): t.get("db_track_id") for t in lib["mhlt"]}
     order = [tid2db.get(it.get("track_id")) for it in pl.get("items", [])]
-    assert order == [200, 100]   # nuevo orden persistido
-    # las 2 pistas siguen existiendo
+    assert order == [200, 100]
     assert {t.get("Title") for t in lib["mhlt"]} == {"A", "B"}
 
 
@@ -95,7 +94,6 @@ def test_set_ipod_playlist_agrega_y_reordena(tmp_path, monkeypatch):
     res = set_ipod_playlist(mount, "PL", items, device_info=dev, consent_ack=True)
     assert res.success is True
 
-    # El audio nuevo se copió.
     assert any(p.read_bytes() == src.read_bytes()
                for p in (mount / "iPod_Control" / "Music").rglob("*.mp3"))
 
@@ -105,7 +103,7 @@ def test_set_ipod_playlist_agrega_y_reordena(tmp_path, monkeypatch):
     order = [tid2db.get(it.get("track_id")) for it in pl.get("items", [])]
     title_by_db = {t.get("db_track_id"): t.get("Title") for t in lib["mhlt"]}
     ordered_titles = [title_by_db.get(db) for db in order]
-    assert ordered_titles == ["B", "Added", "A"]   # orden y pista nueva persistidos
+    assert ordered_titles == ["B", "Added", "A"]
 
 
 def test_push_ratings_to_ipod_actualiza_una_pista(ipod_with_db):
@@ -118,7 +116,6 @@ def test_push_ratings_to_ipod_actualiza_una_pista(ipod_with_db):
     lib = load_ipod_library(str(mount / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mount))
     track = next(t for t in lib["mhlt"] if t.get("db_track_id") == 100)
     assert track.get("rating") == 60
-    # La playlist existente se preservó (no es lo que estamos tocando aquí).
     assert any(p.get("Title") == "Mi Playlist" for p in lib["mhlp"])
 
 
@@ -149,7 +146,6 @@ def test_push_ratings_to_ipod_dbid_inexistente_falla(ipod_with_db):
 def test_push_ratings_to_ipod_ignora_dbid_ausente_si_hay_otro_valido(ipod_with_db):
     from cicada.ipod.db.coordinator.media import push_ratings_to_ipod
     mount, dev = ipod_with_db
-    # 100 existe, 999999 no -> no debe fallar, solo aplica lo que existe.
     res = push_ratings_to_ipod(mount, {100: 60, 999999: 80}, device_info=dev, consent_ack=True)
     assert res.success is True
     lib = load_ipod_library(str(mount / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mount))
@@ -181,17 +177,16 @@ def test_remove_track_from_ipod_borra_pista_audio_y_referencias(tmp_path, monkey
     res = remove_track_from_ipod(mount, 100, device_info=dev, consent_ack=True)
     assert res.success is True
 
-    # El audio de la pista borrada ya no está; el de la otra sigue.
     assert not (music_dir / "A.mp3").exists()
     assert (music_dir / "B.mp3").exists()
 
     lib = load_ipod_library(str(mount / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mount))
-    assert {t.get("Title") for t in lib["mhlt"]} == {"B"}   # A ya no está en la base
+    assert {t.get("Title") for t in lib["mhlt"]} == {"B"}
 
     pl = next(p for p in lib["mhlp"] if p.get("Title") == "PL")
     tid2db = {t.get("track_id"): t.get("db_track_id") for t in lib["mhlt"]}
     remaining = [tid2db.get(it.get("track_id")) for it in pl.get("items", [])]
-    assert remaining == [200]   # la playlist ya no referencia la pista borrada
+    assert remaining == [200]
 
 
 def test_remove_track_from_ipod_inexistente_falla(ipod_with_db):
@@ -202,8 +197,6 @@ def test_remove_track_from_ipod_inexistente_falla(ipod_with_db):
 
 
 def test_plan_sin_playlists_param_preserva_via_preserve_existing_playlists(ipod_with_db):
-    # Regresión: /plan y /apply (usados por el botón "Sincronizar" crudo) escribían
-    # la base sin pasar playlists a create_plan, borrando todas las de usuario.
     from cicada.ipod.db.coordinator.media import preserve_existing_playlists
     mount, dev = ipod_with_db
     regular, smart = preserve_existing_playlists(mount)
@@ -221,11 +214,9 @@ def test_sync_media_copia_audio_y_escribe_db(ipod_with_db):
     res = sync_media_to_ipod(mount, [new], device_info=dev, consent_ack=True)
     assert res.success is True
 
-    # El audio se copió a Music/Fxx/.
     copied = list((mount / "iPod_Control" / "Music").rglob("*.mp3"))
     assert any(p.read_bytes() == src.read_bytes() for p in copied)
 
-    # La base reescrita tiene ambas pistas (existente + nueva).
     lib = load_ipod_library(str(mount / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mount))
     titles = {t.get("Title") for t in lib["mhlt"]}
     assert "New Song" in titles and "Existing" in titles
@@ -246,7 +237,6 @@ def test_sync_media_consent_requerido_no_copia(ipod_with_db, tmp_path):
     from cicada.ipod.db.coordinator.consent import ConsentRequiredError
     with pytest.raises(ConsentRequiredError):
         sync_media_to_ipod(mount, [new], device_info=dev, consent_ack=False)
-    # No debe haber quedado audio copiado (se abortó antes de copiar).
     assert not list((mount / "iPod_Control" / "Music").rglob("*.mp3"))
 
 
@@ -265,19 +255,16 @@ def test_sync_media_preserva_y_crea_playlists(ipod_with_db):
 
     lib = load_ipod_library(str(mount / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mount))
     names = {p.get("Title") for p in lib["mhlp"]}
-    assert "Mi Playlist" in names   # existente preservada (antes se borraba)
-    assert "Enviada" in names       # nueva creada
+    assert "Mi Playlist" in names
+    assert "Enviada" in names
 
     mi = next(p for p in lib["mhlp"] if p.get("Title") == "Mi Playlist")
-    assert len(mi.get("items", [])) == 1   # su pista se preservó (no quedó vacía)
+    assert len(mi.get("items", [])) == 1
     enviada = next(p for p in lib["mhlp"] if p.get("Title") == "Enviada")
-    assert len(enviada.get("items", [])) == 1   # contiene la pista enviada
+    assert len(enviada.get("items", [])) == 1
 
 
 def test_sync_media_playlist_con_paths_desincronizados_no_desaparece(ipod_with_db):
-    # Regresión: si el frontend envía una playlist referenciando source_paths que
-    # ya no vienen en la lista de pistas nuevas (p.ej. el usuario quitó esa pista
-    # del carrito), la playlist NO debe desaparecer en silencio.
     mount, dev = ipod_with_db
     src = mount.parent / "otracosa.mp3"
     src.write_bytes(b"AUDIO" * 40)
@@ -292,7 +279,7 @@ def test_sync_media_playlist_con_paths_desincronizados_no_desaparece(ipod_with_d
 
     lib = load_ipod_library(str(mount / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mount))
     names = {p.get("Title") for p in lib["mhlp"]}
-    assert "Desincronizada" in names   # se crea (aunque vacía), nunca se descarta
+    assert "Desincronizada" in names
 
 
 def _build_atom(fourcc: bytes, body: bytes) -> bytes:
@@ -369,7 +356,6 @@ def test_sync_media_track_sin_capitulos_no_agrega_chapter_data(ipod_with_db):
 
 
 def test_sync_media_sin_playlists_preserva_existentes(ipod_with_db):
-    # Aunque no se envíen playlists, un sync normal NO debe borrar las de usuario.
     mount, dev = ipod_with_db
     src = mount.parent / "x.mp3"
     src.write_bytes(b"A" * 30)

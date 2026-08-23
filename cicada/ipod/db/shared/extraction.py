@@ -57,11 +57,9 @@ def extract_datasets(mhbd: dict) -> dict:
             result[result_key] = []
             continue
 
-        # The MHSD has one child: the list chunk (mhlt, mhlp, mhla, mhli)
         list_chunk = mhsd_children[0]
         items = list_chunk.get("data", [])
 
-        # Extract items from their wrapper dicts
         flat_items = []
         for item in items:
             if isinstance(item, dict) and "data" in item:

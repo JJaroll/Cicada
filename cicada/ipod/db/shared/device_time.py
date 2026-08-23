@@ -27,9 +27,6 @@ class MacTimestampOutOfRangeError(ValueError):
     """A UTC instant cannot be represented by an iPod's u32 Mac timestamp."""
 
 
-# These are the city-code values used by the 2,952/2,956/2,960-byte
-# Device/Preferences layouts.  They map to IANA (or equivalent POSIX) zone
-# names; city labels themselves are deliberately not used in application data.
 _CITY_TIMEZONE_NAMES: dict[int, str] = {
     0x01: "PST8PDT", 0x02: "America/Chicago", 0x03: "Pacific/Honolulu",
     0x04: "America/Anchorage", 0x05: "PST8PDT", 0x06: "America/Los_Angeles",

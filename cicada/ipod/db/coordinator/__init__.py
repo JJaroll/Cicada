@@ -37,7 +37,6 @@ from .plan import (
 )
 
 __all__ = [
-    # Consent
     "ConsentRecord",
     "ConsentRequiredError",
     "default_consent_dir",
@@ -47,7 +46,6 @@ __all__ = [
     "record_music_app_consent",
     "mark_first_write_committed",
     "revoke_music_app_consent",
-    # Plan
     "DATABASE_TARGET_RELPATHS",
     "PreStateFingerprint",
     "Plan",
@@ -55,7 +53,6 @@ __all__ = [
     "UnsafeDeviceError",
     "InconsistentArtifactsError",
     "create_plan",
-    # Apply
     "ApplyResult",
     "ApplyError",
     "StalePlanError",

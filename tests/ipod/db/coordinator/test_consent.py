@@ -66,10 +66,8 @@ def test_guid_isolation(tmp_path: Path):
 
 def test_mark_first_write_committed(tmp_path: Path):
     """Marcar primera escritura exitosa actualiza first_write_committed_at."""
-    # Intentar marcar sin consentimiento no hace nada y devuelve False
     assert not mark_first_write_committed(GUID_A, consent_dir=tmp_path)
 
-    # Registrar consentimiento
     record_music_app_consent(GUID_A, consent_dir=tmp_path)
     ts_commit = datetime(2026, 8, 14, 12, 5, 0, tzinfo=timezone.utc)
     ok = mark_first_write_committed(GUID_A, timestamp=ts_commit, consent_dir=tmp_path)
@@ -86,12 +84,10 @@ def test_corrupt_or_empty_json_handling(tmp_path: Path):
     path = get_consent_path(GUID_A, consent_dir=tmp_path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    # Archivo vacío
     path.write_text("", encoding="utf-8")
     assert not has_music_app_consent(GUID_A, consent_dir=tmp_path)
     assert get_consent_record(GUID_A, consent_dir=tmp_path) is None
 
-    # JSON roto
     path.write_text("{corrupt: true", encoding="utf-8")
     assert not has_music_app_consent(GUID_A, consent_dir=tmp_path)
     assert get_consent_record(GUID_A, consent_dir=tmp_path) is None
@@ -114,5 +110,4 @@ def test_revoke_consent(tmp_path: Path):
     assert revoke_music_app_consent(GUID_A, consent_dir=tmp_path)
     assert not has_music_app_consent(GUID_A, consent_dir=tmp_path)
 
-    # Revocar de nuevo devuelve True sin error
     assert revoke_music_app_consent(GUID_A, consent_dir=tmp_path)

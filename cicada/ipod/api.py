@@ -79,13 +79,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/ipod", tags=["ipod"])
 
-#: Almacén en memoria de planes activos generados en la sesión.
 _ACTIVE_PLANS: Dict[str, Plan] = {}
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Schemas Pydantic
-# ═══════════════════════════════════════════════════════════════════════════
 
 class StorageInfoSchema(BaseModel):
     total_bytes: int = 0
@@ -120,7 +115,7 @@ class DeviceInfoSchema(BaseModel):
 
 
 class StatusResponse(BaseModel):
-    state: str  # "ready" | "no_ipod_control" | "no_device"
+    state: str
     devices: List[DeviceInfoSchema] = []
     volumes_without_control: List[str] = []
 
@@ -146,7 +141,6 @@ class TrackSchema(BaseModel):
     rating: int = 0
     last_played: int = 0
     location: str
-    # str: dbid de 64 bits — como Number de JS pierde precisión casi siempre.
     db_track_id: Optional[str] = None
 
 
@@ -158,7 +152,7 @@ class TracksResponse(BaseModel):
 
 class PodcastEpisodeSchema(BaseModel):
     title: str
-    date_added: Optional[int] = None  # unix ts; sin formatear, igual que TrackSchema
+    date_added: Optional[int] = None
     duration_ms: Optional[int] = None
     file_size: Optional[int] = None
 
@@ -192,9 +186,9 @@ class AudiobooksResponse(BaseModel):
 
 
 class VideoSchema(BaseModel):
-    id: str  # str(db_track_id) — mismo motivo que TrackSchema.db_track_id
+    id: str
     title: str
-    kind: str  # "movie" | "tv_show" | "music_video", derivado de media_type
+    kind: str
     duration_ms: Optional[int] = None
     size_bytes: Optional[int] = None
     show_name: Optional[str] = None
@@ -274,10 +268,6 @@ class EjectResponse(BaseModel):
     ejected: bool
     message: str
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Helpers internos
-# ═══════════════════════════════════════════════════════════════════════════
 
 def _track_schema_to_info(s: TrackSchema) -> TrackInfo:
     return TrackInfo(
@@ -390,10 +380,6 @@ def _chapter_durations_ms(chapters: List[dict], track_length_ms: int) -> List[in
     return durations
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Endpoints
-# ═══════════════════════════════════════════════════════════════════════════
-
 _STORAGE_CACHE: Dict[str, tuple[float, StorageInfoSchema]] = {}
 _STORAGE_TTL_SECONDS = 60.0
 
@@ -427,7 +413,6 @@ def _compute_ipod_storage(mount_path: str | Path) -> StorageInfoSchema:
     photos_bytes = 0
     podcasts_bytes = 0
 
-    # Escaneo ligero de tamaños bajo iPod_Control si existe
     control = mount / "iPod_Control"
     music_dir = control / "Music"
     if music_dir.exists():
@@ -595,8 +580,6 @@ def create_ipod_plan(req: PlanRequest) -> PlanResponse:
         mount = resolve_mount()
         dev = read_device_info(mount)
         track_infos = [_track_schema_to_info(t) for t in req.tracks]
-        # Preserva las playlists existentes: sin esto, create_plan solo escribe la
-        # master y cualquier playlist de usuario desaparece en cada plan/apply.
         regular, smart = preserve_existing_playlists(mount)
         plan = create_plan(
             mount,
@@ -647,7 +630,6 @@ def apply_ipod_plan(req: ApplyRequest) -> ApplyResponse:
         mount = resolve_mount()
         dev = read_device_info(mount)
 
-        # Resolver plan: por plan_id o al vuelo con tracks
         if req.plan_id:
             if req.plan_id not in _ACTIVE_PLANS:
                 raise HTTPException(
@@ -761,7 +743,6 @@ def make_manual_backup(req: ManualBackupRequest) -> BackupInfoSchema:
         mount = resolve_mount()
         mode = BackupMode.FULL if req.full else BackupMode.DB_ONLY
         archive = create_backup(mount, mode)
-        # Parse backup info
         infos = list_backups()
         for i in infos:
             if i.path.resolve() == archive.resolve():
@@ -810,10 +791,6 @@ def eject_device(force: bool = False) -> EjectResponse:
     except Exception as exc:
         return EjectResponse(ejected=False, message=str(exc))
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Endpoints de UI (lectura ligera) — consolidados desde core/main.py
-# ═══════════════════════════════════════════════════════════════════════════
 
 def _ipod_to_ui(info: DeviceInfo) -> Dict[str, Any]:
     storage_data = _calculate_ipod_storage(info.mount) if info.mount else None
@@ -870,7 +847,6 @@ def ipod_playlists() -> Dict[str, Any]:
     if data is None:
         raise HTTPException(status_code=500, detail="No se pudo leer la biblioteca del iPod.")
 
-    # Los items de playlist referencian por track_id (índice), no por dbid.
     tracks_by_id = {}
     for tr in data.get("mhlt", []):
         tid = tr.get("track_id")
@@ -885,8 +861,6 @@ def ipod_playlists() -> Dict[str, Any]:
             if tr is not None:
                 dbid = tr.get("db_track_id")
                 items.append({
-                    # str: los dbid de 64 bits pierden precisión casi siempre como
-                    # Number de JS (>2^53); se transportan como string.
                     "db_track_id": str(dbid) if dbid is not None else None,
                     "title": tr.get("Title"),
                     "artist": tr.get("Artist"),
@@ -1122,10 +1096,6 @@ def get_audiobooks() -> AudiobooksResponse:
     return AudiobooksResponse(audiobooks=audiobooks, count=len(audiobooks))
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Copia real de audio al iPod (pipeline): copia MP3 locales + reescribe la base
-# ═══════════════════════════════════════════════════════════════════════════
-
 class MediaTrackInput(BaseModel):
     source_path: str
     title: str
@@ -1137,11 +1107,6 @@ class MediaTrackInput(BaseModel):
     track_number: Optional[int] = None
     length_ms: Optional[int] = None
     filetype: Optional[str] = None
-    # Fase 5/6: variante de medio. "music" no cambia el comportamiento previo.
-    # El resto solo setea media_type y las flags asociadas — mismo camino de
-    # escritura que música, sin chunk binario nuevo (ver docs/IPOD_INTEGRATION.md
-    # Fase 5/6). "movie"/"tv_show"/"music_video"/"video_podcast" no
-    # transcodifican: el archivo ya debe ser un H.264 compatible con el iPod.
     kind: Literal[
         "music", "podcast", "audiobook",
         "movie", "tv_show", "music_video", "video_podcast",
@@ -1214,10 +1179,6 @@ def sync_media(req: MediaSyncRequest) -> ApplyResponse:
                 ti.remember_position = True
             elif t.kind == "movie":
                 ti.media_type = MEDIA_TYPE_VIDEO
-                # movie_file_flag: no hace falta setearlo — write_mhit()
-                # ya lo deriva de media_type vía _resolve_movie_flag()
-                # cuando el campo explícito queda en 0 (infra genérica de
-                # Fase 2, confirmado leyendo mhit_writer.py).
             elif t.kind == "tv_show":
                 ti.media_type = MEDIA_TYPE_TV_SHOW
             elif t.kind == "music_video":
@@ -1270,9 +1231,6 @@ def sync_media(req: MediaSyncRequest) -> ApplyResponse:
 
 class PlaylistReorderRequest(BaseModel):
     playlist_name: str
-    # str: los dbid son enteros de 64 bits; como Number de JS/JSON pierden precisión
-    # casi siempre (>99.9% de los valores, al exceder 2^53). Python los parsea con
-    # int() sin pérdida.
     track_dbids: List[str]
     consent_ack: bool = False
 
@@ -1314,9 +1272,8 @@ def reorder_playlist(req: PlaylistReorderRequest) -> ApplyResponse:
 
 
 class PlaylistSetItem(BaseModel):
-    # str: dbid de 64 bits — como Number de JS pierde precisión casi siempre.
-    db_track_id: Optional[str] = None   # pista ya en el iPod
-    source_path: Optional[str] = None   # o pista nueva de la biblioteca
+    db_track_id: Optional[str] = None
+    source_path: Optional[str] = None
     title: Optional[str] = None
     artist: Optional[str] = None
     album: Optional[str] = None
@@ -1367,9 +1324,7 @@ def set_playlist(req: PlaylistSetRequest) -> ApplyResponse:
                             detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"}) from exc
 
 
-
 class TrackRemoveRequest(BaseModel):
-    # str: dbid de 64 bits — como Number de JS pierde precisión casi siempre.
     db_track_id: str
     consent_ack: bool = False
 
@@ -1435,8 +1390,6 @@ def sync_playback(dry_run: bool = False) -> PlaybackSyncResponse:
                 detail={"error": "No se pudo identificar el GUID del iPod.", "code": "NO_GUID"},
             )
         if dry_run:
-            # Puro SELECT: no requiere el device pre-registrado, así que un
-            # dry-run no escribe nada en ~/.cicada/ipod.db.
             from cicada.ipod.sync.bidirectional import compute_playback_deltas
             report = compute_playback_deltas(mount, SyncStateDB(), dev.firewire_guid)
         else:
@@ -1457,13 +1410,9 @@ def sync_playback(dry_run: bool = False) -> PlaybackSyncResponse:
                             detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"}) from exc
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Resolución de conflictos de rating — Fase 3
-# ═══════════════════════════════════════════════════════════════════════════
-
 class TrackRateRequest(BaseModel):
     db_track_id: str
-    rating: int  # 0 a 100 (20 por estrella)
+    rating: int
 
 
 @router.post("/track/rate", response_model=ApplyResponse)
@@ -1481,8 +1430,6 @@ def rate_track_locally(req: TrackRateRequest) -> ApplyResponse:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                                 detail={"error": "No se pudo identificar el GUID del iPod.", "code": "NO_GUID"})
         sync_db = SyncStateDB()
-        # FK de local_playback_state -> devices: puede ser la primera escritura
-        # local para este iPod (antes de cualquier /sync/playback).
         sync_db.upsert_device(DeviceRecord(
             guid=dev.firewire_guid, family_id=dev.family_id,
             model_num=dev.model_number, serial=dev.serial,
@@ -1568,7 +1515,7 @@ def list_conflicts() -> ConflictsListResponse:
 
 class ConflictResolveRequest(BaseModel):
     ipod_dbid: str
-    resolution: str  # "local" | "device"
+    resolution: str
     consent_ack: bool = False
 
 
@@ -1612,7 +1559,7 @@ def resolve_one_conflict(req: ConflictResolveRequest) -> ApplyResponse:
 
 
 class ConflictResolveAllRequest(BaseModel):
-    resolution: str  # "local" | "device"
+    resolution: str
     consent_ack: bool = False
 
 

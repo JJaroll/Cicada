@@ -42,10 +42,8 @@ def write_mhsd(dataset_type: int, child_data: bytes) -> bytes:
     Returns:
         Complete MHSD chunk bytes
     """
-    # Total length = header + child
     total_length = MHSD_HEADER_SIZE + len(child_data)
 
-    # Build header
     header = bytearray(MHSD_HEADER_SIZE)
     write_generic_header(header, 0, b'mhsd', MHSD_HEADER_SIZE, total_length)
     write_fields(header, 0, 'mhsd', {'dataset_type': dataset_type}, MHSD_HEADER_SIZE)

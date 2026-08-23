@@ -102,7 +102,7 @@ async def identificar_con_acoustid(ruta_archivo: str) -> Dict[str, Any]:
         return {"status": "error", "message": f"Error de AcoustID: {e}"}
     except OSError as e:
         return {"status": "error", "message": f"Error de E/S leyendo '{path.name}': {e}"}
-    except Exception as e:  # último resorte: nunca dejar que un archivo tumbe el batch
+    except Exception as e:
         return {"status": "error", "message": f"Error inesperado procesando '{path.name}': {e}"}
 
     try:

@@ -74,17 +74,12 @@ class _FakeDeviceInfo:
                 setattr(self, k, v)
 
 
-# --------------------------------------------------------------------------- #
-# Indexado por GUID (no por montaje) + carpeta ofuscada
-# --------------------------------------------------------------------------- #
 def test_indexado_por_guid_no_por_montaje(tmp_path, _cicada_home):
-    # El MISMO iPod (mismo GUID) en dos rutas distintas -> mismo caché.
     a = _make_ipod(tmp_path / "monte_a", guid=GUID)
     b = _make_ipod(tmp_path / "monte_b", guid=GUID)
     info = _FakeDeviceInfo(a, guid=GUID, _field_sources={"firewire_guid": "vpd"})
     update_sysinfo(info)
 
-    # Leído desde la OTRA ruta de montaje: encuentra la misma autoridad.
     data = read_authority(str(b))
     assert data.get("firewire_guid") == GUID
     assert "FirewireGuid" in data["fields"]
@@ -107,15 +102,11 @@ def test_carpeta_es_hash_no_guid_en_claro(tmp_path, _cicada_home):
     esperado = hashlib.sha256(GUID.encode()).hexdigest()[:16]
     dirs = [p.name for p in (_cicada_home / "sysinfo").iterdir()]
     assert dirs == [esperado]
-    assert GUID not in dirs[0]          # el GUID no aparece en la ruta
-    # ...pero sí dentro del JSON.
+    assert GUID not in dirs[0]
     saved = json.loads((_cicada_home / "sysinfo" / esperado / "authority.json").read_text())
     assert saved["firewire_guid"] == GUID
 
 
-# --------------------------------------------------------------------------- #
-# Cero escrituras al volumen
-# --------------------------------------------------------------------------- #
 def test_no_escribe_en_el_volumen(tmp_path, _cicada_home):
     mount = _make_ipod(tmp_path)
     device = mount / "iPod_Control" / "Device"
@@ -123,22 +114,16 @@ def test_no_escribe_en_el_volumen(tmp_path, _cicada_home):
     update_sysinfo(_FakeDeviceInfo(mount, _field_sources={"firewire_guid": "vpd"}))
     cache_sysinfo_extended(str(mount), b"<?xml version='1.0'?><plist><dict></dict></plist>", source="scsi_vpd")
     despues = {p.name for p in device.iterdir()}
-    assert antes == despues            # nada nuevo en el dispositivo
+    assert antes == despues
     assert not (device / "authority.json").exists()
 
 
-# --------------------------------------------------------------------------- #
-# Round-trip de procedencia + SOURCE_RANK
-# --------------------------------------------------------------------------- #
 def test_source_rank_conserva_la_fuente_mas_fiable(tmp_path, _cicada_home):
     mount = _make_ipod(tmp_path)
-    # Primera pasada: firewire_guid desde 'sysinfo' (poco fiable).
     update_sysinfo(_FakeDeviceInfo(mount, _field_sources={"firewire_guid": "sysinfo"}))
     assert read_authority(str(mount))["fields"]["FirewireGuid"]["source"] == "sysinfo"
-    # Segunda pasada: desde 'vpd' (más fiable) -> debe upgradear.
     update_sysinfo(_FakeDeviceInfo(mount, _field_sources={"firewire_guid": "vpd"}))
     assert read_authority(str(mount))["fields"]["FirewireGuid"]["source"] == "vpd"
-    # Tercera: 'sysinfo' de nuevo (peor) -> NO degrada.
     update_sysinfo(_FakeDeviceInfo(mount, _field_sources={"firewire_guid": "sysinfo"}))
     assert read_authority(str(mount))["fields"]["FirewireGuid"]["source"] == "vpd"
     assert SOURCE_RANK["vpd"] < SOURCE_RANK["sysinfo"]
@@ -146,12 +131,10 @@ def test_source_rank_conserva_la_fuente_mas_fiable(tmp_path, _cicada_home):
 
 def test_coverage_tras_update(tmp_path, _cicada_home):
     mount = _make_ipod(tmp_path)
-    # SysInfo del fixture tiene FirewireGuid y pszSerialNumber; damos también model.
     info = _FakeDeviceInfo(mount, model_number="MD480",
                            firewire_guid=GUID, serial="ABC123",
                            _field_sources={"firewire_guid": "vpd", "serial": "vpd",
                                            "model_number": "itunes"})
-    # Alinea el SysInfo del dispositivo con los valores para que coverage case.
     device = mount / "iPod_Control" / "Device"
     device.joinpath("SysInfo").write_text(
         f"FirewireGuid: 0x{GUID}\nModelNumStr: MD480\npszSerialNumber: ABC123\n"
@@ -162,9 +145,6 @@ def test_coverage_tras_update(tmp_path, _cicada_home):
     assert sources["firewire_guid"] == "vpd"
 
 
-# --------------------------------------------------------------------------- #
-# Detección de manipulación externa
-# --------------------------------------------------------------------------- #
 def test_manipulacion_externa_invalida_coverage(tmp_path, _cicada_home):
     mount = _make_ipod(tmp_path)
     device = mount / "iPod_Control" / "Device"
@@ -175,25 +155,16 @@ def test_manipulacion_externa_invalida_coverage(tmp_path, _cicada_home):
                                    _field_sources={"firewire_guid": "vpd", "serial": "vpd",
                                                    "model_number": "itunes"}))
     assert check_authority_coverage(str(mount))[0] is True
-    # iTunes reescribe el SysInfo del dispositivo -> hash cambia.
     device.joinpath("SysInfo").write_text("FirewireGuid: 0xDEADBEEFDEADBEEF\n")
     assert check_authority_coverage(str(mount))[0] is False
 
 
-# --------------------------------------------------------------------------- #
-# El iOpenPodSysInfoAuthority ajeno se ignora
-# --------------------------------------------------------------------------- #
 def test_read_authority_ignora_el_ajeno(tmp_path, _cicada_home):
-    # Dispositivo con iOpenPodSysInfoAuthority presente pero SIN caché nuestro.
     mount = _make_ipod(tmp_path, foreign=True)
     assert (mount / "iPod_Control" / "Device" / FOREIGN_AUTHORITY_FILENAME).exists()
-    # read_authority devuelve {} sin intentar parsear el archivo ajeno.
     assert read_authority(str(mount)) == {}
 
 
-# --------------------------------------------------------------------------- #
-# clean_foreign_artifacts
-# --------------------------------------------------------------------------- #
 def test_clean_foreign_elimina_el_ajeno(tmp_path, _cicada_home):
     mount = _make_ipod(tmp_path, foreign=True)
     foreign = mount / "iPod_Control" / "Device" / FOREIGN_AUTHORITY_FILENAME
@@ -201,7 +172,6 @@ def test_clean_foreign_elimina_el_ajeno(tmp_path, _cicada_home):
     removed = clean_foreign_artifacts(str(mount))
     assert removed == [f"iPod_Control/Device/{FOREIGN_AUTHORITY_FILENAME}"]
     assert not foreign.exists()
-    # El resto de Device/ intacto.
     assert (mount / "iPod_Control" / "Device" / "SysInfoExtended").exists()
 
 
@@ -245,7 +215,6 @@ def test_clean_foreign_elimina_autoridad_y_backups_juntos(tmp_path, _cicada_home
     assert not (mount / "iPod_Control" / "Device" / FOREIGN_AUTHORITY_FILENAME).exists()
     for rel in FOREIGN_BACKUP_RELPATHS:
         assert not (mount / rel).exists()
-    # Archivos legítimos (no ajenos) intactos.
     assert (mount / "iPod_Control" / "Device" / "SysInfoExtended").exists()
 
 
@@ -262,13 +231,9 @@ def test_clean_foreign_no_toca_archivos_legitimos_homonimos_fuera_de_ruta(tmp_pa
     assert decoy.exists()
 
 
-# --------------------------------------------------------------------------- #
-# GUID irresoluble -> degradación limpia
-# --------------------------------------------------------------------------- #
 def test_guid_irresoluble_degrada(tmp_path, _cicada_home):
     mount = tmp_path / "IPOD"
-    (mount / "iPod_Control" / "Device").mkdir(parents=True)  # sin SysInfoExtended ni SysInfo
+    (mount / "iPod_Control" / "Device").mkdir(parents=True)
     assert read_authority(str(mount)) == {}
     assert check_authority_coverage(str(mount)) == (False, {})
-    # update_sysinfo no explota aunque no haya GUID.
     update_sysinfo(_FakeDeviceInfo(mount, guid=""))

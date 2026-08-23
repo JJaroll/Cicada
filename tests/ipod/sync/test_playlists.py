@@ -125,13 +125,11 @@ def test_prepare_standard_playlists_with_sync_db(sync_db: SyncStateDB):
     assert unresolved == 0
     assert len(pls) == 2
 
-    # Playlist 1: ID autogenerado, tracks [201, 203]
     assert pls[0].name == "Rock Hits"
     assert pls[0].track_ids == [201, 203]
     assert pls[0].playlist_id is not None
     assert pls[0].playlist_id > 0
 
-    # Playlist 2: ID explícito 777888, tracks [202]
     assert pls[1].name == "Chill"
     assert pls[1].track_ids == [202]
     assert pls[1].playlist_id == 777888
@@ -282,11 +280,9 @@ def test_playlists_integration_with_plan_and_apply(
     assert res.success is True
     assert res.tracks_written == 2
 
-    # Registrar en DB
     record_playlists_in_db(GUID, prep.all_playlists, sync_db)
     assert len(sync_db.list_playlists_map(GUID)) >= 2
 
-    # Re-lectura del iPod con parser
     cdb_path = mount / "iPod_Control" / "iTunes" / "iTunesCDB"
     lib = load_ipod_library(str(cdb_path), mount=str(mount))
     all_pls = lib.get("mhlp", []) + lib.get("mhlp_smart", [])

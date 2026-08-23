@@ -55,7 +55,6 @@ def _rows(db_path: Path, table: str, pid_col: str) -> dict:
     return rows
 
 
-# --------------------------------------------------------------------------- #
 @pytest.fixture
 def built(tmp_path):
     """Construye iTunesCDB (2a) + SQLite (2b) desde los 25 tracks del fixture,
@@ -82,9 +81,6 @@ def built(tmp_path):
     return {"orig": orig, "itlp": itlp, "cdb": cdb, "tmp": tmp_path}
 
 
-# --------------------------------------------------------------------------- #
-# 0. Produce los 6 archivos del itlp/
-# --------------------------------------------------------------------------- #
 @skip_no_fixture
 def test_produce_los_seis_archivos(built):
     nombres = sorted(p.name for p in built["itlp"].iterdir())
@@ -92,14 +88,10 @@ def test_produce_los_seis_archivos(built):
         "Dynamic.itdb", "Extras.itdb", "Genius.itdb",
         "Library.itdb", "Locations.itdb", "Locations.itdb.cbk",
     ]
-    # Los .itdb son SQLite reales (validador independiente).
     for f in ("Library.itdb", "Locations.itdb", "Dynamic.itdb"):
         assert (built["itlp"] / f).read_bytes()[:15] == b"SQLite format 3"
 
 
-# --------------------------------------------------------------------------- #
-# 1. Comparación campo por campo — Library.item + Dynamic.item_stats
-# --------------------------------------------------------------------------- #
 _LIB_FIELDS = [
     "title", "artist", "album", "album_artist", "genre_id",
     "total_time_ms", "track_number", "track_count", "disc_number",
@@ -137,9 +129,6 @@ def test_dynamic_item_stats_identico_incluido_date_played(built):
     assert not problemas, "Dynamic.itdb alterado:\n" + "\n".join(problemas[:20])
 
 
-# --------------------------------------------------------------------------- #
-# 2. Coherencia entre capas — DETECTABLE (dbids leídos por separado)
-# --------------------------------------------------------------------------- #
 def _cdb_dbids(cdb_bytes: bytes, tmp: Path, tag: str) -> set:
     """dbids leídos SÓLO por el parser del iTunesCDB (sin signo)."""
     stage = tmp / f"cdb_{tag}" / "iPod_Control" / "iTunes"
@@ -158,7 +147,6 @@ def _sqlite_dbids(itlp: Path) -> set:
 
 @skip_no_fixture
 def test_coherencia_dbids_entre_capas(built):
-    # Las dos salidas se leen por caminos independientes y se comparan.
     cdb_ids = _cdb_dbids(built["cdb"], built["tmp"], "ok")
     sql_ids = _sqlite_dbids(built["itlp"])
     assert len(cdb_ids) == len(sql_ids) == 25
@@ -178,7 +166,6 @@ def test_la_verificacion_de_coherencia_detecta_divergencia(built, tmp_path):
     tis = [track_dict_to_info(t) for t in built["orig"]]
     caps = capabilities_for_family_gen("iPod Nano", "7th Gen")
 
-    # SQLite con un track EXTRA que el iTunesCDB no tiene.
     tis_mas = tis + [TrackInfo(
         title="Intruso", location=":iPod_Control:Music:F00:ZZZZ.mp3",
         artist="X", filetype="mp3", length=1000, size=1000,
@@ -188,27 +175,23 @@ def test_la_verificacion_de_coherencia_detecta_divergencia(built, tmp_path):
         itlp2, tis_mas, firewire_id=GUID, checksum=ChecksumType.HASHAB,
         capabilities=caps, time_context=ctx,
     )
-    cdb_ids = _cdb_dbids(built["cdb"], built["tmp"], "orig")   # 25
-    sql_ids = _sqlite_dbids(itlp2)                             # 26
+    cdb_ids = _cdb_dbids(built["cdb"], built["tmp"], "orig")
+    sql_ids = _sqlite_dbids(itlp2)
     assert cdb_ids != sql_ids, "la verificación NO detectó la divergencia (26 vs 25)"
     assert len(sql_ids - cdb_ids) == 1
 
 
-# --------------------------------------------------------------------------- #
-# 3. Vigilancia época Cocoa — nunca reproducida ⇒ date_played 0 (regresión)
-# --------------------------------------------------------------------------- #
 @skip_no_fixture
 def test_nunca_reproducida_date_played_cero(tmp_path):
     """Una pista con play_count=0 no lleva fecha de reproducción. Sin el fix,
     el centinela 2001-01-01 se reconvierte a Cocoa y se desplaza por la zona
     (aparecía -14400 = -4h). El formato de fechas ya nos mordió en 2a."""
-    ctx = read_device_time_context(str(tmp_path))  # UTC por defecto (sin device)
+    ctx = read_device_time_context(str(tmp_path))
     t = TrackInfo(
         title="Sin reproducir", location=":iPod_Control:Music:F00:AAAA.mp3",
         artist="X", filetype="mp3", length=1000, size=1000,
         play_count=0, skip_count=0,
     )
-    # Un centinela 2001-01-01 en local, como el que trae el iTunesCDB real.
     t.last_played = 978292800
     t.last_skipped = 978292800
     itlp = tmp_path / "itlp"
@@ -227,7 +210,7 @@ def test_nunca_reproducida_date_played_cero(tmp_path):
 def test_reproducida_conserva_fecha(tmp_path):
     """Contraparte: una pista SÍ reproducida conserva su date_played (Cocoa)."""
     ctx = read_device_time_context(str(tmp_path))
-    played_unix = 1_700_000_000  # 2023-11-14, instante real
+    played_unix = 1_700_000_000
     t = TrackInfo(
         title="Reproducida", location=":iPod_Control:Music:F00:BBBB.mp3",
         artist="X", filetype="mp3", length=1000, size=1000, play_count=3,
@@ -240,4 +223,4 @@ def test_reproducida_conserva_fecha(tmp_path):
     )
     (row,) = _rows(itlp / "Dynamic.itdb", "item_stats", "item_pid").values()
     assert row["has_been_played"] == 1
-    assert row["date_played"] == played_unix - 978307200  # unix→CoreData
+    assert row["date_played"] == played_unix - 978307200

@@ -109,10 +109,6 @@ def durable_publish_new(source: str | Path, target: str | Path) -> bool:
     except FileExistsError:
         raise
     except OSError:
-        # Some valid backup destinations (notably FAT/exFAT and network
-        # filesystems) do not support hard links. O_EXCL still preserves the
-        # no-clobber contract; a crash-truncated file is detected by the
-        # manifest checksum and never authorizes blob deletion or restore.
         descriptor = os.open(
             target_path,
             os.O_WRONLY | os.O_CREAT | os.O_EXCL,
@@ -138,8 +134,6 @@ def durable_publish_new(source: str | Path, target: str | Path) -> bool:
     try:
         flush_parent_directory(target_path)
     except OSError:
-        # The target was not durably published. Remove the visible entry when
-        # possible so callers do not discover an unconfirmed manifest.
         try:
             durable_unlink(target_path, missing_ok=True)
         except OSError:
@@ -255,9 +249,6 @@ def _flush_database_anchor(
                 allow_unavailable=allow_unavailable,
             )
         if sys.platform == "darwin" and full:
-            # ``flush_filesystem`` has already completed os.sync(). macOS does
-            # not document F_FULLFSYNC as a directory-handle operation, so do
-            # not invent one for a deliberately database-free snapshot.
             return (
                 True,
                 "macOS filesystem sync completed; no regular full-fsync "
@@ -295,13 +286,6 @@ def _flush_database_anchor(
 
 
 def _committed_database_path(mount_path: Path) -> Path | None:
-    # Use the same device-aware authority as the database reader, writer, and
-    # generation guard. In particular, a known Classic must flush iTunesDB
-    # even when a stale non-empty iTunesCDB is also present.
-    #
-    # NOTA (Cicada): `.info` se vendoriza al final de la Etapa 2b. Hasta
-    # entonces este import falla; lo guardamos para que flush_filesystem
-    # degrade con un mensaje explícito en vez de un ImportError confuso.
     try:
         from .info import resolve_itdb_path
     except ImportError:

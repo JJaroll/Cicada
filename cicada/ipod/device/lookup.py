@@ -22,7 +22,6 @@ def extract_model_number(model_str: str) -> str | None:
     if not model_str:
         return None
 
-    # Normalise 'x' prefix: "xA623" → "MA623"
     if model_str.startswith('x'):
         model_str = 'M' + model_str[1:]
 
@@ -30,8 +29,6 @@ def extract_model_number(model_str: str) -> str | None:
     if match:
         return match.group(1)
 
-    # Some SysInfo ModelNumStr values use a non-M first character (e.g. "P9804"
-    # instead of "M9804").  Try substituting M and re-matching.
     alt = 'M' + model_str[1:]
     match = re.match(r'^(M[A-Z]?\d{3,4})', alt.upper())
     if match:
@@ -75,7 +72,6 @@ def usb_pid_identity_conflicts(
     if model_generation_norm == pid_generation_norm:
         return False
 
-    # Some USB PID identities are coarser than the exact model table.
     if (
         pid_family_norm == "ipod"
         and pid_generation_norm == "5th gen"
@@ -104,7 +100,6 @@ def get_model_info(model_number: str | None) -> tuple[str, str, str, str] | None
     if model_number in IPOD_MODELS:
         return IPOD_MODELS[model_number]
 
-    # If the first character isn't M, try substituting M (handles SysInfo quirks)
     if not model_number.startswith('M') and len(model_number) > 1:
         alt = 'M' + model_number[1:]
         if alt in IPOD_MODELS:

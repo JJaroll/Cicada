@@ -67,10 +67,6 @@ def _utf16be_payload(value: Any) -> bytes:
     limit = _MAX_RULE_STRING_UTF16_BYTES & ~1
     return encoded[:limit]
 
-# ────────────────────────────────────────────────────────────
-# Data classes
-# ────────────────────────────────────────────────────────────
-
 
 @dataclass
 class SmartPlaylistPrefs:
@@ -81,8 +77,8 @@ class SmartPlaylistPrefs:
     live_update: bool = True
     check_rules: bool = True
     check_limits: bool = False
-    limit_type: int = 0x03       # 1=minutes, 2=MB, 3=songs, 4=hours, 5=GB
-    limit_sort: int = 0x02       # 2=random (low byte); high bit 0x80000000 = reverse
+    limit_type: int = 0x03
+    limit_sort: int = 0x02
     limit_value: int = 25
     match_checked_only: bool = False
 
@@ -94,13 +90,11 @@ class SmartPlaylistRule:
     field_id and action_id use the raw integer codes from the parser
     constants (SPL_FIELD_MAP, SPL_ACTION_MAP).
     """
-    field_id: int = 0x02         # e.g. 0x02=Song Name, 0x3C=Media Type
-    action_id: int = 0x01000002  # e.g. 0x01000002 = "contains"
+    field_id: int = 0x02
+    action_id: int = 0x01000002
 
-    # For STRING rules
     string_value: str | None = None
 
-    # For non-string rules (INT/DATE/BOOLEAN/PLAYLIST/BINARY_AND)
     from_value: int = 0
     from_date: int = 0
     from_units: int = 0
@@ -108,7 +102,6 @@ class SmartPlaylistRule:
     to_date: int = 0
     to_units: int = 0
 
-    # Five unknown trailing 32-bit values (preserved for round-trip)
     unk052: int = 0
     unk056: int = 0
     unk060: int = 0
@@ -122,9 +115,9 @@ class SmartPlaylistRules:
 
     conjunction: "AND" (match all) or "OR" (match any)
     """
-    conjunction: str = "AND"  # "AND" or "OR"
+    conjunction: str = "AND"
     rules: list[SmartPlaylistRule] = field(default_factory=list)
-    unk004: int = 0  # SLst header +0x04, usually 0 (preserved for round-trip)
+    unk004: int = 0
 
 
 def _signed_i64(value: int) -> int:
@@ -153,10 +146,6 @@ def _normalize_relative_date_fields(
     return SPL_DATE_IDENTIFIER, normalized_from_date
 
 
-# ────────────────────────────────────────────────────────────
-# MHOD Type 50 — Smart Playlist Preferences
-# ────────────────────────────────────────────────────────────
-
 def write_mhod50(prefs: SmartPlaylistPrefs) -> bytes:
     """Write MHOD type 50 (smart playlist preferences / SPLPref).
 
@@ -170,27 +159,20 @@ def write_mhod50(prefs: SmartPlaylistPrefs) -> bytes:
     body[2] = 1 if prefs.check_limits else 0
     body[3] = _u32(prefs.limit_type) & 0xFF
 
-    # limit_sort: low byte at +4, reverse flag at +13
     limit_sort = _u32(prefs.limit_sort)
     low_byte = limit_sort & 0xFF
     reverse = 1 if (limit_sort & 0x80000000) else 0
     body[4] = low_byte
 
-    # 3 bytes padding (5..7) already zero
 
     struct.pack_into('<I', body, 8, _u32(prefs.limit_value))
 
     body[12] = 1 if prefs.match_checked_only else 0
     body[13] = reverse
 
-    # Remaining bytes (14..131) are zero padding
 
     return write_mhod_header(50, MHOD_HEADER_SIZE + SPLPREF_BODY_SIZE) + bytes(body)
 
-
-# ────────────────────────────────────────────────────────────
-# MHOD Type 51 — Smart Playlist Rules (SLst)
-# ────────────────────────────────────────────────────────────
 
 def _write_spl_rule(rule: SmartPlaylistRule) -> bytes:
     """Write a single SLst rule entry (big-endian).
@@ -207,12 +189,10 @@ def _write_spl_rule(rule: SmartPlaylistRule) -> bytes:
     ft = spl_get_field_type(rule.field_id)
 
     if ft == SPLFT_STRING and rule.string_value is not None:
-        # String rule: data = UTF-16 BE string
         string_bytes = _utf16be_payload(rule.string_value)
         data_length = len(string_bytes)
         data_section = string_bytes
     else:
-        # Non-string: fixed SPL_RULE_DATA_SIZE (68) byte data section
         data_length = SPL_RULE_DATA_SIZE
         data_section = bytearray(SPL_RULE_DATA_SIZE)
         from_value = rule.from_value
@@ -229,8 +209,6 @@ def _write_spl_rule(rule: SmartPlaylistRule) -> bytes:
             to_value = SPL_DATE_IDENTIFIER
             to_date = 0
             to_units = 1
-        # from_value, to_value, from_units, to_units use unsigned '>Q' format.
-        # Mask defensively so legacy in-memory rules with signed values still pack.
         struct.pack_into('>Q', data_section, 0x00, _u64(from_value))
         struct.pack_into('>q', data_section, 0x08, _i64(from_date))
         struct.pack_into('>Q', data_section, 0x10, _u64(rule.from_units))
@@ -244,11 +222,9 @@ def _write_spl_rule(rule: SmartPlaylistRule) -> bytes:
         struct.pack_into('>I', data_section, 0x40, _u32(rule.unk068))
         data_section = bytes(data_section)
 
-    # Build rule header
     rule_header = bytearray(SPL_RULE_HEADER_SIZE)
     struct.pack_into('>I', rule_header, 0x00, _u32(rule.field_id))
     struct.pack_into('>I', rule_header, 0x04, _u32(rule.action_id))
-    # 44 bytes padding (0x08..0x33) already zero
     struct.pack_into('>I', rule_header, 0x34, data_length)
 
     return bytes(rule_header) + data_section
@@ -262,26 +238,19 @@ def write_mhod51(rules_data: SmartPlaylistRules) -> bytes:
     Returns:
         Complete MHOD chunk bytes.
     """
-    # Build SLst header
     slst_header = bytearray(SLST_HEADER_SIZE)
     slst_header[0:4] = b'SLst'
     struct.pack_into('>I', slst_header, 4, _u32(rules_data.unk004))
     struct.pack_into('>I', slst_header, 8, _u32(len(rules_data.rules)))
     conjunction_val = 1 if rules_data.conjunction.upper() == "OR" else 0
     struct.pack_into('>I', slst_header, 12, conjunction_val)
-    # 120 bytes padding already zero
 
-    # Build individual rules
     rules_bytes = b''.join(_write_spl_rule(r) for r in rules_data.rules)
 
     slst_body = bytes(slst_header) + rules_bytes
 
     return write_mhod_header(51, MHOD_HEADER_SIZE + len(slst_body)) + slst_body
 
-
-# ────────────────────────────────────────────────────────────
-# MHOD Type 102 — Playlist Settings (opaque blob passthrough)
-# ────────────────────────────────────────────────────────────
 
 def write_mhod102(raw_body: bytes) -> bytes:
     """Write MHOD type 102 (playlist settings).
@@ -298,10 +267,6 @@ def write_mhod102(raw_body: bytes) -> bytes:
     return write_mhod_header(102, MHOD_HEADER_SIZE + len(raw_body)) + raw_body
 
 
-# ────────────────────────────────────────────────────────────
-# MHOD Type 55 — Playlist property plist passthrough
-# ────────────────────────────────────────────────────────────
-
 def write_mhod55(raw_body: bytes) -> bytes:
     """Write MHOD type 55 (playlist property plist).
 
@@ -312,17 +277,11 @@ def write_mhod55(raw_body: bytes) -> bytes:
     return write_mhod_header(55, MHOD_HEADER_SIZE + len(raw_body)) + raw_body
 
 
-# ────────────────────────────────────────────────────────────
-# Helpers for building from parsed data (round-trip)
-# ────────────────────────────────────────────────────────────
-
 def prefs_from_parsed(parsed: dict) -> SmartPlaylistPrefs:
     """Create SmartPlaylistPrefs from a parsed MHOD type 50 dict.
 
     This is the inverse of _parse_mhod50_smart_playlist_data().
     """
-    # Parser stores limit_sort as the raw low byte and reverse_sort
-    # separately.  Reconstruct the combined value the writer expects.
     limit_sort = parsed.get("limit_sort", 0x02)
     if parsed.get("reverse_sort", 0):
         limit_sort |= 0x80000000

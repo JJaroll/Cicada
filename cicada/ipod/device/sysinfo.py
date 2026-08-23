@@ -131,8 +131,6 @@ def _coerce_int(value: Any) -> int | str:
     text = str(value).strip()
     if not text:
         return 0
-    # SysInfo often stores values like "0x00000003" or
-    # "0x00000003 (3.0 0)"; only the leading numeric token matters.
     token = text.split(None, 1)[0]
     try:
         return int(token, 0)

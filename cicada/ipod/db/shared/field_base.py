@@ -25,10 +25,6 @@ from .device_time import (
     current_device_time_context,
 )
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  1. Exception Hierarchy
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 
 class WriteError(Exception):
     """Base exception for iTunesDB write-time errors."""
@@ -56,13 +52,6 @@ class InvalidFieldValueError(WriteError):
         self.field_name = field_name
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  2. Transform & Validator Functions
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-# Mac HFS+ epoch offset (seconds between 1904-01-01 and 1970-01-01).
-# Re-exported here for the field-definition callers that predate the explicit
-# device-clock module.
 _U32_MAX: int = MAC_U32_MAX
 MAC_EPOCH_OFFSET: int = _MAC_EPOCH_OFFSET
 
@@ -151,10 +140,6 @@ def strip_article(name: str) -> str:
     return name
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  3. FieldDef Dataclass
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
 @dataclass(frozen=True, slots=True)
 class FieldDef:
     """Complete, bidirectional contract for one binary field.
@@ -188,28 +173,15 @@ class FieldDef:
     section_type: str = ""
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  3b. List-container header sizes
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# The generic header shared by every iTunesDB chunk:
-#   +0x00  chunk_type  (4 bytes ASCII)
-#   +0x04  header_len  (u32 LE)
-#   +0x08  length_or_child_count  (u32 LE)
 GENERIC_HEADER_STRUCT = struct.Struct("<4sII")
 GENERIC_HEADER_SIZE: int = GENERIC_HEADER_STRUCT.size
 
-# Simple list chunks (mhlt, mhla, mhli, mhlp) have only the 12-byte
-# generic header padded to 92 bytes.  They don't carry FieldDef lists.
 
 MHLT_HEADER_SIZE: int = 92
 MHLA_HEADER_SIZE: int = 92
 MHLI_HEADER_SIZE: int = 92
 MHLP_HEADER_SIZE: int = 92
 
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  4. Factory Helpers
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def _u32(name: str, offset: int, **kw: Any) -> FieldDef:
     return FieldDef(name=name, offset=offset, size=4, struct_format="<I", **kw)
@@ -241,11 +213,6 @@ def _raw(name: str, offset: int, size: int, **kw: Any) -> FieldDef:
                     struct_format=f"<{size}s", **kw)
 
 
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  5. FIELD_REGISTRY & lookup helpers
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-# Populated by __init__.py after all *_defs modules have been imported.
 FIELD_REGISTRY: dict[str, list[FieldDef]] = {}
 
 
@@ -271,10 +238,6 @@ def get_fields(
         ]
     return list(fields)
 
-
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-#  6. Read / Write Helpers
-# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 def read_field(
     data: bytes | bytearray,
@@ -357,15 +320,10 @@ def write_field(
             raise InvalidFieldValueError(
                 section_type or field.section_type, field.name, str(exc),
             ) from exc
-    # Coerce to the type required by the format code so that floats or other
-    # numeric types from metadata sources never reach struct.pack_into as the
-    # wrong type (e.g. float for an integer field, or int for a float field).
     format_code = field.struct_format[-1]
     if format_code in 'IiHhQqBbNnP':
         if not isinstance(value, int):
             value = int(value)
-        # Clamp to the valid range for the format so bad metadata (e.g. negative
-        # BPM, oversized play counts) never crashes the packer.
         int_ranges = {
             'B': (0, 0xFF),
             'H': (0, 0xFFFF),
@@ -416,7 +374,6 @@ def write_fields(
         InvalidFieldValueError: A validator rejected a value.
     """
     for field in FIELD_REGISTRY.get(section_type, []):
-        # Skip fields outside the target header.
         if field.min_header_length is not None and header_length < field.min_header_length:
             continue
 

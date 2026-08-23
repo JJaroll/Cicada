@@ -85,7 +85,6 @@ def test_copy_media_rollback_si_una_falla(tmp_path):
     ]
     with pytest.raises(Exception):
         copy_media(mount, asg)
-    # el primero (AAAA) se limpió en el rollback
     assert not (mount / "iPod_Control/Music/F00/AAAA.mp3").exists()
 
 
@@ -99,7 +98,7 @@ def test_copy_media_no_sobrescribe_existente(tmp_path):
     asg = [MediaAssignment(src, ":iPod_Control:Music:F00:AAAA.mp3", "iPod_Control/Music/F00/AAAA.mp3")]
     with pytest.raises(Exception):
         copy_media(mount, asg)
-    assert existing.read_bytes() == b"ORIGINAL"  # intacto
+    assert existing.read_bytes() == b"ORIGINAL"
 
 
 def test_copy_media_rechaza_destino_fuera_de_ipod_control(tmp_path):

@@ -52,7 +52,6 @@ __all__ = [
     "create_plan",
 ]
 
-#: Las 7 rutas relativas canónicas en el iPod que componen la base de datos completa.
 DATABASE_TARGET_RELPATHS: tuple[str, ...] = (
     "iPod_Control/iTunes/iTunesCDB",
     "iPod_Control/iTunes/iTunes Library.itlp/Library.itdb",
@@ -110,7 +109,7 @@ def _hash_file(path: Path) -> Optional[tuple[int, str]]:
 class PreStateFingerprint:
     """Huella criptográfica de los archivos de base de datos actuales en el iPod."""
 
-    files: dict[str, Optional[tuple[int, str]]]  # relpath -> (size_bytes, sha256) o None
+    files: dict[str, Optional[tuple[int, str]]]
 
     @classmethod
     def capture(
@@ -185,7 +184,6 @@ def create_plan(
     :raises UnsafeDeviceError: si el GUID del dispositivo proviene de una fuente débil.
     :raises InconsistentArtifactsError: si los artefactos en staging fallan la verificación.
     """
-    # 1. Gate de seguridad del dispositivo
     if not device_info.guid_is_write_safe or not device_info.firewire_guid:
         raise UnsafeDeviceError(
             f"El dispositivo en {mount} no tiene un GUID de procedencia segura para escribir "
@@ -207,19 +205,13 @@ def create_plan(
     if caps is None:
         caps = capabilities_for_family_gen("iPod Nano", "7th Gen")
 
-    # Formatos de artwork de ESTE dispositivo (Etapa 4f-1) — () si no
-    # soporta artwork o su tabla está vacía; determina si el subsistema de
-    # artwork se toca en absoluto, más abajo.
     cover_art_formats: tuple[ArtworkFormat, ...] = caps.cover_art_formats if caps else ()
     artwork_relpaths = artwork_target_relpaths(cover_art_formats)
 
-    # 2. Gate de consentimiento de Music.app
     consent_needed = not has_music_app_consent(guid_str, consent_dir=consent_dir)
 
-    # 3. Huella del estado actual
     pre_state = PreStateFingerprint.capture(mount, artwork_relpaths=artwork_relpaths)
 
-    # 4. Directorio de staging off-device
     temp_handle = None
     if staging_base is not None:
         base = Path(staging_base)
@@ -231,17 +223,6 @@ def create_plan(
         temp_handle = tempfile.TemporaryDirectory(prefix="cicada-plan-")
         staging_dir = Path(temp_handle.name)
 
-    # 4b. Artwork (Fase 4, Etapas 4d/4f-1) — ANTES de iTunesCDB/sqlite: sus
-    # artwork_id_ref/mhii_link deben salir de este mismo mapeo, no de un
-    # paso posterior que podría desincronizarse. Fuente por track: source_path
-    # (pista recién copiada) o el propio audio ya en el iPod vía `location`
-    # (mismo patrón que _heal_track_lengths en coordinator/media.py).
-    # Dos razones distintas para omitir el subsistema entero (staging/
-    # artifacts/instalación/backup), verificadas por separado en tests:
-    # (a) el dispositivo no soporta artwork o no tiene tabla de formatos
-    #     (cover_art_formats vacío) — ni se intenta resolver fuente alguna;
-    # (b) el dispositivo SÍ soporta artwork pero ningún track tiene fuente
-    #     resoluble — no hay nada que tocar igualmente.
     mount_path = Path(mount)
     artwork_sources: list[ArtworkSourceTrack] = []
     if cover_art_formats:
@@ -292,9 +273,6 @@ def create_plan(
         for filename, content in artwork_result.ithmb_files.items():
             (artwork_dir / filename).write_bytes(content)
 
-        # Verificación interna: el ArtworkDB de staging debe reparsear con
-        # exactamente las entradas que el escritor dice haber producido —
-        # mismo tipo de autochequeo que ya se hace con verify_hashab/sqlite.
         parsed_entries = read_artworkdb(artworkdb_path.read_bytes())
         if len(parsed_entries) != artwork_tracks_count:
             raise InconsistentArtifactsError(
@@ -315,11 +293,9 @@ def create_plan(
             assert info is not None
             artwork_artifacts[f"iPod_Control/Artwork/{filename}"] = info
 
-    # 5. Generación de artefactos en staging
     cdb_path = staging_dir / "iTunesCDB"
     itlp_dir = staging_dir / "iTunes Library.itlp"
 
-    # 5a. iTunesCDB
     cdb_bytes = build_itunescdb(
         tracks,
         firewire_id=firewire_id,
@@ -332,7 +308,6 @@ def create_plan(
     )
     cdb_path.write_bytes(cdb_bytes)
 
-    # 5b. SQLite .itdb + .cbk
     build_sqlite_databases(
         itlp_dir,
         tracks,
@@ -345,7 +320,6 @@ def create_plan(
         time_context=time_context,
     )
 
-    # 6. Verificación interna de los artefactos generados
     if checksum_type is ChecksumType.HASHAB:
         if not verify_hashab(cdb_bytes, firewire_id):
             raise InconsistentArtifactsError(
@@ -358,7 +332,6 @@ def create_plan(
             raise InconsistentArtifactsError(
                 f"Falta el archivo requerido {fn} en el staging de iTunes Library.itlp."
             )
-        # Validación de lectura SQLite para los .itdb
         if fn.endswith(".itdb"):
             try:
                 con = sqlite3.connect(f"file:{target_file}?mode=ro", uri=True)
@@ -369,7 +342,6 @@ def create_plan(
                     f"La base SQLite generada {fn} es ilegible: {exc}"
                 ) from exc
 
-    # 7. Recolección de metadatos de los artefactos
     artifacts: dict[str, tuple[int, str]] = {}
     cdb_info = _hash_file(cdb_path)
     assert cdb_info is not None

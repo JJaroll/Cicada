@@ -25,10 +25,6 @@ def default_sync_db_path() -> Path:
     return base / "ipod.db"
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Modelos / Dataclasses de Repositorio
-# ═══════════════════════════════════════════════════════════════════════════
-
 @dataclass
 class DeviceRecord:
     guid: str
@@ -43,7 +39,7 @@ class DeviceRecord:
 @dataclass
 class TrackMapRecord:
     guid: str
-    ipod_dbid: int  # uint64 normalizado
+    ipod_dbid: int
     local_path: str
     local_mtime: float = 0.0
     local_size: int = 0
@@ -57,12 +53,12 @@ class TrackMapRecord:
 @dataclass
 class PlaybackStateRecord:
     guid: str
-    ipod_dbid: int  # uint64 normalizado
+    ipod_dbid: int
     known_play_count: int = 0
-    known_rating: int = 0  # 0 a 100 (canónico iPod: 20 por estrella)
-    known_last_played: int = 0  # Unix timestamp 1970
+    known_rating: int = 0
+    known_last_played: int = 0
     known_skip_count: int = 0
-    known_date_skipped: int = 0  # Unix timestamp 1970
+    known_date_skipped: int = 0
     synced_at: int = 0
 
     @property
@@ -74,7 +70,7 @@ class PlaybackStateRecord:
 @dataclass
 class PlaylistMapRecord:
     guid: str
-    playlist_id: int  # uint64 normalizado
+    playlist_id: int
     name: str
     is_smart: bool = False
     track_count: int = 0
@@ -88,18 +84,14 @@ class LocalPlaybackStateRecord:
     tanto del baseline (``playback_state.known_rating``) como del valor
     actual del iPod, y ambos lados difieren entre sí, es un conflicto."""
     guid: str
-    ipod_dbid: int  # uint64 normalizado
-    local_rating: int = 0  # 0 a 100 (canónico iPod: 20 por estrella)
+    ipod_dbid: int
+    local_rating: int = 0
     updated_at: int = 0
 
     @property
     def stars(self) -> int:
         return max(0, min(5, self.local_rating // 20))
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Repositorio SQLite
-# ═══════════════════════════════════════════════════════════════════════════
 
 class SyncStateDB:
     """Acceso y persistencia transaccional a ~/.cicada/ipod.db."""
@@ -200,7 +192,6 @@ class SyncStateDB:
                 conn.rollback()
                 raise
 
-    # ── Devices ────────────────────────────────────────────────────────────
 
     def upsert_device(self, dev: DeviceRecord, conn: Optional[sqlite3.Connection] = None) -> None:
         now = int(time.time())
@@ -261,7 +252,6 @@ class SyncStateDB:
                 for r in rows
             ]
 
-    # ── Track Map ──────────────────────────────────────────────────────────
 
     def upsert_track_map(self, rec: TrackMapRecord, conn: Optional[sqlite3.Connection] = None) -> None:
         self.upsert_track_maps([rec], conn=conn)
@@ -377,7 +367,6 @@ class SyncStateDB:
             synced_at=row["synced_at"],
         )
 
-    # ── Playback State ─────────────────────────────────────────────────────
 
     def upsert_playback_state(self, rec: PlaybackStateRecord, conn: Optional[sqlite3.Connection] = None) -> None:
         self.upsert_playback_states([rec], conn=conn)
@@ -458,7 +447,6 @@ class SyncStateDB:
             synced_at=row["synced_at"],
         )
 
-    # ── Local Playback State (rating asignado desde Cicada) ─────────────────
 
     def upsert_local_playback_state(
         self, rec: LocalPlaybackStateRecord, conn: Optional[sqlite3.Connection] = None
@@ -523,7 +511,6 @@ class SyncStateDB:
             updated_at=row["updated_at"],
         )
 
-    # ── Playlists Map ──────────────────────────────────────────────────────
 
     def upsert_playlist_map(self, rec: PlaylistMapRecord, conn: Optional[sqlite3.Connection] = None) -> None:
         def _do_work(c: sqlite3.Connection):

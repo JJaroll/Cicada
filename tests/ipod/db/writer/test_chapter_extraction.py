@@ -22,7 +22,7 @@ def _build_nero_chpl_m4b(path: Path, chapters: list[tuple[int, str]]) -> None:
     """chapters: lista de (start_ms, title). Escribe un .m4b mínimo cuyo único
     contenido es moov > udta > chpl — suficiente para el lector de átomos, que
     nunca toca datos de audio."""
-    body = bytes([0]) + bytes(4) + bytes([len(chapters)])  # version=0, reserved, count
+    body = bytes([0]) + bytes(4) + bytes([len(chapters)])
     for start_ms, title in chapters:
         title_bytes = title.encode("utf-8")
         body += struct.pack(">Q", start_ms * 10_000) + bytes([len(title_bytes)]) + title_bytes
@@ -102,7 +102,7 @@ def test_extract_chapters_m4b_truncado_no_lanza(tmp_path: Path):
     """Un chpl con el conteo de capítulos declarado pero sin los bytes que
     le siguen no debe reventar — debe devolver None, como cualquier
     archivo ajeno que el usuario podría añadir a su biblioteca."""
-    body = bytes([0]) + bytes(4) + bytes([3])  # dice "3 capítulos" y no trae ninguno
+    body = bytes([0]) + bytes(4) + bytes([3])
     chpl = _build_atom(b"chpl", body)
     udta = _build_atom(b"udta", chpl)
     moov = _build_atom(b"moov", udta)

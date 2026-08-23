@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Callable
 
 _BASE_DIR = (
-    Path(sys._MEIPASS)  # type: ignore[attr-defined]
+    Path(sys._MEIPASS)
     if getattr(sys, "frozen", False)
     else Path(__file__).resolve().parents[2]
 )

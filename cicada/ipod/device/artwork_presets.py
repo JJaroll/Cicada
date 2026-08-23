@@ -29,7 +29,6 @@ class ArtworkFormat:
 
 
 ARTWORK_FORMATS_BY_ID: dict[int, ArtworkFormat] = {
-    # iPod 4G photo/color and 5G era
     1005: ArtworkFormat(1005, 80, 80, 160, "RGB565_LE", "photo_thumb", "Nano 7G photo thumbnail"),
     1007: ArtworkFormat(1007, 480, 864, 960, "RGB565_LE", "photo_full", "Nano 7G photo full screen"),
     1009: ArtworkFormat(1009, 42, 30, 84, "RGB565_LE", "photo_list", "Photo list thumbnail"),
@@ -39,7 +38,6 @@ ARTWORK_FORMATS_BY_ID: dict[int, ArtworkFormat] = {
     1016: ArtworkFormat(1016, 140, 140, 280, "RGB565_LE", "cover_large", "iPod 4G photo/color album art large"),
     1017: ArtworkFormat(1017, 56, 56, 112, "RGB565_LE", "cover_small", "iPod 4G photo/color album art small"),
     1019: ArtworkFormat(1019, 720, 480, 1440, "UYVY", "tv_out", "iPod 4G/5G NTSC TV output"),
-    # Compatibility alias preserved from existing Apple databases.
     1020: ArtworkFormat(1020, 220, 176, 440, "RGB565_BE_90", "photo_full", "Photo full screen (alt rotated)"),
     1023: ArtworkFormat(1023, 176, 132, 352, "RGB565_BE", "photo_full", "Nano full screen"),
     1024: ArtworkFormat(1024, 320, 240, 640, "RGB565_LE", "photo_full", "320x240 photo full screen"),
@@ -49,8 +47,6 @@ ARTWORK_FORMATS_BY_ID: dict[int, ArtworkFormat] = {
     1031: ArtworkFormat(1031, 42, 42, 84, "RGB565_LE", "cover_small", "Nano album art small"),
     1032: ArtworkFormat(1032, 42, 37, 84, "RGB565_LE", "photo_list", "Nano list thumbnail"),
     1036: ArtworkFormat(1036, 50, 41, 100, "RGB565_LE", "photo_list", "Video list thumbnail"),
-    # Classic / later click-wheel iPods
-    # Compatibility alias preserved from existing Apple databases.
     1044: ArtworkFormat(1044, 128, 128, 256, "RGB565_LE", "cover_medium", "Classic album art medium"),
     1055: ArtworkFormat(1055, 128, 128, 256, "RGB565_LE", "cover_medium", "Classic album art medium"),
     1056: ArtworkFormat(1056, 128, 128, 256, "RGB565_LE", "cover_medium_alt", "128x128 cover art (alternate)"),
@@ -67,24 +63,11 @@ ARTWORK_FORMATS_BY_ID: dict[int, ArtworkFormat] = {
     1081: ArtworkFormat(1081, 640, 480, 0, "JPEG", "photo_full", "JPEG photo format (experimental/legacy)"),
     1083: ArtworkFormat(1083, 240, 320, 480, "RGB565_LE", "photo_full", "Nano 4G photo full screen (portrait)"),
     1084: ArtworkFormat(1084, 240, 240, 480, "RGB565_LE", "cover_large_alt", "Nano 4G album art (alt)"),
-    # Newer iPod-only formats beyond libgpod's older hardcoded tables.
-    # 1085/1089 (Nano 6G-only, unlike 1073/1074 above which are reused from
-    # Nano 5G/4G and libgpod-audited): confidence level `hardware_claimed`
-    # (see docs/VENDORED.md, Paquete 7, Etapa 4f-2). Not in libgpod at all.
-    # Traced to iOpenPod commit 8348aa8 ("feat: full iTunesCDB support —
-    # artist list, compilation fix, Nano 6G", 2026-03-03), which introduced
-    # them with this note: "Dimensions extracted from a real Nano 6G
-    # ArtworkDB (written by iTunes). libgpod has no hardcoded table for
-    # Nano 6G and relies on SysInfoExtended; these match the device." No
-    # dump/fixture of that ArtworkDB exists in iOpenPod's repo — not
-    # independently re-verifiable by Cicada.
     1085: ArtworkFormat(1085, 88, 88, 176, "RGB565_LE", "cover_medium", "Nano 6G album art medium"),
     1087: ArtworkFormat(1087, 384, 384, 768, "RGB565_LE", "photo_large", "Nano 5G photo large"),
-    # 1089: same hardware_claimed source as 1085 above.
     1089: ArtworkFormat(1089, 58, 58, 116, "RGB565_LE", "cover_small", "Nano 6G album art small"),
     1092: ArtworkFormat(1092, 80, 80, 160, "RGB565_LE", "photo_thumb", "Nano 6G photo thumbnail"),
     1093: ArtworkFormat(1093, 512, 512, 1024, "RGB565_LE", "photo_full", "Nano 6G photo full screen"),
-    # Mobile / touch-era formats
     2002: ArtworkFormat(2002, 50, 50, 100, "RGB565_BE", "cover_small", "iPod Mobile cover art small"),
     2003: ArtworkFormat(2003, 150, 150, 300, "RGB565_BE", "cover_large", "iPod Mobile cover art large"),
     3001: ArtworkFormat(3001, 256, 256, 512, "REC_RGB555_LE", "cover_large", "iPod touch cover art large"),
@@ -112,7 +95,6 @@ NANO_7G_COVER_ART_OVERRIDES = (
 """Known Nano 7G overrides for a few globally-defined artwork IDs."""
 
 
-# Backward-compatible alias used by capability tables and existing imports.
 NANO_7G_COVER_ART_FORMATS = NANO_7G_COVER_ART_OVERRIDES
 
 

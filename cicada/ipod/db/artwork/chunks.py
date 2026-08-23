@@ -48,15 +48,12 @@ def ithmb_filename(format_id: int, index: int = 1) -> str:
     return f"F{int(format_id)}_{int(index)}.ithmb"
 
 
-# ── Escritura ────────────────────────────────────────────────────────────
-
-
 def _write_mhod_filename(filename: str) -> bytes:
     """MHOD tipo FILE_NAME: string UTF-16LE con prefijo ':' (convención HFS)."""
     encoded = f":{filename}".encode("utf-16-le")
     padding = (4 - (len(encoded) % 4)) % 4
     body = struct.pack("<I", len(encoded))
-    body += struct.pack("<B", 2)  # encoding byte: 2 = utf-16-le
+    body += struct.pack("<B", 2)
     body += b"\x00" * 3
     body += b"\x00" * 4
     body += encoded
@@ -83,7 +80,7 @@ def write_mhni(format_id: int, ithmb_offset: int, payload: EncodedFormatPayload,
     header[0:4] = b"mhni"
     struct.pack_into("<I", header, 4, MHNI_HEADER_SIZE)
     struct.pack_into("<I", header, 8, total_len)
-    struct.pack_into("<I", header, 12, 1)  # child_count: solo el mhod de filename
+    struct.pack_into("<I", header, 12, 1)
     struct.pack_into("<I", header, 16, format_id)
     struct.pack_into("<I", header, 20, ithmb_offset)
     struct.pack_into("<I", header, 24, payload.size)
@@ -205,9 +202,6 @@ def build_artworkdb(
     ds2 = write_mhsd(ArtworkDatasetType.PHOTO_ALBUM_LIST, write_mhla())
     ds3 = write_mhsd(ArtworkDatasetType.FILE_LIST, write_mhlf(format_ids, image_sizes))
     return write_mhfd([ds1, ds2, ds3], next_img_id)
-
-
-# ── Lectura (para verificación en staging / futura Etapa 4f) ──────────────
 
 
 @dataclass(frozen=True)

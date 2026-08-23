@@ -120,13 +120,11 @@ def test_cli_plan(mock_cli_ipod: Path, tmp_path: Path, capsys: pytest.CaptureFix
 def test_cli_sync_flow(mock_cli_ipod: Path, tmp_path: Path, capsys: pytest.CaptureFixture):
     tracks_file = _write_sample_tracks_file(tmp_path / "tracks.json")
 
-    # 1. Sync sin ack de consentimiento falla con código != 0
     code_fail = main(["sync", "--tracks-file", str(tracks_file)])
     assert code_fail != 0
     err = capsys.readouterr().err
     assert "ADVERTENCIA" in err
 
-    # 2. Sync con --ack-consent tiene éxito
     code_ok = main(["sync", "--tracks-file", str(tracks_file), "--ack-consent"])
     assert code_ok == 0
     out = capsys.readouterr().out
@@ -182,19 +180,15 @@ def test_cli_plan_without_artwork_omits_artwork_line(
 
 
 def test_cli_consent_subcommands(mock_cli_ipod: Path, capsys: pytest.CaptureFixture):
-    # show inicial -> NO otorgado
     assert main(["consent", "show"]) == 0
     assert "NO otorgado" in capsys.readouterr().out
 
-    # grant -> registrado
     assert main(["consent", "grant"]) == 0
     assert "registrado con éxito" in capsys.readouterr().out
 
-    # show posterior -> OTORGADO
     assert main(["consent", "show"]) == 0
     assert "OTORGADO" in capsys.readouterr().out
 
-    # revoke -> revocado
     assert main(["consent", "revoke"]) == 0
     assert "revocado" in capsys.readouterr().out
 
@@ -202,8 +196,6 @@ def test_cli_consent_subcommands(mock_cli_ipod: Path, capsys: pytest.CaptureFixt
 def test_cli_eject_bloqueador_sin_nombre_amigable_no_repite(
     mock_cli_ipod: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ):
-    # Regresión: un binario sin entrada en FRIENDLY_NAMES (p.ej. "zsh") no debe
-    # imprimirse duplicado como "zsh (zsh)" — solo "zsh".
     from cicada.ipod.device.eject import Blocker, EjectResult
 
     fake_result = EjectResult(
@@ -211,8 +203,8 @@ def test_cli_eject_bloqueador_sin_nombre_amigable_no_repite(
         message="mensaje de prueba",
         blockers=(
             Blocker(pid=111, name="zsh"),
-            Blocker(pid=222, name="Finder"),   # sí tiene friendly_name propio (igual al name)
-            Blocker(pid=333, name="AMPDevicesAgent"),  # friendly_name distinto del name
+            Blocker(pid=222, name="Finder"),
+            Blocker(pid=333, name="AMPDevicesAgent"),
         ),
     )
     monkeypatch.setattr("cicada.ipod.cli.eject_ipod", lambda *a, **k: fake_result)
@@ -232,11 +224,11 @@ def test_cli_sync_playback(mock_cli_ipod: Path, capsys: pytest.CaptureFixture):
     assert code == 0
     out = capsys.readouterr().out
     assert "Pistas escaneadas :" in out
-    assert "1" in out   # mock_cli_ipod tiene 1 pista
+    assert "1" in out
 
     from cicada.ipod.sync.state import SyncStateDB, default_sync_db_path
     db = SyncStateDB(default_sync_db_path())
-    assert db.get_device(GUID_STR) is not None   # se auto-registró
+    assert db.get_device(GUID_STR) is not None
 
 
 def test_cli_sync_playback_dry_run_no_persiste(mock_cli_ipod: Path, capsys: pytest.CaptureFixture):
@@ -247,20 +239,17 @@ def test_cli_sync_playback_dry_run_no_persiste(mock_cli_ipod: Path, capsys: pyte
 
     from cicada.ipod.sync.state import SyncStateDB, default_sync_db_path
     db = SyncStateDB(default_sync_db_path())
-    assert db.get_playback_state(GUID_STR, 100) is None   # no persistió línea base
+    assert db.get_playback_state(GUID_STR, 100) is None
 
 
 def test_cli_backup_and_restore(mock_cli_ipod: Path, tmp_path: Path, capsys: pytest.CaptureFixture):
-    # backup
     assert main(["backup"]) == 0
     out_backup = capsys.readouterr().out
     assert "Backup creado:" in out_backup
     backup_file = out_backup.split("Backup creado:")[1].strip()
 
-    # list-backups
     assert main(["list-backups"]) == 0
     assert GUID_STR in capsys.readouterr().out
 
-    # restore
     assert main(["restore", backup_file]) == 0
     assert "Restaurado" in capsys.readouterr().out

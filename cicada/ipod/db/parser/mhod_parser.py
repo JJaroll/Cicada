@@ -44,9 +44,6 @@ from ._parsing import UINT16_LE, UINT32_LE, ParseResult
 
 logger = logging.getLogger(__name__)
 
-# ────────────────────────────────────────────────────────────────────
-# Top-level dispatcher
-# ────────────────────────────────────────────────────────────────────
 
 def parse_mhod(
     data: bytes | bytearray,
@@ -64,8 +61,6 @@ def parse_mhod(
         mhod["data"] = _parse_nonstring_mhod(data, body_offset, body_length, mhod_type)
 
     elif mhod_type in idb.mhod_defs.PODCAST_URL_MHOD_TYPES:
-        # Podcast URL types (15, 16): UTF-8/ASCII string directly after
-        # header, with NO sub-header.
         url_length = chunk_length - header_length
         if url_length > 0:
             raw = data[offset + header_length:offset + header_length + url_length]
@@ -79,9 +74,6 @@ def parse_mhod(
         mhod["data"] = _parse_chapter_data(data, body_offset, body_length)
 
     elif mhod_type in idb.mhod_defs.BINARY_BLOB_MHOD_TYPES:
-        # Binary blob types (32=video track data). Classic 6.5G samples are
-        # fixed 84-byte AVC descriptors with several repeatable fields, but
-        # their complete subfield contract is not yet confirmed; preserve raw.
         blob_length = chunk_length - header_length
         blob = data[offset + header_length:offset + header_length + blob_length]
         mhod["string"] = blob.hex()
@@ -90,7 +82,6 @@ def parse_mhod(
         _parse_string_mhod(data, offset, mhod)
 
     else:
-        # Unknown MHOD type — return stub.
         mhod["string"] = ""
 
     return {
@@ -99,10 +90,6 @@ def parse_mhod(
         "_body_end": offset + header_length,
     }
 
-
-# ────────────────────────────────────────────────────────────────────
-# String MHOD decoder
-# ────────────────────────────────────────────────────────────────────
 
 def _parse_string_mhod(
     data: bytes | bytearray,
@@ -115,20 +102,14 @@ def _parse_string_mhod(
     mhod["unk_0x20"] = idb.mhod_defs.mhod_string_unk0x20(data, offset)
     mhod["unk_0x24"] = idb.mhod_defs.mhod_string_unk0x24(data, offset)
 
-    # String data starts after 24-byte header + 16-byte sub-header.
     string_start = offset + idb.mhod_defs.MHOD_STRING_DATA_OFFSET
     string_data = data[string_start:string_start + string_length]
 
     if encoding == 2:
         mhod["string"] = string_data.decode("utf-8", errors="replace")
     else:
-        # encoding 0 or 1 = UTF-16LE (most common on iPod).
         mhod["string"] = string_data.decode("utf-16-le", errors="replace")
 
-
-# ────────────────────────────────────────────────────────────────────
-# Non-string MHOD dispatcher
-# ────────────────────────────────────────────────────────────────────
 
 def _parse_nonstring_mhod(
     data: bytes | bytearray,
@@ -155,10 +136,6 @@ def _parse_nonstring_mhod(
         case _:
             return {}
 
-
-# ────────────────────────────────────────────────────────────────────
-# MHOD Type 50 — Smart Playlist Preferences (SPLPref)
-# ────────────────────────────────────────────────────────────────────
 
 def _parse_mhod50(
     data: bytes | bytearray,
@@ -200,10 +177,6 @@ def _parse_mhod50(
     return result
 
 
-# ────────────────────────────────────────────────────────────────────
-# MHOD Type 51 — Smart Playlist Rules (SLst)
-# ────────────────────────────────────────────────────────────────────
-
 def _parse_mhod51(
     data: bytes | bytearray,
     body_offset: int,
@@ -231,7 +204,6 @@ def _parse_mhod51(
         "conjunction": defs.mhod_slst_conjunction(data, body_offset),
     }
 
-    # Parse individual rules (start after 136-byte SLst header).
     rules: list[dict[str, Any]] = []
     rule_offset = body_offset + defs.SLST_HEADER_SIZE
 
@@ -275,7 +247,6 @@ def _parse_spl_rule(
     if field_type == defs.SPLFT_STRING or (
         field_type == defs.SPLFT_UNKNOWN and (data_length == 0 or string_action)
     ):
-        # SLst strings are UTF-16 BIG-endian.
         if data_length > 0:
             raw = data[data_offset:data_offset + data_length]
             rule["string_value"] = raw.decode("utf-16-be", errors="replace")
@@ -284,7 +255,6 @@ def _parse_spl_rule(
         if field_type == defs.SPLFT_UNKNOWN:
             rule["inferred_field_type"] = "string"
     else:
-        # Numeric rule data (INT, DATE, BOOLEAN, PLAYLIST, BINARY_AND).
         rule["from_value"] = defs.mhod_spl_rule_from_value(data, data_offset)
         rule["from_date"] = defs.mhod_spl_rule_from_date(data, data_offset)
         rule["from_units"] = defs.mhod_spl_rule_from_units(data, data_offset)
@@ -300,10 +270,6 @@ def _parse_spl_rule(
     total_size = defs.SPL_RULE_HEADER_SIZE + data_length
     return rule, total_size
 
-
-# ────────────────────────────────────────────────────────────────────
-# MHOD Type 52 — Library Playlist Index
-# ────────────────────────────────────────────────────────────────────
 
 def _parse_mhod52(
     data: bytes | bytearray,
@@ -340,10 +306,6 @@ def _parse_mhod52(
 
     return result
 
-
-# ────────────────────────────────────────────────────────────────────
-# MHOD Type 53 — Library Playlist Jump Table
-# ────────────────────────────────────────────────────────────────────
 
 def _parse_mhod53(
     data: bytes | bytearray,
@@ -389,10 +351,6 @@ def _parse_mhod53(
     return result
 
 
-# ────────────────────────────────────────────────────────────────────
-# MHOD Type 55 — Playlist property plist
-# ────────────────────────────────────────────────────────────────────
-
 def _parse_mhod55(
     data: bytes | bytearray,
     body_offset: int,
@@ -409,14 +367,6 @@ def _parse_mhod55(
     return parse_playlist_property_mhod55(raw_body)
 
 
-# ────────────────────────────────────────────────────────────────────
-# MHOD Type 100 — Playlist Position / Preferences
-# ────────────────────────────────────────────────────────────────────
-#
-# Type 100 appears in two contexts:
-# 1. As a child of MHIP: contains track position (small, <=20-byte body)
-# 2. As a child of MHYP: contains playlist display preferences (large, ~624-byte body)
-
 def _parse_mhod100(
     data: bytes | bytearray,
     body_offset: int,
@@ -426,13 +376,10 @@ def _parse_mhod100(
     result: dict[str, Any] = {}
 
     if body_length <= idb.mhod_defs.MHOD100_POSITION_BODY_SIZE:
-        # MHIP context: simple position field.
         if body_length >= 4:
             result["position"] = idb.mhod_defs.mhod100_position(data, body_offset)
     else:
-        # MHYP context: playlist display preferences.
         result["fields"] = _scan_nonzero_fields(data, body_offset, body_length)
-        # Preserve raw bytes for round-trip fidelity.
         result["raw_body"] = bytes(data[body_offset:body_offset + body_length])
 
     return result
@@ -456,7 +403,6 @@ def _scan_nonzero_fields(
 
     for i in range(len(body)):
         if body[i] != 0 and i not in visited:
-            # Try to read as aligned u32 if within bounds.
             aligned = (i // 4) * 4
             if aligned + 4 <= len(body):
                 val = UINT32_LE.unpack_from(body, aligned)[0]
@@ -464,16 +410,11 @@ def _scan_nonzero_fields(
                     fields[f"0x{aligned:03X}"] = val
                     visited.update(range(aligned, aligned + 4))
                     continue
-            # Fallback: single byte.
             fields[f"0x{i:03X}"] = body[i]
             visited.add(i)
 
     return fields
 
-
-# ────────────────────────────────────────────────────────────────────
-# MHOD Type 102 — Playlist Settings (binary, post-iTunes 7)
-# ────────────────────────────────────────────────────────────────────
 
 def _parse_mhod102(
     data: bytes | bytearray,
@@ -488,61 +429,9 @@ def _parse_mhod102(
     """
     return {
         "fields": _scan_nonzero_fields(data, body_offset, body_length),
-        # Preserve raw bytes for round-trip fidelity.
         "raw_body": bytes(data[body_offset:body_offset + body_length]),
     }
 
-
-# ────────────────────────────────────────────────────────────────────
-# MHOD Type 17 — Chapter Data (big-endian atom tree)
-# ────────────────────────────────────────────────────────────────────
-#
-# Chapter data for audiobooks and enhanced podcasts.  The body
-# contains a 12-byte preamble (3 × u32 LE unknown fields) followed by
-# a big-endian atom tree: ``sean`` → ``chap`` × N → ``name`` + ``hedr``.
-#
-# This is the ONLY part of the iTunesDB (besides the SLst smart
-# playlist rules) that uses big-endian encoding for its atoms.
-#
-# Layout (from libgpod itdb_itunesdb.c and iPodLinux wiki):
-#
-#   Preamble (LE):
-#     +0x00  unk024 (u32)
-#     +0x04  unk028 (u32)
-#     +0x08  unk032 (u32)
-#
-#   sean atom (BE):
-#     +0x00  total_size (u32 BE)
-#     +0x04  "sean" (4 bytes)
-#     +0x08  unknown (u32 BE, always 1)
-#     +0x0C  child_count (u32 BE, = num_chapters + 1 for hedr)
-#     +0x10  unknown (u32 BE, always 0)
-#
-#   chap atom (BE), repeated per chapter:
-#     +0x00  total_size (u32 BE)
-#     +0x04  "chap" (4 bytes)
-#     +0x08  startpos (u32 BE, milliseconds)
-#     +0x0C  child_count (u32 BE, = 1 for name)
-#     +0x10  unknown (u32 BE, always 0)
-#     +0x14  name atom...
-#
-#   name atom (BE):
-#     +0x00  total_size (u32 BE)
-#     +0x04  "name" (4 bytes)
-#     +0x08  unknown (u32 BE, always 1)
-#     +0x0C  unknown (u32 BE, always 0)
-#     +0x10  unknown (u32 BE, always 0)
-#     +0x14  string_length (u16 BE, in UTF-16BE code units)
-#     +0x16  title (string_length × 2 bytes, UTF-16BE)
-#
-#   hedr atom (BE, 28 bytes):
-#     +0x00  size=28 (u32 BE)
-#     +0x04  "hedr" (4 bytes)
-#     +0x08  unknown (u32 BE, always 1)
-#     +0x0C  child_count=0 (u32 BE)
-#     +0x10  unknown (u32 BE, always 0)
-#     +0x14  unknown (u32 BE, always 0)
-#     +0x18  unknown (u32 BE, always 1)
 
 _UINT32_BE = struct.Struct(">I")
 _UINT16_BE = struct.Struct(">H")
@@ -567,7 +456,6 @@ def _parse_chapter_data(
         result["chapters"] = []
         return result
 
-    # Read 12-byte preamble (little-endian, like the rest of iTunesDB).
     result["unk024"] = UINT32_LE.unpack_from(data, body_offset)[0]
     result["unk028"] = UINT32_LE.unpack_from(data, body_offset + 4)[0]
     result["unk032"] = UINT32_LE.unpack_from(data, body_offset + 8)[0]
@@ -575,7 +463,6 @@ def _parse_chapter_data(
     seek = body_offset + defs.CHAPTER_PREAMBLE_SIZE
     end = body_offset + body_length
 
-    # Check for "sean" atom.
     if seek + 20 > end:
         result["chapters"] = []
         return result
@@ -592,8 +479,8 @@ def _parse_chapter_data(
         return result
 
     num_children = _UINT32_BE.unpack_from(data, seek + 12)[0]
-    num_chapters = max(0, num_children - 1)  # subtract 1 for hedr
-    seek += 20  # skip sean header
+    num_chapters = max(0, num_children - 1)
+    seek += 20
 
     chapters: list[dict[str, Any]] = []
     for _ in range(num_chapters):
@@ -601,7 +488,7 @@ def _parse_chapter_data(
             break
         chap_magic = data[seek + 4:seek + 8]
         if chap_magic != defs.CHAP_ATOM:
-            break  # unexpected atom, stop parsing
+            break
 
         chap_size = _UINT32_BE.unpack_from(data, seek)[0]
         startpos = _UINT32_BE.unpack_from(data, seek + 8)[0]
@@ -625,7 +512,6 @@ def _parse_chapter_data(
         chapters.append({"startpos": startpos, "title": title})
         seek += chap_size
 
-    # Skip hedr atom if present.
     if seek + 8 <= end:
         hedr_magic = data[seek + 4:seek + 8]
         if hedr_magic == defs.HEDR_ATOM:

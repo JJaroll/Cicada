@@ -28,7 +28,6 @@ skip_no_fixture = pytest.mark.skipif(not CDB.exists(), reason="fixture no presen
 
 @skip_no_fixture
 def test_verify_hashab_reproduce_la_firma_de_iopenpod():
-    # Reproduce la firma de una base escrita por iOpenPod (mismo WASM que la escribió).
     r = verify_hashab(CDB.read_bytes(), bytes.fromhex(GUID))
     assert r.valid is True
     assert r.stored == r.computed
@@ -45,16 +44,14 @@ def test_verify_hashab_NO_reproduce_la_firma_de_apple():
     la compatibilidad con Music.app. Ver docs/IPOD_INTEGRATION.md §0.3.
     """
     r = verify_hashab(APPLE_CDB.read_bytes(), bytes.fromhex(GUID))
-    assert r.valid is False              # nuestra firma != la de Apple
+    assert r.valid is False
     assert r.stored != r.computed
-    # La firma de Apple no comparte la estructura invariante del WASM.
-    assert r.stored[4:7] != bytes.fromhex("474d48")   # 'GMH' del WASM
+    assert r.stored[4:7] != bytes.fromhex("474d48")
     assert r.computed[4:7] == bytes.fromhex("474d48")
 
 
 @skip_no_fixture
 def test_firma_empieza_por_marcador_conocido():
-    # La firma HASHAB del Nano 7G empieza por 0x0300 (marcador) y termina en 0x57.
     r = verify_hashab(CDB.read_bytes(), bytes.fromhex(GUID))
     assert r.stored[:2] == bytes.fromhex("0300")
     assert r.stored[-1] == 0x57
@@ -64,7 +61,7 @@ def test_firma_empieza_por_marcador_conocido():
 def test_guid_incorrecto_no_valida():
     r = verify_hashab(CDB.read_bytes(), bytes.fromhex("DEADBEEFDEADBEEF"))
     assert r.valid is False
-    assert r.stored != r.computed          # pero la firma almacenada se conserva
+    assert r.stored != r.computed
 
 
 @skip_no_fixture
@@ -77,7 +74,6 @@ def test_sha1_canonico_es_determinista():
 @skip_no_fixture
 @pytest.mark.skipif(sys.platform == "win32", reason="symlinks no POSIX")
 def test_integracion_guid_desde_device_info(tmp_path):
-    # El GUID que verify necesita sale de device_info leyendo solo el volumen.
     from cicada.ipod.device.device_info import read_device_info
     mount = tmp_path / "IPOD"
     mount.mkdir()

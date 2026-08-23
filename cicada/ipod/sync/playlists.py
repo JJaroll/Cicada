@@ -34,10 +34,6 @@ def _generate_playlist_id() -> int:
     return (int(time.time() * 1000) ^ random.randint(1, 0xFFFFFF)) & 0x7FFFFFFFFFFFFFFF
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Dataclasses de Entrada y Resultados
-# ═══════════════════════════════════════════════════════════════════════════
-
 @dataclass
 class LocalPlaylist:
     """Definición de una lista de reproducción estándar proveniente de Cicada."""
@@ -58,10 +54,6 @@ class PreparedPlaylists:
         return self.standard_playlists + self.smart_playlists
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Conversión de Playlists Estándar
-# ═══════════════════════════════════════════════════════════════════════════
-
 def prepare_standard_playlists(
     local_playlists: Sequence[LocalPlaylist],
     guid: str,
@@ -79,7 +71,6 @@ def prepare_standard_playlists(
     resolved_playlists: List[PlaylistInfo] = []
     total_unresolved = 0
 
-    # Construir mapa de resolución local_path -> ipod_dbid si contamos con sync_db
     local_map: Dict[str, int] = {}
     if path_to_dbid_map:
         local_map.update(path_to_dbid_map)
@@ -97,7 +88,6 @@ def prepare_standard_playlists(
                 total_unresolved += 1
                 logger.warning("Pista en playlist %r no encontrada en track_map: %s", lp.name, p)
 
-        # Garantizar que siempre tenga un playlist_id de 64 bits
         pl_id = u64(lp.playlist_id) if lp.playlist_id is not None else _generate_playlist_id()
 
         pl_info = PlaylistInfo(
@@ -110,10 +100,6 @@ def prepare_standard_playlists(
 
     return resolved_playlists, total_unresolved
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Preservación de Smart Playlists (v1)
-# ═══════════════════════════════════════════════════════════════════════════
 
 def extract_smart_playlists_for_preservation(mount: Path | str) -> List[PlaylistInfo]:
     """Extrae las smart playlists existentes en el iPod preservando sus blobs crudos.
@@ -134,7 +120,6 @@ def extract_smart_playlists_for_preservation(mount: Path | str) -> List[Playlist
     if not lib:
         return []
 
-    # En load_ipod_library, las playlists se organizan en mhlp_smart, mhlp, mhlp_podcast o mhyp
     raw_playlists = (
         lib.get("mhlp_smart", [])
         + lib.get("mhlp", [])
@@ -158,7 +143,6 @@ def extract_smart_playlists_for_preservation(mount: Path | str) -> List[Playlist
         playlist_id_raw = pl.get("playlist_id") or pl.get("id")
         playlist_id = u64(playlist_id_raw) if playlist_id_raw is not None else _generate_playlist_id()
 
-        # Extraer / convertir smart_prefs
         smart_prefs = pl.get("smart_prefs")
         if smart_prefs is None and pl.get("smart_playlist_data"):
             d = pl.get("smart_playlist_data")
@@ -175,7 +159,6 @@ def extract_smart_playlists_for_preservation(mount: Path | str) -> List[Playlist
             elif isinstance(d, SmartPlaylistPrefs):
                 smart_prefs = d
 
-        # Extraer / convertir smart_rules
         smart_rules = pl.get("smart_rules")
         if smart_rules is None and pl.get("smart_playlist_rules"):
             r = pl.get("smart_playlist_rules")
@@ -216,7 +199,6 @@ def extract_smart_playlists_for_preservation(mount: Path | str) -> List[Playlist
         phase_game_flag = pl.get("phase_game_flag") or 0
         sortorder = pl.get("sortorder") or 0
 
-        # Extracción tolerante de track_ids (soporte para track_ids o items / mhip)
         raw_track_ids = pl.get("track_ids")
         if raw_track_ids is None:
             raw_track_ids = [
@@ -247,10 +229,6 @@ def extract_smart_playlists_for_preservation(mount: Path | str) -> List[Playlist
 
     return smart_playlists
 
-
-# ═══════════════════════════════════════════════════════════════════════════
-# Orquestador Unificado
-# ═══════════════════════════════════════════════════════════════════════════
 
 def prepare_all_playlists(
     mount: Path | str,

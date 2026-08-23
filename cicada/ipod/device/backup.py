@@ -68,13 +68,10 @@ __all__ = [
     "list_backups",
 ]
 
-#: Fallback del nombre de carpeta hasta que Fase 1 lea el FireWireGUID real.
 UNKNOWN_GUID = "unknown-device"
 
-#: Cuántos backups ``db-only`` se conservan por dispositivo (rotación).
 KEEP_DB_ONLY = 20
 
-#: Nivel de compresión zstd (equilibrio tamaño/tiempo).
 _ZSTD_LEVEL = 10
 
 _DEVICE_DIRNAME = "Device"
@@ -111,9 +108,6 @@ class BackupInfo:
     size_bytes: int
 
 
-# --------------------------------------------------------------------------- #
-# Rutas y nombres
-# --------------------------------------------------------------------------- #
 def default_backups_dir() -> Path:
     """``~/.cicada/backups/ipod`` (o $CICADA_HOME/backups/ipod)."""
     base = Path(os.environ.get("CICADA_HOME") or (Path.home() / ".cicada"))
@@ -124,7 +118,7 @@ def _resolve_guid(mount: Path, guid: Optional[str]) -> str:
     """GUID para el nombre de carpeta; fallback en Fase 0."""
     if guid:
         return guid
-    read = write_guard._read_mount_guid(mount)  # None en Fase 0
+    read = write_guard._read_mount_guid(mount)
     return read or UNKNOWN_GUID
 
 
@@ -135,9 +129,6 @@ def _timestamp(now: Optional[datetime]) -> str:
     return dt.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
-# --------------------------------------------------------------------------- #
-# Recorrido del árbol (con fsfilter)
-# --------------------------------------------------------------------------- #
 def _scope_roots(
     mount: Path, mode: BackupMode, *, include_artwork: bool = False
 ) -> list[tuple[Path, str]]:
@@ -173,7 +164,6 @@ def _walk_files(root: Path, arcroot: str) -> Iterator[tuple[Path, str]]:
     No desciende a directorios artefacto (``.Trashes``, ``.fseventsd``…).
     """
     for dirpath, dirnames, filenames in os.walk(root):
-        # Poda de directorios artefacto in-place para no descender en ellos.
         dirnames[:] = [d for d in dirnames if not fsfilter.is_macos_artifact(d)]
         rel_dir = os.path.relpath(dirpath, root)
         for fn in filenames:
@@ -210,9 +200,6 @@ def _artifact_filter(tarinfo: tarfile.TarInfo) -> Optional[tarfile.TarInfo]:
     return tarinfo
 
 
-# --------------------------------------------------------------------------- #
-# Verificación de integridad
-# --------------------------------------------------------------------------- #
 def _read_archive_manifest(archive: Path) -> dict[str, tuple[int, str]]:
     """Recorre el .tar.zst y devuelve {arcname: (size, sha256)} de los regulares."""
     seen: dict[str, tuple[int, str]] = {}
@@ -249,9 +236,6 @@ def _verify_integrity(archive: Path, manifest: dict[str, tuple[int, str]]) -> No
         )
 
 
-# --------------------------------------------------------------------------- #
-# create
-# --------------------------------------------------------------------------- #
 def create_backup(
     mount: os.PathLike | str,
     mode: BackupMode = BackupMode.DB_ONLY,
@@ -293,7 +277,7 @@ def create_backup(
                 with tarfile.open(mode="w|", fileobj=zf) as tar:
                     for root, arcroot in _scope_roots(resolved, mode, include_artwork=include_artwork):
                         tar.add(str(root), arcname=arcroot, filter=_artifact_filter)
-        os.replace(tmp, archive)  # publicación atómica
+        os.replace(tmp, archive)
     except BaseException:
         tmp.unlink(missing_ok=True)
         raise
@@ -301,7 +285,7 @@ def create_backup(
     try:
         _verify_integrity(archive, manifest)
     except BackupIntegrityError:
-        archive.unlink(missing_ok=True)  # no dejar un backup corrupto
+        archive.unlink(missing_ok=True)
         raise
 
     if mode is BackupMode.DB_ONLY:
@@ -321,9 +305,6 @@ def _rotate_db_only(guid_dir: Path, keep: int = KEEP_DB_ONLY) -> None:
         old.unlink(missing_ok=True)
 
 
-# --------------------------------------------------------------------------- #
-# restore
-# --------------------------------------------------------------------------- #
 def restore_backup(
     archive: os.PathLike | str,
     mount: os.PathLike | str,
@@ -358,7 +339,6 @@ def restore_backup(
     resolved = resolve_mount(candidates=candidates if candidates is not None else [mount])
     assert_writable(resolved)
 
-    # --- Paso 1: validar TODOS los destinos antes de tocar el disco ---------
     names = _list_member_names(archive)
     archive_paths: set[Path] = set()
     roots: set[Path] = set()
@@ -367,10 +347,8 @@ def restore_backup(
     for name in names:
         root_name, top_level_root = _guard_root_for_member(name, control, photos_root)
         dest = resolved / name
-        validated = assert_within_ipod_control(dest, resolved, root=root_name)  # lanza si escapa
+        validated = assert_within_ipod_control(dest, resolved, root=root_name)
         archive_paths.add(validated)
-        # Raíz = hijo inmediato de la raíz segura (iPod_Control/ o Photos/)
-        # que aparece en el archivo.
         try:
             rel = validated.relative_to(top_level_root)
         except ValueError:
@@ -382,11 +360,8 @@ def restore_backup(
             roots.add(photos_root)
 
     if include_artwork:
-        # La raíz se declara aunque el archivo no tenga miembros ahí (backup
-        # tomado con Artwork/ inexistente todavía) — ver docstring arriba.
         roots.add(control / _ARTWORK_DIRNAME)
 
-    # --- Paso 2: extraer (sobrescribiendo) ----------------------------------
     dctx = zstandard.ZstdDecompressor()
     with open(archive, "rb") as fh, dctx.stream_reader(fh) as zr:
         with tarfile.open(mode="r|", fileobj=zr) as tar:
@@ -402,9 +377,7 @@ def restore_backup(
                     with open(dest, "wb") as out:
                         for chunk in iter(lambda: src.read(1 << 16), b""):
                             out.write(chunk)
-                # otros tipos (symlink/dispositivo) no aplican en FAT32: se ignoran
 
-    # --- Paso 3: reconciliar (podar lo que sobra respecto al backup) --------
     _prune_extras(resolved, roots, archive_paths, photos_root=photos_root)
 
 
@@ -440,15 +413,11 @@ def _prune_extras(
                 if d.resolve() in keep:
                     continue
                 try:
-                    d.rmdir()  # solo si quedó vacío
+                    d.rmdir()
                 except OSError:
-                    # Directorio extra no vacío y no protegido -> borrado guardado.
                     safe_rmtree(d, mount, root=root_name)
 
 
-# --------------------------------------------------------------------------- #
-# list
-# --------------------------------------------------------------------------- #
 def _list_member_names(archive: Path) -> list[str]:
     names: list[str] = []
     dctx = zstandard.ZstdDecompressor()
@@ -499,6 +468,5 @@ def list_backups(
             info = _parse_backup_name(path)
             if info is not None:
                 infos.append(info)
-    # Timestamp ordenable -> orden por (timestamp, nombre) descendente.
     infos.sort(key=lambda i: (i.timestamp, i.path.name), reverse=True)
     return infos
