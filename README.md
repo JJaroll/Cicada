@@ -20,6 +20,7 @@ Cicada identifica tus canciones, les aplica metadatos completos (título, artist
 * **🎵 Reproductor Integrado:** Escucha tus pistas locales directamente en la web con soporte de salto de tiempo (HTTP Range) y agrupación por artista o álbum.
 * **🎨 Interfaz Moderna:** Interfaz con Modo Claro (Aluminio) y Oscuro (Grafito), inspirada en la estética retro-moderna de los reproductores clásicos.
 * **🛡️ Reanudable:** Guarda el progreso de cada sesión en tiempo real para que puedas retomar el trabajo tras interrupciones.
+* **🎧 Integración con iPod:** Detecta tu iPod, sincroniza música y playlists (incluyendo sync bidireccional con resolución de conflictos de calificación), escribe cover art, y gestiona video, podcasts y audiolibros — todo con backup automático y rollback ante errores. Ver la sección dedicada más abajo.
 
 ---
 
@@ -115,7 +116,12 @@ Una vez que hayas configurado tus claves API en los Ajustes (⚙️), el proceso
    ```bash
    pip install -r requirements.txt
    ```
-   
+   > **Nota:** esto incluye las dependencias del módulo iPod (`wasmtime`,
+   > `zstandard`, `numpy`), que pesan varias decenas de MB adicionales. Hoy
+   > no hay forma de omitirlas en una instalación estándar; si no tenés
+   > un iPod, podés ocultar la sección desde **Ajustes** una vez dentro de
+   > la app (ver más abajo), aunque las dependencias sigan instaladas.
+
 ---
 
 ## 🚀 Uso
@@ -128,6 +134,64 @@ python run.py
 *(En macOS, puedes simplemente hacer doble clic en el archivo `start.command`)*
 
 Esto abrirá la aplicación en tu navegador web en la dirección `http://127.0.0.1:8000`.
+
+---
+
+## 🎧 Integración con iPod
+
+Cicada detecta tu iPod conectado y lo gestiona directamente desde la interfaz
+web, sin pasar por iTunes/Music.app: lectura de biblioteca, escritura segura
+(plan *dry-run* + backup automático + rollback ante cualquier error), y
+expulsión segura del volumen.
+
+### Qué funciona hoy
+
+* **Música y playlists:** lectura y escritura de la biblioteca, creación y
+  envío de playlists desde Cicada al dispositivo.
+* **Sincronización bidireccional:** reproducciones y saltos del iPod se
+  reflejan de vuelta en Cicada, con resolución interactiva de conflictos de
+  calificación (el único campo genuinamente conflictivo — reproducciones y
+  saltos se suman en vez de pisarse).
+* **Cover art (artwork):** implementado con el mismo formato de píxel
+  (RGB565_LE) en las 24 device families que Cicada modela; de estas, 14
+  soportan cover art según su hardware (las demás — Shuffles, Minis, algunos
+  iPods de rueda de clic tempranos — no tienen esa capacidad físicamente). La
+  correspondencia de capacidades está auditada contra libgpod para 12 de las
+  13 families relevantes (Nano 7G, ausente de libgpod, se verificó contra
+  hardware real en su lugar). Detalle completo de la auditoría en
+  [`docs/IPOD_INTEGRATION.md`](docs/IPOD_INTEGRATION.md).
+* **Video, podcasts y audiolibros:** gestión completa (lectura, escritura,
+  metadatos específicos como capítulos embebidos).
+* **Visibilidad opcional:** un switch en **Ajustes** oculta toda la sección
+  iPod de la interfaz para quien no tenga el dispositivo — no reduce el
+  tamaño de instalación ni desinstala nada, solo la interfaz.
+
+### Qué NO funciona
+
+* **Fotos:** investigado a fondo (7 líneas de investigación independientes,
+  incluyendo comparación contra sync real de iTunes/Música y de una
+  herramienta de terceros) y finalmente excluida del proyecto sin causa raíz
+  identificable sin desensamblar el firmware. Detalle completo en
+  [`docs/VENDORED.md`](docs/VENDORED.md) (Paquete 9) y
+  [`docs/IPOD_INTEGRATION.md`](docs/IPOD_INTEGRATION.md).
+* **iPod touch** (y el "iPod Mobile" de los Motorola ROKR/SLVR/RAZR): **no
+  soportado, y no está planeado como extensión incremental.** Es un
+  dispositivo con SO propio (iOS) que sincroniza por un protocolo distinto,
+  muy probablemente sin el par FireWireGUID/HASHAB en el que se apoya toda la
+  identificación y firma de Cicada hoy. Soportarlo sería un proyecto aparte,
+  no una generalización del código existente.
+
+### Modelos verificados vs. modelados
+
+Cicada **modela** 24 device families de iPods de rueda de clic (click-wheel)
+y Nano de pantalla táctil hasta la 7ª generación — Shuffle, Classic, Nano
+1G-7G, iPod Video/Photo/Color, etc. Sé honesto con el alcance real: **solo el
+Nano 7G está verificado contra hardware físico real**, repetidas veces, en
+esta sesión de desarrollo. El resto del código sigue el mismo modelo de datos
+(vendorizado y auditado contra `itdb_device.c` de libgpod donde es posible),
+pero no se probó contra el dispositivo físico correspondiente. Si usás
+Cicada con otra family y encontrás un problema, es información valiosa —
+reportalo.
 
 ### CLI del iPod (`cicada ipod`)
 
@@ -155,21 +219,9 @@ opciones. (La instalación es editable a propósito: los archivos estáticos de 
 app se resuelven en runtime relativos al checkout del repositorio, no se
 empaquetan — por eso no se recomienda una instalación no-editable.)
 
-### Compatibilidad de dispositivos
-
-Cicada soporta iPods de rueda de clic (click-wheel) y Nano de pantalla táctil
-hasta la 7ª generación — Shuffle, Classic, Nano 1G-7G, iPod Video/Photo/Color, etc.
-
-**El iPod touch (y el "iPod Mobile" de los Motorola ROKR/SLVR/RAZR) NO está
-soportado, y no está planeado como extensión incremental.** No hay
-identificación de dispositivo, sync, artwork ni ningún otro punto de
-integración para esa familia. Es un dispositivo con SO propio (iOS) que
-sincroniza por un protocolo distinto al de los iPods de esta lista — muy
-probablemente sin el par FireWireGUID/HASHAB en el que se apoya toda la
-identificación y firma de Cicada hoy. Soportarlo sería un proyecto aparte,
-no una generalización del código existente. Detalle técnico en
-[`docs/IPOD_INTEGRATION.md`](docs/IPOD_INTEGRATION.md) y la decisión
-registrada (Etapa 4f-3) en [`docs/VENDORED.md`](docs/VENDORED.md).
+Detalle técnico completo de toda la integración en
+[`docs/IPOD_INTEGRATION.md`](docs/IPOD_INTEGRATION.md) y el registro de
+vendorizado por etapa en [`docs/VENDORED.md`](docs/VENDORED.md).
 
 ---
 
@@ -212,5 +264,13 @@ Cicada es una aplicación local. A diferencia de los gestores de música basados
 
 Este proyecto está bajo la Licencia GNU GPLv3.
 *📝 Consulta los [Términos y Condiciones](TERMS.md).*
+
+**Código de terceros:** el módulo de integración con iPod incorpora código
+vendorizado de [iOpenPod](https://github.com/TheRealSavi/iOpenPod) (MIT) y de
+[dstaley/hashab](https://github.com/dstaley/hashab) (The Unlicense/dominio
+público), ambas compatibles con GPLv3 y redistribuidas bajo esos términos.
+Ver [`NOTICE`](NOTICE) para las atribuciones completas y
+[`docs/VENDORED.md`](docs/VENDORED.md) para el detalle de qué se vendorizó,
+de dónde y en qué commit.
 
 Creado con ❤️ por **JJaroll**

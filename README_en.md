@@ -20,6 +20,7 @@ Cicada identifies your songs, applies comprehensive metadata (title, artist, alb
 * **🎵 Built-in Player:** Listen to your local tracks directly on the web with HTTP Range support for seeking and grouping by artist or album.
 * **🎨 Modern Interface:** Interface with Light Mode (Aluminum) and Dark Mode (Graphite), inspired by the retro-modern aesthetic of classic players.
 * **🛡️ Resumable:** Saves the progress of each session in real time so you can resume work after interruptions.
+* **🎧 iPod Integration:** Detects your iPod, syncs music and playlists (including bidirectional sync with rating-conflict resolution), writes cover art, and manages video, podcasts, and audiobooks — all with automatic backup and rollback on error. See the dedicated section below.
 
 ---
 
@@ -115,7 +116,12 @@ Once you have configured your API keys in the Settings (⚙️), the linking pro
    ```bash
    pip install -r requirements.txt
    ```
-   
+   > **Note:** this includes the iPod module's dependencies (`wasmtime`,
+   > `zstandard`, `numpy`), which add several dozen MB. There is currently
+   > no way to skip them in a standard install; if you don't have an iPod,
+   > you can hide the section from **Settings** once inside the app (see
+   > below), although the dependencies stay installed either way.
+
 ---
 
 ## 🚀 Usage
@@ -128,6 +134,96 @@ python run.py
 *(On macOS, you can simply double-click the `start.command` file)*
 
 This will open the application in your web browser at `http://127.0.0.1:8000`.
+
+---
+
+## 🎧 iPod Integration
+
+Cicada detects your connected iPod and manages it directly from the web
+interface, without going through iTunes/Music.app: library reading, safe
+writing (out-of-device *dry-run* plan + automatic backup + rollback on any
+error), and safe volume ejection.
+
+### What works today
+
+* **Music and playlists:** reading and writing the library, creating and
+  sending playlists from Cicada to the device.
+* **Bidirectional synchronization:** play counts and skips from the iPod
+  are reflected back in Cicada, with interactive resolution of rating
+  conflicts (the only field that's genuinely conflict-prone — play counts
+  and skips are additive instead of overwriting each other).
+* **Cover art (artwork):** implemented with the same pixel format
+  (RGB565_LE) across the 24 device families Cicada models; of those, 14
+  support cover art based on their hardware (the rest — Shuffles, Minis,
+  some early click-wheel iPods — physically lack that capability).
+  Capability mapping is audited against libgpod for 12 of the 13 relevant
+  families (Nano 7G, absent from libgpod, was verified against real
+  hardware instead). Full audit detail in
+  [`docs/IPOD_INTEGRATION.md`](docs/IPOD_INTEGRATION.md).
+* **Video, podcasts, and audiobooks:** full management (reading, writing,
+  format-specific metadata like embedded chapters).
+* **Optional visibility:** a switch in **Settings** hides the entire iPod
+  section from the interface for anyone without the device — it doesn't
+  reduce install size or uninstall anything, just the UI.
+
+### What doesn't work
+
+* **Photos:** thoroughly investigated (7 independent lines of
+  investigation, including comparisons against real iTunes/Music syncs and
+  a third-party tool) and ultimately excluded from the project with no
+  root cause identified without disassembling the firmware. Full detail in
+  [`docs/VENDORED.md`](docs/VENDORED.md) (Package 9) and
+  [`docs/IPOD_INTEGRATION.md`](docs/IPOD_INTEGRATION.md).
+* **iPod touch** (and the Motorola ROKR/SLVR/RAZR "iPod Mobile"): **not
+  supported, and not planned as an incremental extension.** It's a
+  device with its own OS (iOS) that syncs over a different protocol, most
+  likely without the FireWireGUID/HASHAB pair that all of Cicada's device
+  identification and signing relies on today. Supporting it would be a
+  separate project, not a generalization of the existing code.
+
+### Verified vs. modeled devices
+
+Cicada **models** 24 click-wheel and touch-screen Nano device families up
+to the 7th generation — Shuffle, Classic, Nano 1G-7G, iPod Video/Photo/Color,
+etc. Being honest about the real scope: **only the Nano 7G is verified
+against real physical hardware**, repeatedly, during this development
+session. The rest of the code follows the same data model (vendored and
+audited against libgpod's `itdb_device.c` where possible), but wasn't
+tested against the corresponding physical device. If you use Cicada with
+another family and run into an issue, that's valuable information — please
+report it.
+
+### iPod CLI (`cicada ipod`)
+
+To manage the iPod from the terminal (backups, restore, safe ejection,
+etc.) without going through the web app, install Cicada in editable mode
+once:
+
+```bash
+pip install -e .
+```
+
+This adds the `cicada` executable to your virtual environment's `PATH`,
+available from any directory while the venv is active:
+
+```bash
+cicada ipod status              # identity and status of the mounted iPod
+cicada ipod backup              # safety snapshot (--full to include Music/)
+cicada ipod restore <file>      # restores a backup
+cicada ipod list-backups        # lists existing backups
+cicada ipod consent             # checks/grants Music.app consent
+cicada ipod eject               # safely ejects the iPod
+```
+
+Use `cicada ipod --help` or `cicada ipod <subcommand> --help` to see all
+options. (The install is editable on purpose: the app's static files are
+resolved at runtime relative to the repository checkout, not bundled —
+that's why a non-editable install isn't recommended.)
+
+Full technical detail of the whole integration in
+[`docs/IPOD_INTEGRATION.md`](docs/IPOD_INTEGRATION.md), and the
+stage-by-stage vendoring record in
+[`docs/VENDORED.md`](docs/VENDORED.md).
 
 ---
 
@@ -170,5 +266,13 @@ Contributions are welcome!
 
 This project is licensed under the GNU GPLv3 License.
 *📝 Please read the [Terms and Conditions](TERMS.md).*
+
+**Third-party code:** the iPod integration module incorporates vendored code
+from [iOpenPod](https://github.com/TheRealSavi/iOpenPod) (MIT) and
+[dstaley/hashab](https://github.com/dstaley/hashab) (The
+Unlicense/public domain), both compatible with GPLv3 and redistributed
+under those terms. See [`NOTICE`](NOTICE) for full attribution and
+[`docs/VENDORED.md`](docs/VENDORED.md) for the detail of what was
+vendored, from where, and at which commit.
 
 Created with ❤️ by **JJaroll**

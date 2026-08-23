@@ -8,9 +8,18 @@ Todos los cambios notables de este proyecto se documentarán en este archivo.
 - **iPod — escritura segura:** botón "Escribir en el iPod" que reescribe la base de datos en el formato de Cicada mediante un flujo transaccional: plan *dry-run* fuera del dispositivo, **backup automático** previo, y **rollback** ante cualquier error. La primera escritura pide confirmación explícita (advertencia irreversible de incompatibilidad con Music.app).
 - **iPod — respaldos y expulsión:** creación y restauración de backups `.tar.zst`, y expulsión segura del volumen.
 - **iPod — sincronización de reproducciones:** lectura y persistencia local de contadores de reproducción (base para sincronización bidireccional).
+- **iPod — playlists:** creación y envío de playlists desde Cicada al dispositivo, con preservación byte-exacta de smart playlists.
+- **iPod — sincronización bidireccional y conflictos:** reproducciones y saltos del iPod se reflejan de vuelta en Cicada; resolución interactiva de conflictos de calificación (único campo genuinamente conflictivo) desde una vista dedicada "Conflictos" en la sub-sidebar.
+- **iPod — cover art:** escritura de carátulas en formato RGB565_LE, generalizada a las 24 device families que Cicada modela (antes solo Nano 7G). Correspondencia de capacidades auditada contra libgpod para 12 de 13 families relevantes.
+- **iPod — video, podcasts y audiolibros:** gestión completa (lectura, escritura y metadatos específicos como capítulos embebidos de M4B/MP3).
+- **Ajustes — visibilidad del iPod:** switch para ocultar toda la sección iPod de la interfaz (tab, botones cruzados desde Biblioteca/Playlists) para quien no tenga el dispositivo. No afecta la disponibilidad real del módulo ni las dependencias instaladas, solo la UI.
+
+### Corregido
+- **iPod — fragilidad de arranque:** la app entera dejaba de iniciar si faltaba alguna dependencia del módulo iPod (`zstandard`/`wasmtime`/`numpy`). Ahora el import se guarda con `try/except`: la app arranca igual, sin esa sección, con un log claro. El CLI (`cicada ipod ...`) da el mismo mensaje accionable en vez de un traceback crudo.
 
 ### Nota
-- Algunas funciones del iPod aún no están disponibles y responden "no implementado" (sin efecto en el dispositivo): crear/importar playlists. Están planificadas para próximas fases. (La gestión de fotos, contemplada originalmente aquí, quedó excluida del proyecto — ver `docs/VENDORED.md` Paquete 9.)
+- Algunas funciones del iPod aún no están disponibles y responden "no implementado" (sin efecto en el dispositivo): crear/importar playlists (crear playlists nuevas; el envío de playlists ya existentes sí funciona, ver arriba). Están planificadas para próximas fases. (La gestión de fotos, contemplada originalmente aquí, quedó excluida del proyecto — ver `docs/VENDORED.md` Paquete 9.)
+- Las dependencias del módulo iPod (`wasmtime`, `zstandard`, `numpy`) se instalan siempre junto con el resto — no hay hoy una instalación mínima que las omita. `pyproject.toml` ya declara un extra `ipod` como base para una futura modularización, pausada por ahora (ver `docs/IPOD_INTEGRATION.md`).
 
 ## [1.1.2] - 2026-08-07
 ### Agregado
