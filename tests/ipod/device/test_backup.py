@@ -282,22 +282,23 @@ def test_round_trip_protege_ipod_control(ipod, backups_dir, monkeypatch):
 
 
 # --------------------------------------------------------------------------- #
-# include_photos (Etapa 6h) — Photos/ vive a nivel de volumen, no bajo
-# iPod_Control/ (confirmado contra sync/photos.py de iOpenPod y reproducido
-# en vivo al construir el coordinador).
+# Photos/ — vive a nivel de volumen, fuera de iPod_Control/. Cicada nunca
+# escribe ahí (Fotos excluida del proyecto), pero un backup FULL cubre todo
+# el dispositivo, incluidas fotos reales que haya dejado iTunes/Música u
+# otra herramienta.
 # --------------------------------------------------------------------------- #
 @pytest.fixture
 def ipod_with_photos(ipod):
     photos = ipod / "Photos"
     (photos / "Thumbs").mkdir(parents=True)
-    (photos / "Full Resolution" / "Cicada").mkdir(parents=True)
+    (photos / "Full Resolution").mkdir(parents=True)
     (photos / "Photo Database").write_bytes(b"photodb-original")
     (photos / "Thumbs" / "F1005_1.ithmb").write_bytes(b"thumb-original")
-    (photos / "Full Resolution" / "Cicada" / "a_00100.jpg").write_bytes(b"jpeg-original")
+    (photos / "Full Resolution" / "a_00100.jpg").write_bytes(b"jpeg-original")
     return ipod
 
 
-def test_backup_db_only_sin_include_photos_no_cubre_photos(ipod_with_photos, backups_dir):
+def test_backup_db_only_no_cubre_photos(ipod_with_photos, backups_dir):
     archive = create_backup(ipod_with_photos, BackupMode.DB_ONLY, candidates=[ipod_with_photos], backups_dir=backups_dir)
     with zstandard.ZstdDecompressor().stream_reader(open(archive, "rb")) as zr:
         with tarfile.open(mode="r|", fileobj=zr) as tar:
@@ -305,78 +306,30 @@ def test_backup_db_only_sin_include_photos_no_cubre_photos(ipod_with_photos, bac
     assert not any(n.startswith("Photos/") for n in names)
 
 
-def test_backup_db_only_con_include_photos_cubre_photos_no_iPod_Control(ipod_with_photos, backups_dir):
-    archive = create_backup(
-        ipod_with_photos, BackupMode.DB_ONLY, candidates=[ipod_with_photos],
-        backups_dir=backups_dir, include_photos=True,
-    )
-    with zstandard.ZstdDecompressor().stream_reader(open(archive, "rb")) as zr:
-        with tarfile.open(mode="r|", fileobj=zr) as tar:
-            names = [m.name for m in tar]
-    assert any(n == "Photos/Photo Database" for n in names)
-    # Nunca anidado bajo iPod_Control/ — ese fue el bug real encontrado.
-    assert not any(n.startswith("iPod_Control/Photos") for n in names)
-
-
-def test_backup_full_incluye_photos_sin_flag(ipod_with_photos, backups_dir):
-    """FULL es "todo el dispositivo" — debe cubrir Photos/ siempre, sin
-    necesidad de include_photos (ese flag es solo para DB_ONLY)."""
+def test_backup_full_incluye_photos(ipod_with_photos, backups_dir):
     archive = create_backup(ipod_with_photos, BackupMode.FULL, candidates=[ipod_with_photos], backups_dir=backups_dir)
     with zstandard.ZstdDecompressor().stream_reader(open(archive, "rb")) as zr:
         with tarfile.open(mode="r|", fileobj=zr) as tar:
             names = [m.name for m in tar]
     assert any(n == "Photos/Photo Database" for n in names)
+    # Nunca anidado bajo iPod_Control/.
+    assert not any(n.startswith("iPod_Control/Photos") for n in names)
 
 
 def test_round_trip_photos(ipod_with_photos, backups_dir):
     photos = ipod_with_photos / "Photos"
     original = _snapshot(photos)
 
-    archive = create_backup(
-        ipod_with_photos, BackupMode.DB_ONLY, candidates=[ipod_with_photos],
-        backups_dir=backups_dir, include_photos=True,
-    )
+    archive = create_backup(ipod_with_photos, BackupMode.FULL, candidates=[ipod_with_photos], backups_dir=backups_dir)
 
     (photos / "Photo Database").write_bytes(b"CORROMPIDO")
     (photos / "Thumbs" / "F1005_1.ithmb").unlink()
-    (photos / "Full Resolution" / "Cicada" / "b_00101.jpg").write_bytes(b"foto-huerfana")
+    (photos / "Full Resolution" / "b_00101.jpg").write_bytes(b"foto-huerfana")
 
-    restore_backup(archive, ipod_with_photos, candidates=[ipod_with_photos], include_photos=True)
+    restore_backup(archive, ipod_with_photos, candidates=[ipod_with_photos])
 
     assert _snapshot(photos) == original
-    assert not (photos / "Full Resolution" / "Cicada" / "b_00101.jpg").exists()
-
-
-def test_round_trip_photos_no_toca_ipod_control(ipod_with_photos, backups_dir):
-    control = ipod_with_photos / "iPod_Control"
-    original_control = _snapshot(control / "iTunes")
-
-    archive = create_backup(
-        ipod_with_photos, BackupMode.DB_ONLY, candidates=[ipod_with_photos],
-        backups_dir=backups_dir, include_photos=True,
-    )
-    (ipod_with_photos / "Photos" / "Photo Database").write_bytes(b"x")
-    restore_backup(archive, ipod_with_photos, candidates=[ipod_with_photos], include_photos=True)
-
-    assert _snapshot(control / "iTunes") == original_control
-
-
-def test_backup_primera_escritura_photos_inexistente_restore_poda_igual(ipod, backups_dir):
-    """Mismo bug que se corrigió para Artwork/ en 4d: un backup tomado ANTES
-    de que Photos/ existiera debe poder podar cualquier Photos/ que un
-    intento fallido haya llegado a instalar."""
-    archive = create_backup(
-        ipod, BackupMode.DB_ONLY, candidates=[ipod], backups_dir=backups_dir, include_photos=True,
-    )
-    # Photos/ nunca existió en el backup, pero SÍ aparece ahora en el volumen
-    # (residuo de un commit que falló a mitad de camino).
-    photos = ipod / "Photos"
-    (photos / "Thumbs").mkdir(parents=True)
-    (photos / "Photo Database").write_bytes(b"residuo-de-commit-fallido")
-
-    restore_backup(archive, ipod, candidates=[ipod], include_photos=True)
-
-    assert not photos.exists() or not any(photos.rglob("*"))
+    assert not (photos / "Full Resolution" / "b_00101.jpg").exists()
 
 
 def test_photos_protegida_de_rmtree_completo_durante_restore(ipod_with_photos, backups_dir, monkeypatch):
@@ -389,11 +342,8 @@ def test_photos_protegida_de_rmtree_completo_durante_restore(ipod_with_photos, b
         return real_rmtree(path, *a, **k)
     monkeypatch.setattr(shutil, "rmtree", guarded_rmtree)
 
-    archive = create_backup(
-        ipod_with_photos, BackupMode.DB_ONLY, candidates=[ipod_with_photos],
-        backups_dir=backups_dir, include_photos=True,
-    )
+    archive = create_backup(ipod_with_photos, BackupMode.FULL, candidates=[ipod_with_photos], backups_dir=backups_dir)
     (ipod_with_photos / "Photos" / "extra_dir").mkdir()
     (ipod_with_photos / "Photos" / "extra_dir" / "x.bin").write_bytes(b"x")
-    restore_backup(archive, ipod_with_photos, candidates=[ipod_with_photos], include_photos=True)
+    restore_backup(archive, ipod_with_photos, candidates=[ipod_with_photos])
     assert photos_root.is_dir()
