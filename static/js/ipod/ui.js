@@ -9,7 +9,6 @@ let ipodState = {
     device: null,
     tracks: [],
     playlists: [],
-    photos: [],
     videos: [],
     podcasts: [],
     audiobooks: [],
@@ -186,10 +185,9 @@ function renderIpodStorage(storage) {
 // --- CARGA DE CONTENIDO ---
 async function loadIpodLibrary() {
     try {
-        const [tRes, pRes, phRes, vRes, podRes, abRes] = await Promise.allSettled([
+        const [tRes, pRes, vRes, podRes, abRes] = await Promise.allSettled([
             ipodFetchTracks(),
             ipodFetchPlaylists(),
-            ipodFetchPhotos(),
             ipodFetchVideos(),
             ipodFetchPodcasts(),
             ipodFetchAudiobooks()
@@ -197,7 +195,6 @@ async function loadIpodLibrary() {
 
         ipodState.tracks = (tRes.status === "fulfilled" && tRes.value.res.ok) ? (tRes.value.data.tracks || []) : [];
         ipodState.playlists = (pRes.status === "fulfilled" && pRes.value.res.ok) ? (pRes.value.data.playlists || []) : [];
-        ipodState.photos = (phRes.status === "fulfilled" && phRes.value.res.ok) ? (phRes.value.data.photos || []) : [];
         ipodState.videos = (vRes.status === "fulfilled" && vRes.value.res.ok) ? (vRes.value.data.videos || []) : [];
         ipodState.podcasts = (podRes.status === "fulfilled" && podRes.value.res.ok) ? (podRes.value.data.podcasts || []) : [];
         ipodState.audiobooks = (abRes.status === "fulfilled" && abRes.value.res.ok) ? (abRes.value.data.audiobooks || []) : [];
@@ -218,14 +215,12 @@ async function loadIpodLibrary() {
 function updateIpodCategoryCounts() {
     const cSongs = document.getElementById("ipod-count-songs");
     const cPls = document.getElementById("ipod-count-playlists");
-    const cPhotos = document.getElementById("ipod-count-photos");
     const cVideos = document.getElementById("ipod-count-videos");
     const cPods = document.getElementById("ipod-count-podcasts");
     const cAbs = document.getElementById("ipod-count-audiobooks");
 
     if (cSongs) cSongs.textContent = ipodState.tracks.length;
     if (cPls) cPls.textContent = ipodState.playlists.length;
-    if (cPhotos) cPhotos.textContent = ipodState.photos.length;
     if (cVideos) cVideos.textContent = ipodState.videos.length;
     if (cPods) cPods.textContent = ipodState.podcasts.length;
     if (cAbs) cAbs.textContent = ipodState.audiobooks.length;
@@ -273,7 +268,6 @@ function switchIpodCategory(category) {
     const containers = [
         "ipod-view-songs",
         "ipod-view-playlists",
-        "ipod-view-photos",
         "ipod-view-videos",
         "ipod-view-podcasts",
         "ipod-view-audiobooks",
@@ -309,9 +303,6 @@ function renderCurrentIpodCategory() {
             break;
         case "playlists":
             renderIpodPlaylists();
-            break;
-        case "photos":
-            renderIpodPhotos();
             break;
         case "videos":
             renderIpodVideos();
@@ -973,22 +964,6 @@ function addLibrarySongToIpodPlaylist(path) {
     renderIpodPlaylists();
 }
 
-// --- VISTA 3: FOTOS ---
-function renderIpodPhotos() {
-    const grid = document.getElementById("ipod-photos-grid");
-    const empty = document.getElementById("ipod-photos-empty");
-    if (!grid) return;
-
-    if (ipodState.photos.length === 0) {
-        grid.innerHTML = "";
-        if (empty) empty.classList.remove("hidden");
-        return;
-    }
-
-    if (empty) empty.classList.add("hidden");
-    grid.innerHTML = ipodState.photos.map((ph, idx) => ipodPhotoCardHtml(ph, idx)).join("");
-}
-
 // --- VISTA 4: VIDEOS ---
 function renderIpodVideos() {
     const grid = document.getElementById("ipod-videos-grid");
@@ -1119,9 +1094,6 @@ function handleIpodAddAction() {
         case "playlists":
             openCreatePlaylistModal();
             break;
-        case "photos":
-            _mockAddPhoto();
-            break;
         case "videos":
             _mockAddVideo();
             break;
@@ -1132,18 +1104,6 @@ function handleIpodAddAction() {
             _mockAddAudiobook();
             break;
     }
-}
-
-function _mockAddPhoto() {
-    const name = prompt("Nombre o descripción de la foto a agregar:");
-    if (!name) return;
-    ipodState.photos.push({
-        title: name,
-        date: new Date().toLocaleDateString(),
-        size: 1500000
-    });
-    updateIpodCategoryCounts();
-    renderIpodPhotos();
 }
 
 function _mockAddVideo() {
@@ -1190,11 +1150,7 @@ function _mockAddAudiobook() {
 
 function deleteIpodItem(type, idx) {
     if (!confirm(t("ipod_delete_confirm"))) return;
-    if (type === "photo") {
-        ipodState.photos.splice(idx, 1);
-        updateIpodCategoryCounts();
-        renderIpodPhotos();
-    } else if (type === "video") {
+    if (type === "video") {
         ipodState.videos.splice(idx, 1);
         updateIpodCategoryCounts();
         renderIpodVideos();

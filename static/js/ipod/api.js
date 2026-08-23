@@ -40,7 +40,6 @@ async function ipodFetchScan() { return _ipodGet("/api/ipod/scan"); }
 async function ipodFetchStatus() { return _ipodGet("/api/ipod/status"); }
 async function ipodFetchTracks() { return _ipodGet("/api/ipod/tracks"); }
 async function ipodFetchPlaylists() { return _ipodGet("/api/ipod/playlists"); }
-async function ipodFetchPhotos() { return _ipodGet("/api/ipod/photos"); }
 async function ipodFetchVideos() { return _ipodGet("/api/ipod/videos"); }
 async function ipodFetchPodcasts() { return _ipodGet("/api/ipod/podcasts"); }
 async function ipodFetchAudiobooks() { return _ipodGet("/api/ipod/audiobooks"); }

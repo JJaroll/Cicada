@@ -151,24 +151,7 @@ function ipodLibraryPickerRowHtml(l) {
         </button>`;
 }
 
-// --- Fotos / Videos ---
-function ipodPhotoCardHtml(ph, idx) {
-    return `
-        <div class="ipod-media-card relative group">
-            <button type="button" class="hover-delete-btn" onclick="deleteIpodItem('photo', ${idx})" title="${t("ipod_delete_item")}">
-                <span class="material-symbols-outlined text-[16px]">remove</span>
-            </button>
-            <div class="aspect-square w-full rounded-lg bg-black/10 dark:bg-white/5 flex items-center justify-center overflow-hidden">
-                ${ph.url ? `<img src="${ph.url}" class="w-full h-full object-cover"/>` : '<span class="material-symbols-outlined text-[32px] text-muted/30">image</span>'}
-            </div>
-            <div class="flex flex-col gap-0.5">
-                <span class="font-data-sm text-[12px] text-main truncate font-medium">${_escapeHtmlIpod(ph.title || `Foto #${idx + 1}`)}</span>
-                <span class="font-data-sm text-[10px] text-muted/60">${ph.date || _formatBytes(ph.size)}</span>
-            </div>
-        </div>
-    `;
-}
-
+// --- Videos ---
 function ipodVideoCardHtml(vid, idx) {
     return `
         <div class="ipod-media-card relative group">

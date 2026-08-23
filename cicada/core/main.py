@@ -902,11 +902,6 @@ async def get():
                                 <span class="flex-1 truncate" data-i18n="ipod_cat_playlists">Playlist</span>
                                 <span id="ipod-count-playlists" class="font-data-sm text-[11px] text-muted/60">0</span>
                             </button>
-                            <button type="button" class="ipod-cat-btn" data-cat="photos" onclick="switchIpodCategory('photos')">
-                                <span class="material-symbols-outlined text-[18px]">photo_library</span>
-                                <span class="flex-1 truncate" data-i18n="ipod_cat_photos">Fotos</span>
-                                <span id="ipod-count-photos" class="font-data-sm text-[11px] text-muted/60">0</span>
-                            </button>
                             <button type="button" class="ipod-cat-btn" data-cat="videos" onclick="switchIpodCategory('videos')">
                                 <span class="material-symbols-outlined text-[18px]">movie</span>
                                 <span class="flex-1 truncate" data-i18n="ipod_cat_videos">Videos</span>
@@ -1047,16 +1042,6 @@ async def get():
                                         </div>
                                     </div>
                                     <div id="ipod-playlist-tracks-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
-                                </div>
-                            </div>
-
-                            <!-- VISTA 3: FOTOS (Grilla de Cuadros con Hover Delete) -->
-                            <div id="ipod-view-photos" class="hidden flex-1 overflow-y-auto custom-scrollbar">
-                                <div id="ipod-photos-grid" class="grid grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3 p-1"></div>
-                                <div id="ipod-photos-empty" class="hidden text-center py-12 text-muted font-data-sm text-[13px] flex flex-col items-center gap-2">
-                                    <span class="material-symbols-outlined text-[40px] text-muted/40">photo_library</span>
-                                    <p data-i18n="ipod_no_items">No hay fotos en el iPod.</p>
-                                    <button type="button" onclick="handleIpodAddAction()" class="mt-2 px-4 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] text-accent transition-colors">+ Agregar Fotos</button>
                                 </div>
                             </div>
 
@@ -1290,16 +1275,16 @@ async def get():
 
         <audio id="library-audio" preload="none"></audio>
 
-        <script src="/static/js/i18n.js?v=2.2.1"></script>
+        <script src="/static/js/i18n.js?v=2.2.2"></script>
         <script src="/static/js/common.js?v=2.2.0"></script>
         <script src="/static/js/metadata.js?v=2.2.0"></script>
         <script src="/static/js/download.js?v=2.2.0"></script>
         <script src="/static/js/playlist.js?v=2.2.0"></script>
         <script src="/static/js/library.js?v=2.2.0"></script>
         <script src="/static/js/player.js?v=2.2.0"></script>
-        <script src="/static/js/ipod/api.js?v=2.2.0"></script>
-        <script src="/static/js/ipod/render.js?v=2.2.2"></script>
-        <script src="/static/js/ipod/ui.js?v=2.2.1"></script>
+        <script src="/static/js/ipod/api.js?v=2.2.1"></script>
+        <script src="/static/js/ipod/render.js?v=2.2.3"></script>
+        <script src="/static/js/ipod/ui.js?v=2.2.2"></script>
         <script>
             // Inicialización de la UI
             applyLanguage(currentLang);
