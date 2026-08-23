@@ -1093,7 +1093,20 @@ figurando como "próxima fase"; versión de cache-busting de ejemplo
 desactualizada) detectados de pasada, fuera de alcance de Fase 5, sin
 tocar.
 
-### Paquete 9 — Fase 6: Video (implementado) y Fotos (diferido)
+### Paquete 9 — Fase 6: Video (implementado) y Fotos (EXCLUIDA DEL PROYECTO — ver docs/IPOD_INTEGRATION.md)
+
+**FOTOS EXCLUIDA DEL PROYECTO v1 (2026-08-22) — ver docs/IPOD_INTEGRATION.md.**
+Todo lo que sigue en esta sección es investigación real, completa y con
+el mismo rigor de siempre — se preserva íntegro como registro
+histórico de qué se intentó, qué se descartó y por qué, para quien
+retome esto en el futuro. El código correspondiente (`coordinator/
+photos.py`, `artwork/photo_fit.py`, `device/photo_mapping.py`,
+`write_mhba`/`write_mhia`/`write_mhii_photo`/`write_mhni_photo`/
+`build_photo_db`/`read_photo_db` de `chunks.py`, `PhotoAlbumInput`,
+`supports_photo`/`photo_formats` de `capabilities.py`, endpoints
+`/photos`, UI del tab "Fotos") fue **removido del repositorio**, no
+dejado sin usar — ver el resumen de la decisión y el detalle campo por
+campo de lo removido en `docs/IPOD_INTEGRATION.md`, Fase 6.
 
 **Investigación inicial (2026-08-19) — incompleta, corregida el mismo
 día.** La primera pasada auditó `src/iopenpod/` buscando un paquete de

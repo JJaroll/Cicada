@@ -10,7 +10,7 @@ Este documento define la arquitectura técnica, catálogo de endpoints REST, con
 ┌────────────────────────────────────────────────────────────────────────┐
 │                          Frontend (Cicada UI)                          │
 │   • Barra Superior: Metadatos, Almacenamiento, Acciones Rápidas        │
-│   • Sub-Sidebar: 6 Categorías (Canciones, Playlists, Fotos, Videos,    │
+│   • Sub-Sidebar: 5 Categorías (Canciones, Playlists, Videos,           │
 │                  Podcasts, Audiolibros)                                │
 │   • Toolbar: Búsqueda en tiempo real, Filtros (Género, Año, Artista,   │
 │              Álbum), Modo Lista / Cuadros, Botón (+)                   │
@@ -46,9 +46,11 @@ Este documento describe el **diseño objetivo**. El estado real del backend hoy:
 | `POST /backup`, `POST /restore`, `POST /eject` | ✅ Real |
 | `GET/POST/DELETE /consent/{guid}` | ✅ Real |
 | `POST /playlists/create`, `POST /playlists/import` | 🔴 **501 Not Implemented** — se harán vía `plan`/`apply` |
-| `GET /photos`, `DELETE /photos/{id}` | 🟡 Placeholder / 🔴 **501** — Fotos diferida (ver §2.4 y `docs/VENDORED.md` Paquete 9) |
 
-**Regla de honestidad:** ningún endpoint devuelve éxito falso. Lo no implementado responde **`501`** con `{"detail": {"code": "NOT_IMPLEMENTED"}}`; los placeholders de lectura devuelven `[]`. Los ejemplos de respuesta de más abajo para `/photos`/`/videos` son el **contrato futuro**, no lo que responden hoy — `/podcasts`/`/audiobooks` ya no son placeholder, ver §2.5 para el contrato real (distinto del que tenía este documento).
+Fotos (`GET /photos`, `DELETE /photos/{id}`) **excluida del proyecto**, no
+diferida — ver §2.4 y `docs/VENDORED.md` Paquete 9.
+
+**Regla de honestidad:** ningún endpoint devuelve éxito falso. Lo no implementado responde **`501`** con `{"detail": {"code": "NOT_IMPLEMENTED"}}`; los placeholders de lectura devuelven `[]`. Los ejemplos de respuesta de más abajo para `/videos` son el **contrato futuro**, no lo que responden hoy — `/podcasts`/`/audiobooks` ya no son placeholder, ver §2.5 para el contrato real (distinto del que tenía este documento).
 
 ---
 
@@ -263,7 +265,7 @@ Importa una playlist desde la biblioteca local de Cicada o Spotify.
 
 ---
 
-### 2.4 Multimedia: Fotos y Videos
+### 2.4 Multimedia: Videos
 
 **Alcance (igual que §2.5):** "ya tengo el video, ponlo en el iPod" — sin
 transcodificación (el archivo ya debe ser H.264 compatible) ni servido de
@@ -271,48 +273,18 @@ miniaturas por HTTP (`GET /artwork/{track_id}` tampoco existe todavía para
 música — queda fuera del alcance de esta fase, mismo criterio que con el
 arte de podcasts en 5c).
 
-**Fotos — en construcción por etapas (investigación y troceado cerrados
-2026-08-20).** El iPod Nano 7G **sí tiene** app de Fotos — confirmado por
-hardware. La referencia vendorizable es `src/iopenpod/sync/photos.py`
-(2706 líneas, MIT, parser y escritor completos, con tests de seguridad
-reales). El formato "Photo Database" usa el mismo árbol de chunks que
-ArtworkDB (`mhfd→mhsd→{mhli,mhla,mhlf}→mhii→{mhod,mhni}`, ya vendorizado
-en la Etapa 4c) — headers idénticos byte a byte; solo faltan `mhba`/`mhia`
-(entrada de álbum) a nivel de chunk. El pixel format del Nano 7G sigue
-siendo `RGB565_LE` para el empaquetado en sí, aunque el redimensionado de
-`rgb565.py` (pensado para carátulas cuadradas) no sirve para fotos —
-Fotos necesita su propia política de fit/pad/rotate. Alcance real:
-~2700 líneas de dominio nuevo, comparable a toda la Fase 4 junta.
-Troceado en 6 etapas (6e-6j, ver `docs/VENDORED.md` Paquete 9 y
-`docs/IPOD_INTEGRATION.md`), validando contra hardware real antes de
-construir la capa de API — **6e (infra de soporte) ya está implementada
-y verificada**; el resto sigue etapa por etapa. HEIC/HEIF diferido
-explícitamente (necesita `pillow-heif`, no instalado) — caso real fuera
-de alcance hoy, no descartado.
-
-#### `GET /api/ipod/photos`
-🟡 Placeholder — lista vacía (endpoint aún sin implementar, ver arriba —
-6e-6h todavía no tocan la API). El contrato de más abajo es el **diseño
-objetivo**, no lo que responde hoy.
-
-- **Response (200 OK)**:
-```json
-{
-  "photos": [
-    {
-      "id": "photo_1",
-      "title": "Vacaciones 2025",
-      "date": "15/07/2025",
-      "size": 2400000,
-      "url": "/api/ipod/photos/photo_1/thumb"
-    }
-  ],
-  "count": 1
-}
-```
-
-#### `DELETE /api/ipod/photos/{photo_id}`
-🔴 **501 Not Implemented** — Fotos diferida.
+**Fotos — excluida del proyecto v1, no diferida.** El iPod Nano 7G sí
+tiene app de Fotos (confirmado por hardware), y llegó a implementarse
+completa (Etapas 6e-6j) y verificarse byte a byte contra un Photo
+Database real de Apple/Música — pero la app del dispositivo nunca llegó
+a mostrar el contenido, pese a 5 intentos de hardware y 7 líneas de
+investigación distintas agotadas sin causa identificable (contenido del
+Photo Database, formato `frpd` hermano, contadores de `iTunesPrefs.plist`,
+coordinación de escritura con `iTunesCDB`, metadata de filesystem,
+mecanismo de expulsión, contenido de píxeles de miniaturas — ninguna
+resultó ser la causa). Se decidió remover el código en vez de dejarlo
+diferido. Detalle completo de la investigación en `docs/VENDORED.md`
+Paquete 9 (marcado como excluido, preservado como registro histórico).
 
 #### `GET /api/ipod/videos`
 ✅ Real (Fase 6c). Lista **plana** (sin agrupar por película/serie) de
@@ -519,5 +491,5 @@ Aplica el plan dry-run sobre el iPod mediante la siguiente secuencia protegida:
 
 1. **Artwork (Fase 4)**: Vincular el endpoint `/api/ipod/artwork/{track_id}` con la generación de bloques `mhni`/`mhii` en `iPod_Control/Artwork/ArtworkDB`.
 2. **Podcasts y Audiolibros (Fase 5) — hecho, 2026-08-19.** No hubo feed parser que conectar: Cicada no gestiona feeds RSS (decisión de alcance explícita, ver §2.5 y `docs/VENDORED.md` Paquete 8). Se implementó `kind`/`category` en `POST /media/sync` (5a), extracción de capítulos embebidos de archivos ya locales (5b), y lectura real agrupada en `GET /podcasts`/`/audiobooks` (5c) — los tipos MHOD 15/16/17 (`cicada/ipod/db/writer/mhod_writer.py`) ya estaban vendorizados desde antes de Fase 5 y no necesitaron cambios.
-3. **Video (Fase 6a-6c) — hecho, 2026-08-19; confirmado en hardware real, 2026-08-20.** Sin transcodificador: Cicada no transcodifica nada, ni audio ni video (el `transcoder.py` que sugería el código muerto de Fase 5 no existe en el repo) — el archivo ya debe ser H.264 compatible, misma filosofía que audio. `kind` extendido a `movie`/`tv_show`/`music_video`/`video_podcast` en `POST /media/sync` (6a); el arte embebido de video reutiliza el pipeline de artwork de Fase 4a-4d sin cambios (6b, verificado, no construido); `GET /videos`/`DELETE /videos/{id}` reales (6c). Prueba de fuego con archivo real, round-trip verificado en ambas capas del dispositivo (iTunesCDB + SQLite `Library.itdb`) y reproducción confirmada por el usuario en el iPod. **Fotos en construcción por etapas** (6e-6j, investigación y troceado cerrados 2026-08-20) — por dimensión del trabajo (~2700 líneas de dominio nuevo, comparable a toda la Fase 4 junta), no por falta de referencia: `src/iopenpod/sync/photos.py` existe, es MIT, completo y probado, y comparte el mismo formato de chunk que ArtworkDB (Etapa 4c). Etapa 6e (infra de soporte: `path_safety.py`, `storage_safety.py`, mapa off-device de fotos) implementada y verificada. El Nano 7G sí tiene app de Fotos (confirmado por hardware). Detalle completo en `docs/VENDORED.md` Paquete 9.
+3. **Video (Fase 6a-6c) — hecho, 2026-08-19; confirmado en hardware real, 2026-08-20.** Sin transcodificador: Cicada no transcodifica nada, ni audio ni video (el `transcoder.py` que sugería el código muerto de Fase 5 no existe en el repo) — el archivo ya debe ser H.264 compatible, misma filosofía que audio. `kind` extendido a `movie`/`tv_show`/`music_video`/`video_podcast` en `POST /media/sync` (6a); el arte embebido de video reutiliza el pipeline de artwork de Fase 4a-4d sin cambios (6b, verificado, no construido); `GET /videos`/`DELETE /videos/{id}` reales (6c). Prueba de fuego con archivo real, round-trip verificado en ambas capas del dispositivo (iTunesCDB + SQLite `Library.itdb`) y reproducción confirmada por el usuario en el iPod. **Fotos excluida del proyecto v1** (2026-08-22) tras 5 intentos de hardware y 7 líneas de investigación agotadas sin causa identificable — no diferida, removida: código exclusivo borrado, ver `docs/VENDORED.md` Paquete 9 y `docs/IPOD_INTEGRATION.md`.
 4. **Cache-Busting Frontend**: Todos los archivos de script y estilos en `cicada/core/main.py` emplean el parámetro de versión `?v=2.0.0` para garantizar recargas instantáneas sin retención de caché obsoleta en el cliente.

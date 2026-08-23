@@ -10,7 +10,7 @@ Todos los cambios notables de este proyecto se documentarán en este archivo.
 - **iPod — sincronización de reproducciones:** lectura y persistencia local de contadores de reproducción (base para sincronización bidireccional).
 
 ### Nota
-- Algunas funciones del iPod aún no están disponibles y responden "no implementado" (sin efecto en el dispositivo): crear/importar playlists y la gestión de fotos, videos, podcasts y audiolibros. Están planificadas para próximas fases.
+- Algunas funciones del iPod aún no están disponibles y responden "no implementado" (sin efecto en el dispositivo): crear/importar playlists. Están planificadas para próximas fases. (La gestión de fotos, contemplada originalmente aquí, quedó excluida del proyecto — ver `docs/VENDORED.md` Paquete 9.)
 
 ## [1.1.2] - 2026-08-07
 ### Agregado
