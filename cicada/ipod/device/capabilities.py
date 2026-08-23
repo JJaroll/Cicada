@@ -81,10 +81,6 @@ class DeviceCapabilities:
     # ── Artwork ────────────────────────────────────────────────────────
     supports_artwork: bool = True
     """Device has an ArtworkDB and .ithmb files for album art."""
-    supports_photo: bool = False
-    """Device has additional photo artwork formats (for photo viewer)."""
-    photo_formats: tuple[ArtworkFormat, ...] = ()
-    """Photo/slideshow ithmb formats used by the Photos database pipeline."""
     supports_chapter_image: bool = False
     """Device has chapter image artwork formats (for enhanced podcasts)."""
     supports_sparse_artwork: bool = False
@@ -190,13 +186,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
     # ── iPod 4G photo/color (Color Display) ───────────────────────────
     ("iPod", "4th Gen (photo)"): DeviceCapabilities(
         supports_artwork=True,
-        supports_photo=True,
-        photo_formats=(
-            ARTWORK_FORMATS_BY_ID[1009],
-            ARTWORK_FORMATS_BY_ID[1013],
-            ARTWORK_FORMATS_BY_ID[1015],
-            ARTWORK_FORMATS_BY_ID[1019],
-        ),
         cover_art_formats=(
             ARTWORK_FORMATS_BY_ID[1017],
             ARTWORK_FORMATS_BY_ID[1016],
@@ -206,13 +195,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
     ),
     ("iPod", "4th Gen (color)"): DeviceCapabilities(
         supports_artwork=True,
-        supports_photo=True,
-        photo_formats=(
-            ARTWORK_FORMATS_BY_ID[1009],
-            ARTWORK_FORMATS_BY_ID[1013],
-            ARTWORK_FORMATS_BY_ID[1015],
-            ARTWORK_FORMATS_BY_ID[1019],
-        ),
         cover_art_formats=(
             ARTWORK_FORMATS_BY_ID[1017],
             ARTWORK_FORMATS_BY_ID[1016],
@@ -225,13 +207,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
     ("iPod", "5th Gen"): DeviceCapabilities(
         supports_video=True,
         supports_artwork=True,
-        supports_photo=True,
-        photo_formats=(
-            ARTWORK_FORMATS_BY_ID[1036],
-            ARTWORK_FORMATS_BY_ID[1024],
-            ARTWORK_FORMATS_BY_ID[1015],
-            ARTWORK_FORMATS_BY_ID[1019],
-        ),
         cover_art_formats=(
             ARTWORK_FORMATS_BY_ID[1028],
             ARTWORK_FORMATS_BY_ID[1029],
@@ -247,13 +222,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         supports_video=True,
         supports_gapless=True,
         supports_artwork=True,
-        supports_photo=True,
-        photo_formats=(
-            ARTWORK_FORMATS_BY_ID[1036],
-            ARTWORK_FORMATS_BY_ID[1024],
-            ARTWORK_FORMATS_BY_ID[1015],
-            ARTWORK_FORMATS_BY_ID[1019],
-        ),
         cover_art_formats=(
             ARTWORK_FORMATS_BY_ID[1028],
             ARTWORK_FORMATS_BY_ID[1029],
@@ -272,12 +240,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         supports_cea608_captions=True,
         supports_gapless=True,
         supports_artwork=True,
-        supports_photo=True,
-        photo_formats=(
-            ARTWORK_FORMATS_BY_ID[1067],
-            ARTWORK_FORMATS_BY_ID[1024],
-            ARTWORK_FORMATS_BY_ID[1066],
-        ),
         supports_chapter_image=True,
         supports_sparse_artwork=True,
         cover_art_formats=CLASSIC_COVER_ART_FORMATS,
@@ -295,12 +257,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         supports_cea608_captions=True,
         supports_gapless=True,
         supports_artwork=True,
-        supports_photo=True,
-        photo_formats=(
-            ARTWORK_FORMATS_BY_ID[1067],
-            ARTWORK_FORMATS_BY_ID[1024],
-            ARTWORK_FORMATS_BY_ID[1066],
-        ),
         supports_chapter_image=True,
         supports_sparse_artwork=True,
         cover_art_formats=CLASSIC_COVER_ART_FORMATS,
@@ -318,12 +274,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         supports_cea608_captions=True,
         supports_gapless=True,
         supports_artwork=True,
-        supports_photo=True,
-        photo_formats=(
-            ARTWORK_FORMATS_BY_ID[1067],
-            ARTWORK_FORMATS_BY_ID[1024],
-            ARTWORK_FORMATS_BY_ID[1066],
-        ),
         supports_chapter_image=True,
         supports_sparse_artwork=True,
         cover_art_formats=CLASSIC_COVER_ART_FORMATS,
@@ -351,11 +301,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
     # ── iPod Nano 1G/2G ──────────────────────────────────────────────
     ("iPod Nano", "1st Gen"): DeviceCapabilities(
         supports_artwork=True,
-        supports_photo=True,
-        photo_formats=(
-            ARTWORK_FORMATS_BY_ID[1032],
-            ARTWORK_FORMATS_BY_ID[1023],
-        ),
         cover_art_formats=(
             ARTWORK_FORMATS_BY_ID[1031],
             ARTWORK_FORMATS_BY_ID[1027],
@@ -365,11 +310,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
     ),
     ("iPod Nano", "2nd Gen"): DeviceCapabilities(
         supports_artwork=True,
-        supports_photo=True,
-        photo_formats=(
-            ARTWORK_FORMATS_BY_ID[1032],
-            ARTWORK_FORMATS_BY_ID[1023],
-        ),
         cover_art_formats=(
             ARTWORK_FORMATS_BY_ID[1031],
             ARTWORK_FORMATS_BY_ID[1027],
@@ -386,12 +326,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         supports_cea608_captions=True,
         supports_gapless=True,
         supports_artwork=True,
-        supports_photo=True,
-        photo_formats=(
-            ARTWORK_FORMATS_BY_ID[1067],
-            ARTWORK_FORMATS_BY_ID[1024],
-            ARTWORK_FORMATS_BY_ID[1066],
-        ),
         supports_sparse_artwork=True,
         cover_art_formats=(
             ARTWORK_FORMATS_BY_ID[1061],
@@ -415,13 +349,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         supports_cea608_captions=True,
         supports_gapless=True,
         supports_artwork=True,
-        supports_photo=True,
-        photo_formats=(
-            ARTWORK_FORMATS_BY_ID[1024],
-            ARTWORK_FORMATS_BY_ID[1066],
-            ARTWORK_FORMATS_BY_ID[1079],
-            ARTWORK_FORMATS_BY_ID[1083],
-        ),
         supports_chapter_image=True,
         supports_sparse_artwork=True,
         cover_art_formats=(
@@ -448,12 +375,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         supports_cea608_captions=True,
         supports_gapless=True,
         supports_artwork=True,
-        supports_photo=True,
-        photo_formats=(
-            ARTWORK_FORMATS_BY_ID[1087],
-            ARTWORK_FORMATS_BY_ID[1079],
-            ARTWORK_FORMATS_BY_ID[1066],
-        ),
         supports_sparse_artwork=True,
         supports_compressed_db=True,
         uses_sqlite_db=True,
@@ -476,11 +397,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         supports_video=False,
         supports_gapless=True,
         supports_artwork=True,
-        supports_photo=True,
-        photo_formats=(
-            ARTWORK_FORMATS_BY_ID[1092],
-            ARTWORK_FORMATS_BY_ID[1093],
-        ),
         supports_sparse_artwork=True,
         supports_compressed_db=True,
         uses_sqlite_db=True,
@@ -503,11 +419,6 @@ _FAMILY_GEN_CAPABILITIES: dict[tuple[str, str], DeviceCapabilities] = {
         supports_cea608_captions=True,
         supports_gapless=True,
         supports_artwork=True,
-        supports_photo=True,
-        photo_formats=(
-            ARTWORK_FORMATS_BY_ID[1007],
-            ARTWORK_FORMATS_BY_ID[1005],
-        ),
         supports_sparse_artwork=True,
         supports_compressed_db=True,
         uses_sqlite_db=True,

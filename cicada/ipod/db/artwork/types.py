@@ -8,8 +8,8 @@ reescribe ArtworkDB completo en cada sync (ver docs/VENDORED.md, Paquete 7)
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from dataclasses import dataclass
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -24,31 +24,3 @@ class EncodedFormatPayload:
     hpad: int = 0
     vpad: int = 0
     pixel_format: Optional[str] = None
-
-
-@dataclass(frozen=True)
-class PhotoAlbumInput:
-    """Entrada de escritura para un MHBA (Fase 6, Etapa 6f).
-
-    Layout extraído de ``_write_mhba``/``PhotoAlbum`` en ``sync/photos.py``
-    de iOpenPod (ver docs/VENDORED.md, Paquete 9). Los campos de
-    slideshow/reproducción (``playmusic``/``repeat``/``random``/
-    ``show_titles``/``transition_*``/``song_id``) no tienen consumidor en
-    Cicada todavía — se aceptan con default 0 (silencio, sin efecto en el
-    dispositivo) en vez de omitirse, porque son parte fija del layout
-    binario del chunk, no una capacidad opcional de más alto nivel.
-    """
-
-    album_id: int
-    name: str
-    members: Tuple[int, ...] = field(default_factory=tuple)
-    album_type: int = 2
-    playmusic: int = 0
-    repeat: int = 0
-    random: int = 0
-    show_titles: int = 0
-    transition_direction: int = 0
-    slide_duration: int = 0
-    transition_duration: int = 0
-    song_id: int = 0
-    prev_album_id: int = 0

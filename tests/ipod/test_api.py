@@ -616,30 +616,6 @@ async def test_api_playlist_writes_no_implementadas(async_client: httpx.AsyncCli
 
 
 @pytest.mark.asyncio
-async def test_api_delete_photo_no_implementado(async_client: httpx.AsyncClient):
-    """Fotos sigue diferida (Fase 6, ver docs/VENDORED.md Paquete 9) — videos
-    ya es real, ver test_api_video_delete_* más abajo."""
-    resp = await async_client.delete("/api/ipod/photos/p1")
-    assert resp.status_code == 501
-    assert resp.json()["detail"]["code"] == "NOT_IMPLEMENTED"
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("path,key", [
-    ("/api/ipod/photos", "photos"),
-])
-async def test_api_media_placeholders_vacios(async_client: httpx.AsyncClient, path, key):
-    """Fotos sigue diferida (Fase 6, ver docs/VENDORED.md Paquete 9) —
-    placeholder honesto sin tocar el dispositivo. podcasts/audiobooks/
-    videos ya son reales (test_api_podcasts_* / test_api_audiobooks_* /
-    test_api_video_* más abajo)."""
-    resp = await async_client.get(path)
-    assert resp.status_code == 200
-    data = resp.json()
-    assert data[key] == [] and data["count"] == 0
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("path", ["/api/ipod/podcasts", "/api/ipod/audiobooks", "/api/ipod/videos"])
 async def test_api_podcasts_audiobooks_videos_sin_dispositivo_404(async_client: httpx.AsyncClient, monkeypatch, path):
     """Fase 5c/6c: a diferencia del placeholder anterior (siempre 200), ahora

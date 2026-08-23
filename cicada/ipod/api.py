@@ -937,21 +937,6 @@ def import_playlist(req: ImportPlaylistRequest) -> Dict[str, Any]:
     )
 
 
-@router.get("/photos")
-def get_photos() -> Dict[str, Any]:
-    """Lista las fotos del iPod. Fase 6 (fotos/video) no implementada: lista vacía."""
-    return {"photos": [], "count": 0}
-
-
-@router.delete("/photos/{photo_id}")
-def delete_photo(photo_id: str) -> Dict[str, Any]:
-    """Eliminar una foto del iPod. Fase 6 no implementada."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail={"error": "La gestión de fotos del iPod aún no está disponible.", "code": "NOT_IMPLEMENTED"},
-    )
-
-
 @router.get("/videos", response_model=VideosResponse)
 def get_videos() -> VideosResponse:
     """Lista los videos (películas, series, videoclips) YA PRESENTES en el
