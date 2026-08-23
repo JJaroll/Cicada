@@ -17,3 +17,4 @@ python-xlib; sys_platform == "linux"
 # Módulo iPod (Fase 0): backups .tar.zst
 zstandard==0.25.0
 wasmtime
+numpy==1.26.4

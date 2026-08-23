@@ -17,6 +17,9 @@ Homepage = "https://github.com/JJaroll/Cicada"
 [project.scripts]
 cicada = "cicada.__main__:main"
 
+[project.optional-dependencies]
+ipod = ["zstandard==0.25.0", "wasmtime", "numpy"]
+
 [tool.setuptools.dynamic]
 version = { attr = "cicada.core.main.__version__" }
 dependencies = { file = ["requirements.txt"] }
