@@ -1,5 +1,20 @@
 // Extraído de cicada/core/main.py — sin cambios de comportamiento. Ver docs/IPOD_INTEGRATION.md
 let currentLang = localStorage.getItem("cicada_lang") || "es";
+let ipodUiEnabled = true;
+
+// Preferencia de visibilidad de UI (no toca disponibilidad real del módulo/backend)
+function applyIpodUiVisibility() {
+    let navBtn = document.querySelector('.nav-item[data-view="ipod"]');
+    if (navBtn) navBtn.classList.toggle("hidden", !ipodUiEnabled);
+    if (typeof updateLibraryIpodButton === "function") updateLibraryIpodButton();
+    if (typeof updatePlaylistIpodButton === "function") updatePlaylistIpodButton();
+    if (!ipodUiEnabled) {
+        let activeView = document.querySelector(".view.active");
+        if (activeView && activeView.id === "view-ipod") {
+            showView("process");
+        }
+    }
+}
 
 function t(key, vars) {
     let dict = I18N[currentLang] || I18N.es;
@@ -89,6 +104,9 @@ let currentStatusPillColor = "#10b981";
 
 // --- Navegación entre vistas ---
 function showView(name) {
+    if (name === "ipod" && !ipodUiEnabled) {
+        name = "process";
+    }
     document.querySelectorAll(".view").forEach(function(el) { el.classList.remove("active"); });
     document.getElementById("view-" + name).classList.add("active");
     document.querySelectorAll(".nav-item").forEach(function(el) {
@@ -427,6 +445,7 @@ async function loadSettingsIntoForm() {
         document.getElementById("settings_spotify_id").value = data.spotify_client_id || "";
         document.getElementById("settings_spotify_secret").value = data.spotify_client_secret || "";
         document.getElementById("settings_plan_c_enabled").checked = !!data.plan_c_enabled;
+        document.getElementById("settings_ipod_ui_enabled").checked = data.ipod_ui_enabled !== false;
         document.getElementById("settings_library_dir").value = data.library_dir || "";
         document.getElementById("settings_process_input_dir").value = data.process_input_dir || "";
         document.getElementById("settings_process_output_dir").value = data.process_output_dir || "";
@@ -448,6 +467,7 @@ async function saveSettings() {
         spotify_client_id: document.getElementById("settings_spotify_id").value,
         spotify_client_secret: document.getElementById("settings_spotify_secret").value,
         plan_c_enabled: document.getElementById("settings_plan_c_enabled").checked,
+        ipod_ui_enabled: document.getElementById("settings_ipod_ui_enabled").checked,
         library_dir: document.getElementById("settings_library_dir").value,
         process_input_dir: document.getElementById("settings_process_input_dir").value,
         process_output_dir: document.getElementById("settings_process_output_dir").value,
@@ -481,6 +501,8 @@ async function saveSettings() {
         
         document.documentElement.setAttribute('data-theme', payload.theme);
         setAccentColor(payload.color_accent);
+        ipodUiEnabled = payload.ipod_ui_enabled;
+        applyIpodUiVisibility();
 
         statusEl.textContent = t("settings_saved");
         setTimeout(function() { statusEl.textContent = ""; }, 2500);

@@ -304,7 +304,8 @@ function renderLibraryBrowser() {
 function updateLibraryIpodButton() {
     const btn = document.getElementById("library-add-ipod-btn");
     if (!btn) return;
-    const connected = (typeof ipodState !== "undefined") && ipodState.connected;
+    const uiEnabled = (typeof ipodUiEnabled === "undefined") || ipodUiEnabled;
+    const connected = uiEnabled && (typeof ipodState !== "undefined") && ipodState.connected;
     if (!connected && librarySelectMode) exitLibrarySelectMode();
     btn.classList.toggle("hidden", !connected);
     btn.classList.toggle("inline-flex", !!connected);

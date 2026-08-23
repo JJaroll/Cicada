@@ -236,7 +236,8 @@ function updateReplicateSummary() {
 function updatePlaylistIpodButton() {
     const btn = document.getElementById("send-playlist-ipod-btn");
     if (!btn) return;
-    const connected = (typeof ipodState !== "undefined") && ipodState.connected;
+    const uiEnabled = (typeof ipodUiEnabled === "undefined") || ipodUiEnabled;
+    const connected = uiEnabled && (typeof ipodState !== "undefined") && ipodState.connected;
     const hasIncluded = replicateMatches.some(function(m) { return m.path && m.included; });
     const show = connected && hasIncluded;
     btn.classList.toggle("hidden", !show);

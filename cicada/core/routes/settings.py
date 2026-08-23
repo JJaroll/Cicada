@@ -20,6 +20,7 @@ class SettingsRequest(BaseModel):
     spotify_client_id: Optional[str] = None
     spotify_client_secret: Optional[str] = None
     plan_c_enabled: Optional[bool] = None
+    ipod_ui_enabled: Optional[bool] = None
     library_dir: Optional[str] = None
     process_input_dir: Optional[str] = None
     process_output_dir: Optional[str] = None
@@ -35,6 +36,7 @@ async def get_settings():
         "spotify_client_id": os.environ.get("SPOTIFY_CLIENT_ID", ""),
         "spotify_client_secret": os.environ.get("SPOTIFY_CLIENT_SECRET", ""),
         "plan_c_enabled": bool(config.get("plan_c_enabled", False)),
+        "ipod_ui_enabled": bool(config.get("ipod_ui_enabled", True)),
         "library_dir": config.get("library_dir", ""),
         "process_input_dir": config.get("process_input_dir", ""),
         "process_output_dir": config.get("process_output_dir", ""),
@@ -61,6 +63,8 @@ async def update_settings(request: SettingsRequest):
     config = load_app_config()
     if request.plan_c_enabled is not None:
         config["plan_c_enabled"] = request.plan_c_enabled
+    if request.ipod_ui_enabled is not None:
+        config["ipod_ui_enabled"] = request.ipod_ui_enabled
     if request.library_dir is not None:
         config["library_dir"] = request.library_dir
     if request.process_input_dir is not None:

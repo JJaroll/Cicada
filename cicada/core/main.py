@@ -290,7 +290,16 @@ async def get():
                     <p class="font-data-sm text-[11px] text-muted/40 pl-6" data-i18n="settings_plan_c_hint">Apagado por defecto: suele ser poco preciso. Si está apagado, esos archivos se reportan como error en vez de adivinar el título/artista.</p>
                 </div>
 
-                
+                <div class="flex flex-col gap-2 border-t border-theme pt-3">
+                    <span class="font-label-caps text-[11px] text-accent/70" data-i18n="settings_ipod_section_title">Módulo iPod</span>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="settings_ipod_ui_enabled" class="cicada-checkbox"/>
+                        <span class="font-data-sm text-[13px] text-muted/70" data-i18n="settings_ipod_ui_label">Mostrar la sección iPod en la interfaz</span>
+                    </label>
+                    <p class="font-data-sm text-[11px] text-muted/40 pl-6" data-i18n="settings_ipod_ui_hint">Oculta la sección iPod de la interfaz. No reduce el tamaño de instalación ni elimina dependencias — el módulo sigue instalado, solo se deja de mostrar.</p>
+                </div>
+
+
                                 <div class="flex flex-col gap-4 border-t border-theme pt-5">
                     <!-- TEMA -->
                     <div class="flex flex-col gap-2">
@@ -1290,12 +1299,12 @@ async def get():
 
         <audio id="library-audio" preload="none"></audio>
 
-        <script src="/static/js/i18n.js?v=2.2.2"></script>
-        <script src="/static/js/common.js?v=2.2.0"></script>
+        <script src="/static/js/i18n.js?v=2.2.3"></script>
+        <script src="/static/js/common.js?v=2.2.1"></script>
         <script src="/static/js/metadata.js?v=2.2.0"></script>
         <script src="/static/js/download.js?v=2.2.0"></script>
-        <script src="/static/js/playlist.js?v=2.2.0"></script>
-        <script src="/static/js/library.js?v=2.2.0"></script>
+        <script src="/static/js/playlist.js?v=2.2.1"></script>
+        <script src="/static/js/library.js?v=2.2.1"></script>
         <script src="/static/js/player.js?v=2.2.0"></script>
         <script src="/static/js/ipod/api.js?v=2.2.1"></script>
         <script src="/static/js/ipod/render.js?v=2.2.3"></script>
@@ -1311,6 +1320,8 @@ async def get():
             fetch('/api/settings').then(r => r.json()).then(data => {
             document.documentElement.setAttribute('data-theme', data.theme || "grafito");
             setAccentColor(data.color_accent || "azul");
+            ipodUiEnabled = data.ipod_ui_enabled !== false;
+            applyIpodUiVisibility();
             }).catch(e => console.error("Error loading theme", e));
             handleSpotifyAuthRedirect();
             checkForUpdates();
