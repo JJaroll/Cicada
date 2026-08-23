@@ -23,21 +23,36 @@ if getattr(sys, 'frozen', False):
     if sys.stderr is None:
         sys.stderr = open(os.devnull, "w")
 
+import logging
 import threading
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+logger = logging.getLogger(__name__)
+
 app = FastAPI()
 
-from cicada.ipod.api import router as ipod_router
+try:
+    from cicada.ipod.api import router as ipod_router
+    IPOD_AVAILABLE = True
+except ModuleNotFoundError as exc:
+    ipod_router = None
+    IPOD_AVAILABLE = False
+    logger.warning(
+        "Módulo iPod no disponible (falta la dependencia '%s'). "
+        "La app funciona normalmente, sin esa sección. "
+        "Para habilitarla: pip install cicada[ipod]",
+        exc.name,
+    )
 from cicada.core.routes.settings import router as settings_router
 from cicada.core.routes.system import router as system_router
 from cicada.core.routes.library import router as library_router
 from cicada.core.routes.spotify import router as spotify_router
 from cicada.core.routes.process import router as process_router
-app.include_router(ipod_router)
+if IPOD_AVAILABLE:
+    app.include_router(ipod_router)
 app.include_router(settings_router)
 app.include_router(system_router)
 app.include_router(library_router)
