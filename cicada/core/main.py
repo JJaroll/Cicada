@@ -164,10 +164,10 @@ async def get():
             </nav>
             <div class="mt-auto flex flex-col items-center gap-6">
                 <button type="button" onclick="openSettings()" class="material-symbols-outlined text-sidebar/60 hover:text-sidebar transition-colors" data-i18n-title="settings_tooltip" title="Ajustes">settings</button>
-                <div class="relative w-10 h-10 rounded-xl bg-black/10 dark:bg-black/20 flex items-center justify-center border-2 border-transparent" data-i18n-title="connection_tooltip" title="Estado de conexión">
+                <button type="button" onclick="openServerStatusModal()" class="relative w-10 h-10 rounded-xl bg-black/10 dark:bg-black/20 flex items-center justify-center border-2 border-transparent" data-i18n-title="connection_tooltip" title="Estado de conexión">
                     <span class="material-symbols-outlined text-[22px] text-sidebar/60">graphic_eq</span>
                     <span id="ws-status-dot" class="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-gray-400 border-2 border-sidebar"></span>
-                </div>
+                </button>
             </div>
         </aside>
 
@@ -330,6 +330,22 @@ async def get():
                     <span class="material-symbols-outlined text-[16px]">favorite</span>
                     <span data-i18n="about_contribute_btn">Contribuir</span>
                 </button>
+            </div>
+        </div>
+
+        <!-- Modal de Estado del Servidor -->
+        <div id="server-status-modal" class="hidden fixed inset-0 z-[100] items-center justify-center bg-black/60 backdrop-blur-sm" onclick="if(event.target === this) closeServerStatusModal()">
+            <div class="w-full max-w-sm mx-4 p-6 flex flex-col gap-4 rounded-2xl border border-theme bg-card">
+                <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <span class="material-symbols-outlined text-accent text-[20px]">graphic_eq</span>
+                        <span class="font-label-caps text-[14px] tracking-widest text-main" data-i18n="server_status_title">Estado del Servidor</span>
+                    </div>
+                    <button type="button" onclick="closeServerStatusModal()" class="material-symbols-outlined text-muted/60 hover:text-main transition-colors">close</button>
+                </div>
+                <div id="server-status-body" class="flex flex-col gap-3">
+                    <p class="font-data-sm text-[13px] text-muted/60" data-i18n="server_status_checking">Consultando...</p>
+                </div>
             </div>
         </div>
 

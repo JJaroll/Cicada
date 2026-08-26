@@ -59,6 +59,17 @@ def select_file():
         return {"error": str(e)}
 
 
+@router.get("/api/system/status")
+async def get_system_status():
+    from cicada.core.main import __version__, IPOD_AVAILABLE
+
+    return {
+        "status": "connected",
+        "app_version": __version__,
+        "ipod_module_available": IPOD_AVAILABLE,
+    }
+
+
 @router.get("/api/check_update")
 async def check_update():
     from cicada.core.main import __version__

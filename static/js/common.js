@@ -319,6 +319,90 @@ function closeAbout() {
     modal.classList.remove("flex");
 }
 
+// --- Modal de Estado del Servidor ---
+function openServerStatusModal() {
+    let modal = document.getElementById("server-status-modal");
+    modal.classList.remove("hidden");
+    modal.classList.add("flex");
+    renderServerStatus();
+}
+
+function closeServerStatusModal() {
+    let modal = document.getElementById("server-status-modal");
+    modal.classList.add("hidden");
+    modal.classList.remove("flex");
+}
+
+async function renderServerStatus() {
+    let body = document.getElementById("server-status-body");
+    body.innerHTML = '<p class="font-data-sm text-[13px] text-muted/60" data-i18n="server_status_checking">' + t("server_status_checking") + '</p>';
+
+    let connectedHtml;
+    try {
+        let res = await fetch('/api/system/status');
+        if (!res.ok) throw new Error("respuesta no OK");
+        let data = await res.json();
+
+        connectedHtml = `
+            <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-green-500"></span>
+                <span class="font-data-sm text-[13px] text-main">${escapeHtml(t("server_status_connected"))}</span>
+            </div>
+            <div class="flex flex-col pt-2 border-t border-theme">
+                <span class="font-label-caps text-[10px] text-muted">${escapeHtml(t("server_status_version"))}</span>
+                <span class="font-data-sm text-[13px] text-main">${escapeHtml(data.app_version || "—")}</span>
+            </div>
+        `;
+
+        if (data.ipod_module_available && ipodUiEnabled) {
+            connectedHtml += await renderIpodStatusBlock();
+        }
+    } catch (err) {
+        connectedHtml = `
+            <div class="flex items-center gap-2">
+                <span class="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+                <span class="font-data-sm text-[13px] text-main">${escapeHtml(t("server_status_disconnected"))}</span>
+            </div>
+        `;
+    }
+    body.innerHTML = connectedHtml;
+}
+
+async function renderIpodStatusBlock() {
+    try {
+        let res = await fetch('/api/ipod/status');
+        if (!res.ok) throw new Error("respuesta no OK");
+        let data = await res.json();
+
+        let ipodLabel;
+        let ipodColor;
+        if (data.state === "ready" && data.devices && data.devices.length > 0) {
+            let dev = data.devices[0];
+            let modelParts = [dev.family, dev.generation, dev.color].filter(Boolean);
+            ipodLabel = modelParts.join(" ") || t("server_status_ipod_connected");
+            ipodColor = "bg-green-500";
+        } else if (data.state === "no_ipod_control") {
+            ipodLabel = t("server_status_ipod_no_control");
+            ipodColor = "bg-amber-500";
+        } else {
+            ipodLabel = t("server_status_ipod_none");
+            ipodColor = "bg-gray-400";
+        }
+
+        return `
+            <div class="flex items-center gap-2 pt-2 border-t border-theme">
+                <span class="w-2.5 h-2.5 rounded-full ${ipodColor}"></span>
+                <div class="flex flex-col">
+                    <span class="font-label-caps text-[10px] text-muted">${escapeHtml(t("server_status_ipod_label"))}</span>
+                    <span class="font-data-sm text-[13px] text-main">${escapeHtml(ipodLabel)}</span>
+                </div>
+            </div>
+        `;
+    } catch (err) {
+        return "";
+    }
+}
+
 // --- Modal de apoyo (Ko-fi): tras completar un lote grande de canciones ---
 const KOFI_SUPPORT_THRESHOLD = 250;
 const MANUAL_TAGGING_MINUTES_PER_SONG = 5; // estimación de tiempo de etiquetado manual por canción
