@@ -82,6 +82,7 @@ async def get():
         <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
         <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
         <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
+        <link href="https://cdn.jsdelivr.net/fontsource/css/opendyslexic@latest/index.css" rel="stylesheet">
         <!-- Configuración de Tailwind: variables CSS por tema/color de acento -->
         <script id="tailwind-config">
           tailwind.config = {
@@ -125,7 +126,7 @@ async def get():
             }
           }
         </script>
-        <link rel="stylesheet" href="/static/css/app.css?v=2.2.0">
+        <link rel="stylesheet" href="/static/css/app.css?v=2.2.1">
     </head>
     <body class="bg-app text-main font-body-md text-body-md h-screen flex justify-center p-4">
         <div class="app-shell w-full h-full max-w-[1920px] mx-auto flex gap-4">
@@ -240,6 +241,15 @@ async def get():
                         <span class="font-data-sm text-[13px] text-muted/70" data-i18n="settings_ipod_ui_label">Mostrar la sección iPod en la interfaz</span>
                     </label>
                     <p class="font-data-sm text-[11px] text-muted/40 pl-6" data-i18n="settings_ipod_ui_hint">Oculta la sección iPod de la interfaz. No reduce el tamaño de instalación ni elimina dependencias — el módulo sigue instalado, solo se deja de mostrar.</p>
+                </div>
+
+                <div class="flex flex-col gap-2 border-t border-theme pt-3">
+                    <span class="font-label-caps text-[11px] text-accent/70" data-i18n="settings_accessibility_title">Accesibilidad</span>
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" id="settings_dyslexic_font" class="cicada-checkbox" onchange="selectFontUI(this.checked ? 'dyslexic' : 'standard')"/>
+                        <span class="font-data-sm text-[13px] text-muted/70" data-i18n="settings_dyslexic_font_label">Fuente para dislexia</span>
+                    </label>
+                    <p class="font-data-sm text-[11px] text-muted/40 pl-6" data-i18n="settings_dyslexic_font_hint">Reemplaza la tipografía de toda la interfaz por OpenDyslexic. Funciona sin recargar la página.</p>
                 </div>
 
 
@@ -1260,7 +1270,7 @@ async def get():
 
         <script>window.CICADA_VERSION = "__CICADA_VERSION__";</script>
         <script src="/static/js/i18n.js?v=2.2.4"></script>
-        <script src="/static/js/common.js?v=2.2.2"></script>
+        <script src="/static/js/common.js?v=2.2.3"></script>
         <script src="/static/js/metadata.js?v=2.2.0"></script>
         <script src="/static/js/download.js?v=2.2.0"></script>
         <script src="/static/js/playlist.js?v=2.2.1"></script>
@@ -1283,6 +1293,9 @@ async def get():
             ipodUiEnabled = data.ipod_ui_enabled !== false;
             applyIpodUiVisibility();
             }).catch(e => console.error("Error loading theme", e));
+
+            // Accesibilidad: preferencias 100% client-side, no dependen del backend
+            selectFontUI(localStorage.getItem('cicada_font') || 'standard');
             handleSpotifyAuthRedirect();
             checkForUpdates();
         </script>

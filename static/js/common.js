@@ -496,6 +496,14 @@ function selectThemeUI(theme) {
     document.documentElement.setAttribute('data-theme', theme);
 }
 
+// Accesibilidad: fuente para dislexia — 100% client-side (localStorage), no se persiste server-side
+function selectFontUI(font) {
+    document.documentElement.setAttribute('data-font', font);
+    localStorage.setItem('cicada_font', font);
+    let checkbox = document.getElementById('settings_dyslexic_font');
+    if (checkbox) checkbox.checked = font === 'dyslexic';
+}
+
 // Nombre de archivo de logo (en inglés) para cada color de acento (en español)
 const LOGO_FILE_BY_COLOR = {
     azul: 'blue',

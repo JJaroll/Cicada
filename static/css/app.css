@@ -41,6 +41,18 @@
 [data-color="naranja"] { --accent: #FF8800; --accent-hover: #e67a00; --accent-light: rgba(255, 136, 0, 0.15); }
 [data-color="rosa"] { --accent: #E62E6B; --accent-hover: #cc295f; --accent-light: rgba(230, 46, 107, 0.15); }
 
+/* FUENTE PARA DISLEXIA: reemplaza toda la tipografía de la interfaz por OpenDyslexic */
+[data-font="dyslexic"] body,
+[data-font="dyslexic"] .font-body-md,
+[data-font="dyslexic"] .font-label-caps,
+[data-font="dyslexic"] .font-data-sm,
+[data-font="dyslexic"] .font-data-lg,
+[data-font="dyslexic"] .font-display-lg,
+[data-font="dyslexic"] .font-headline-sm,
+[data-font="dyslexic"] .font-headline-md {
+    font-family: 'OpenDyslexic', sans-serif !important;
+}
+
 /* LOGO DE CICADA: se muestra la variante que coincide con el color de acento activo */
 .cicada-logo-img { display: none; }
 [data-color="azul"] .cicada-logo-img[data-logo-color="azul"],
