@@ -1242,8 +1242,9 @@ async def get():
 
         <audio id="library-audio" preload="none"></audio>
 
-        <script src="/static/js/i18n.js?v=2.2.3"></script>
-        <script src="/static/js/common.js?v=2.2.1"></script>
+        <script>window.CICADA_VERSION = "__CICADA_VERSION__";</script>
+        <script src="/static/js/i18n.js?v=2.2.4"></script>
+        <script src="/static/js/common.js?v=2.2.2"></script>
         <script src="/static/js/metadata.js?v=2.2.0"></script>
         <script src="/static/js/download.js?v=2.2.0"></script>
         <script src="/static/js/playlist.js?v=2.2.1"></script>

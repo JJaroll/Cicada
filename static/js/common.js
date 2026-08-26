@@ -33,7 +33,10 @@ function applyLanguage(lang) {
     document.documentElement.lang = currentLang;
 
     document.querySelectorAll("[data-i18n]").forEach(function(el) {
-        el.textContent = t(el.getAttribute("data-i18n"));
+        let key = el.getAttribute("data-i18n");
+        el.textContent = key === "about_version"
+            ? t(key, {version: window.CICADA_VERSION || "?"})
+            : t(key);
     });
     document.querySelectorAll("[data-i18n-placeholder]").forEach(function(el) {
         el.setAttribute("placeholder", t(el.getAttribute("data-i18n-placeholder")));
