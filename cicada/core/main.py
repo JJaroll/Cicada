@@ -126,7 +126,7 @@ async def get():
             }
           }
         </script>
-        <link rel="stylesheet" href="/static/css/app.css?v=2.2.2">
+        <link rel="stylesheet" href="/static/css/app.css?v=2.2.3">
     </head>
     <body class="bg-app text-main font-body-md text-body-md h-screen flex justify-center p-4">
         <div class="app-shell w-full h-full max-w-[1920px] mx-auto flex gap-4">
@@ -250,6 +250,12 @@ async def get():
                         <span class="font-data-sm text-[13px] text-muted/70" data-i18n="settings_dyslexic_font_label">Fuente para dislexia</span>
                     </label>
                     <p class="font-data-sm text-[11px] text-muted/40 pl-6" data-i18n="settings_dyslexic_font_hint">Reemplaza la tipografía de toda la interfaz por OpenDyslexic. Funciona sin recargar la página.</p>
+
+                    <label class="flex items-center gap-2 cursor-pointer mt-1">
+                        <input type="checkbox" id="settings_colorblind_mode" class="cicada-checkbox" onchange="selectColorblindModeUI(this.checked)"/>
+                        <span class="font-data-sm text-[13px] text-muted/70" data-i18n="settings_colorblind_mode_label">Modo daltónico</span>
+                    </label>
+                    <p class="font-data-sm text-[11px] text-muted/40 pl-6" data-i18n="settings_colorblind_mode_hint">Cambia los colores de estado (procesando/saltado/error/cancelado) a una paleta distinguible para daltonismo rojo-verde. Se puede usar junto a cualquier tema.</p>
                 </div>
 
 
@@ -1270,7 +1276,7 @@ async def get():
 
         <script>window.CICADA_VERSION = "__CICADA_VERSION__";</script>
         <script src="/static/js/i18n.js?v=2.2.4"></script>
-        <script src="/static/js/common.js?v=2.2.4"></script>
+        <script src="/static/js/common.js?v=2.2.5"></script>
         <script src="/static/js/metadata.js?v=2.2.0"></script>
         <script src="/static/js/download.js?v=2.2.0"></script>
         <script src="/static/js/playlist.js?v=2.2.1"></script>
@@ -1296,6 +1302,7 @@ async def get():
 
             // Accesibilidad: preferencias 100% client-side, no dependen del backend
             selectFontUI(localStorage.getItem('cicada_font') || 'standard');
+            selectColorblindModeUI(localStorage.getItem('cicada_colorblind') === 'true');
             handleSpotifyAuthRedirect();
             checkForUpdates();
         </script>

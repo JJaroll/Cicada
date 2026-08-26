@@ -23,6 +23,15 @@
 --status-error: #f43f5e;
 }
 
+/* MODO DALTÓNICO: remapea los colores de estado a una paleta distinguible
+   para daltonismo rojo-verde. Solo color — no cambia forma/iconografía. */
+[data-colorblind="true"] {
+--status-success: #10b981;
+--status-processing: #10b981;
+--status-warning: #E6A23C;
+--status-error: #E2725B;
+}
+
 /* TEMA CLARO: ALUMINIO */
 [data-theme="aluminio"] {
 --bg-app: #D8DCE0;

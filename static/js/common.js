@@ -512,6 +512,14 @@ function selectFontUI(font) {
     if (checkbox) checkbox.checked = font === 'dyslexic';
 }
 
+// Accesibilidad: modo daltónico — remapea las CSS variables --status-*, 100% client-side
+function selectColorblindModeUI(enabled) {
+    document.documentElement.setAttribute('data-colorblind', enabled ? 'true' : 'false');
+    localStorage.setItem('cicada_colorblind', enabled ? 'true' : 'false');
+    let checkbox = document.getElementById('settings_colorblind_mode');
+    if (checkbox) checkbox.checked = enabled;
+}
+
 // Nombre de archivo de logo (en inglés) para cada color de acento (en español)
 const LOGO_FILE_BY_COLOR = {
     azul: 'blue',
