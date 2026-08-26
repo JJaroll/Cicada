@@ -126,7 +126,7 @@ async def get():
             }
           }
         </script>
-        <link rel="stylesheet" href="/static/css/app.css?v=2.2.1">
+        <link rel="stylesheet" href="/static/css/app.css?v=2.2.2">
     </head>
     <body class="bg-app text-main font-body-md text-body-md h-screen flex justify-center p-4">
         <div class="app-shell w-full h-full max-w-[1920px] mx-auto flex gap-4">
@@ -1270,7 +1270,7 @@ async def get():
 
         <script>window.CICADA_VERSION = "__CICADA_VERSION__";</script>
         <script src="/static/js/i18n.js?v=2.2.4"></script>
-        <script src="/static/js/common.js?v=2.2.3"></script>
+        <script src="/static/js/common.js?v=2.2.4"></script>
         <script src="/static/js/metadata.js?v=2.2.0"></script>
         <script src="/static/js/download.js?v=2.2.0"></script>
         <script src="/static/js/playlist.js?v=2.2.1"></script>

@@ -16,6 +16,12 @@ function applyIpodUiVisibility() {
     }
 }
 
+// Lee las CSS variables --status-* (definidas en app.css), formalizando los
+// colores de estado en vez de tenerlos hardcodeados en cada llamada.
+function statusColor(kind) {
+    return getComputedStyle(document.documentElement).getPropertyValue("--status-" + kind).trim();
+}
+
 function t(key, vars) {
     let dict = I18N[currentLang] || I18N.es;
     let str = dict[key] !== undefined ? dict[key] : (I18N.es[key] !== undefined ? I18N.es[key] : key);
@@ -103,7 +109,7 @@ let hasPlayedTrack = false;
 let currentWsStatusKey = "ws_connecting_short";
 let currentWsColor = "#9ca3af";
 let currentStatusPillKey = "player_waiting_status";
-let currentStatusPillColor = "#10b981";
+let currentStatusPillColor = statusColor("success");
 
 // --- Navegación entre vistas ---
 function showView(name) {
@@ -169,32 +175,34 @@ function setStatusPill(key, colorHex) {
 
 function appendLog(message, kind) {
     let colorClass = {
-        "error": "text-[#f43f5e]",
+        "error": "",
         "success": "text-secondary",
         "info": "text-accent",
         "detail": "text-muted/50 pl-3",
-        "skip": "text-[#f59e0b]"
+        "skip": ""
     }[kind] || "text-muted/70";
+    let inlineColor = {"error": statusColor("error"), "skip": statusColor("warning")}[kind];
     let p = document.createElement("p");
     p.className = "mt-1 " + colorClass;
+    if (inlineColor) p.style.color = inlineColor;
     p.textContent = "> " + message;
     logContainer.appendChild(p);
     logContainer.scrollTop = logContainer.scrollHeight;
 }
 
 ws.onopen = function() {
-    setWsStatus("ws_connected", "#10b981");
+    setWsStatus("ws_connected", statusColor("success"));
 };
 
 ws.onerror = function() {
     appendLog(t("log_ws_error"), "error");
-    setWsStatus("ws_error", "#f43f5e");
+    setWsStatus("ws_error", statusColor("error"));
     resetUi();
 };
 
 ws.onclose = function() {
     appendLog(t("log_ws_closed"), "skip");
-    setWsStatus("ws_disconnected", "#f43f5e");
+    setWsStatus("ws_disconnected", statusColor("error"));
     resetUi();
 };
 
@@ -216,7 +224,7 @@ ws.onmessage = function(event) {
         hasStartedProcessing = true;
         trackTitle.textContent = data.file;
         trackSubtitle.textContent = t("process_track_of", {current: data.current, total: data.total});
-        setStatusPill(isSkipped ? "process_skipped" : "process_processing", isSkipped ? "#f59e0b" : "#10b981");
+        setStatusPill(isSkipped ? "process_skipped" : "process_processing", isSkipped ? statusColor("warning") : statusColor("processing"));
 
         appendLog("[" + data.current + "/" + data.total + "] " + data.file, isSkipped ? "skip" : "success");
         addFileCard(data.file, t("process_track_of", {current: data.current, total: data.total}));
@@ -244,7 +252,7 @@ ws.onmessage = function(event) {
         if (!isCancel) bar.style.width = '100%';
 
         progressLabel.textContent = isCancel ? t("process_cancelled_status") : t("process_completed_status");
-        setStatusPill(isCancel ? "process_cancelled_status" : "process_completed_status", isCancel ? "#f43f5e" : "#10b981");
+        setStatusPill(isCancel ? "process_cancelled_status" : "process_completed_status", isCancel ? statusColor("error") : statusColor("success"));
         hasStartedProcessing = true;
         trackSubtitle.textContent = isCancel ? t("process_stopped") : t("process_done_all");
         if (!isCancel) showKofiSupport(data.count, data.elapsed_seconds, data.total_files);

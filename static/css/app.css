@@ -16,6 +16,11 @@
 --text-sidebar-muted: #6B7280;
 
 --border-color: rgba(255,255,255,0.1);
+
+--status-success: #10b981;
+--status-processing: #10b981;
+--status-warning: #f59e0b;
+--status-error: #f43f5e;
 }
 
 /* TEMA CLARO: ALUMINIO */
