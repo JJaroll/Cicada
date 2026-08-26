@@ -312,7 +312,7 @@ async def get():
                 </div>
 
                 <span class="font-display-lg text-[20px] font-bold tracking-tighter text-main">Cicada</span>
-                <span class="font-label-caps text-[11px] text-secondary" id="about-version" data-i18n="about_version">Versión 1.1.1</span>
+                <span class="font-label-caps text-[11px] text-secondary" id="about-version" data-i18n="about_version">Versión __CICADA_VERSION__</span>
 
                 <p class="font-data-sm text-[13px] text-muted/70" data-i18n="about_description">Herramienta local de organización musical y sincronización automática de metadatos de alta fidelidad.</p>
 
@@ -1272,6 +1272,7 @@ async def get():
     </body>
     </html>
     """
+    html_content = html_content.replace("__CICADA_VERSION__", __version__)
     return HTMLResponse(
         content=html_content,
         headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"}
