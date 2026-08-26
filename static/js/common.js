@@ -284,9 +284,33 @@ function formatTime(seconds) {
 function openSettings() {
     loadSettingsIntoForm();
     refreshSpotifyAuthStatus();
+    switchSettingsTab("general");
     let modal = document.getElementById("settings-modal");
     modal.classList.remove("hidden");
     modal.classList.add("flex");
+}
+
+const SETTINGS_TAB_TITLE_KEYS = {
+    general: "settings_tab_general",
+    apariencia: "settings_tab_apariencia",
+    integraciones: "settings_tab_integraciones",
+    ipod: "settings_tab_ipod"
+};
+
+function switchSettingsTab(tab) {
+    document.querySelectorAll(".settings-tab-content").forEach(function(el) {
+        let isActive = el.id === "settingsTab-" + tab;
+        el.classList.toggle("hidden", !isActive);
+        el.classList.toggle("flex", isActive);
+    });
+    document.querySelectorAll(".settings-nav-btn").forEach(function(btn) {
+        let isActive = btn.dataset.settingsTab === tab;
+        btn.classList.toggle("bg-accent", isActive);
+        btn.classList.toggle("text-white", isActive);
+        btn.classList.toggle("text-muted", !isActive);
+    });
+    let titleEl = document.getElementById("settingsTabTitle");
+    if (titleEl) titleEl.textContent = t(SETTINGS_TAB_TITLE_KEYS[tab] || "");
 }
 
 async function refreshSpotifyAuthStatus() {

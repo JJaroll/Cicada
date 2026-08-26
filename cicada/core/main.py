@@ -173,144 +173,180 @@ async def get():
         </aside>
 
         <!-- Modal de Ajustes -->
-        <div id="settings-modal" class="hidden fixed inset-0 z-[100] items-center justify-center bg-black/60 backdrop-blur-sm">
-            <div class="w-full max-w-lg mx-4 p-6 flex flex-col gap-4 max-h-[85vh] overflow-y-auto custom-scrollbar rounded-2xl border border-theme bg-card">
-                <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                        <span class="material-symbols-outlined text-accent text-[22px]">settings</span>
-                        <span class="font-label-caps text-[14px] tracking-widest text-main" data-i18n="settings_title">Ajustes</span>
+        <div id="settings-modal" class="hidden fixed inset-0 z-[100] items-center justify-center bg-black/60 backdrop-blur-sm" onclick="if(event.target === this) closeSettings()">
+            <div class="w-full max-w-3xl h-[80vh] max-h-[85vh] mx-4 flex rounded-2xl border border-theme bg-card overflow-hidden">
+
+                <!-- Sidebar de categorías -->
+                <div class="w-48 shrink-0 bg-black/10 border-r border-theme flex flex-col p-3 gap-1 overflow-y-auto custom-scrollbar">
+                    <div class="flex items-center gap-2 px-2 py-2 mb-2">
+                        <span class="material-symbols-outlined text-accent text-[20px]">settings</span>
+                        <span class="font-label-caps text-[12px] tracking-widest text-main" data-i18n="settings_title">Ajustes</span>
                     </div>
-                    <button type="button" onclick="closeSettings()" class="material-symbols-outlined text-muted/60 hover:text-main transition-colors">close</button>
+                    <button type="button" class="settings-nav-btn bg-accent text-white w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg font-label-caps text-[12px] font-bold text-left transition-colors hover:bg-btn-hover" data-settings-tab="general" onclick="switchSettingsTab('general')">
+                        <span class="material-symbols-outlined text-[18px]">language</span> <span data-i18n="settings_tab_general">General</span>
+                    </button>
+                    <button type="button" class="settings-nav-btn text-muted w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg font-label-caps text-[12px] font-bold text-left transition-colors hover:bg-btn-hover" data-settings-tab="apariencia" onclick="switchSettingsTab('apariencia')">
+                        <span class="material-symbols-outlined text-[18px]">palette</span> <span data-i18n="settings_tab_apariencia">Apariencia</span>
+                    </button>
+                    <button type="button" class="settings-nav-btn text-muted w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg font-label-caps text-[12px] font-bold text-left transition-colors hover:bg-btn-hover" data-settings-tab="integraciones" onclick="switchSettingsTab('integraciones')">
+                        <span class="material-symbols-outlined text-[18px]">link</span> <span data-i18n="settings_tab_integraciones">Integraciones</span>
+                    </button>
+                    <button type="button" class="settings-nav-btn text-muted w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg font-label-caps text-[12px] font-bold text-left transition-colors hover:bg-btn-hover" data-settings-tab="ipod" onclick="switchSettingsTab('ipod')">
+                        <span class="material-symbols-outlined text-[18px]">developer_board</span> <span data-i18n="settings_tab_ipod">Módulo iPod</span>
+                    </button>
                 </div>
 
-                <div class="flex flex-col gap-2">
-                    <span class="font-label-caps text-[11px] text-accent/70" data-i18n="settings_language_title">Idioma</span>
-                    <div class="flex gap-2">
-                        <button type="button" class="lang-btn flex-1 py-2 rounded-lg font-label-caps text-[11px] transition-colors" data-lang="es" onclick="applyLanguage('es')">Español</button>
-                        <button type="button" class="lang-btn flex-1 py-2 rounded-lg font-label-caps text-[11px] transition-colors" data-lang="en" onclick="applyLanguage('en')">English</button>
-                        <button type="button" class="lang-btn flex-1 py-2 rounded-lg font-label-caps text-[11px] transition-colors" data-lang="ja" onclick="applyLanguage('ja')">日本語</button>
-                    </div>
-                </div>
-
-                <div class="flex flex-col gap-2 border-t border-theme pt-3">
-                    <span class="font-label-caps text-[11px] text-accent/70" data-i18n="settings_spotify_title">Cuenta de Spotify</span>
-                    <div class="flex items-center justify-between gap-2">
-                        <span id="settings-spotify-status" class="font-data-sm text-[13px] text-muted/60" data-i18n="settings_spotify_not_connected">No conectado a Spotify</span>
-                        <button type="button" onclick="window.location.href='/api/auth/login'" id="settings-spotify-connect-btn" class="px-3 py-2 rounded-lg bg-accent text-white font-label-caps text-[11px] hover:brightness-110 transition-all whitespace-nowrap" data-i18n="settings_spotify_connect_btn">Conectar con Spotify</button>
-                    </div>
-                </div>
-
-                <div class="flex flex-col gap-2 border-t border-theme pt-3">
-                    <div class="flex items-center gap-1.5">
-                        <span class="font-label-caps text-[11px] text-accent/70" data-i18n="settings_credentials_title">Claves de Acceso</span>
-                        <button type="button" onclick="window.open('https://github.com/JJaroll/Cicada/blob/main/README.md#-configuraci%C3%B3n-de-claves-api', '_blank')" data-i18n-title="settings_credentials_help_tooltip" title="¿Cómo obtener las claves?" class="material-symbols-outlined text-[15px] text-muted/50 hover:text-accent transition-colors leading-none">help</button>
+                <!-- Panel de contenido -->
+                <div class="flex-1 flex flex-col min-w-0">
+                    <div class="flex items-center justify-between px-6 py-4 border-b border-theme shrink-0">
+                        <span id="settingsTabTitle" class="font-label-caps text-[14px] tracking-widest text-main" data-i18n="settings_tab_general">General</span>
+                        <button type="button" onclick="closeSettings()" class="material-symbols-outlined text-muted/60 hover:text-main transition-colors">close</button>
                     </div>
 
-                    <label class="font-label-caps text-[10px] text-muted/50" data-i18n="settings_acoustid_label">Clave de AcoustID</label>
-                    <div class="flex gap-2">
-                        <input type="password" id="settings_acoustid_key" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]" placeholder="Client key de AcoustID"/>
-                        <button type="button" onclick="toggleSecretVisibility('settings_acoustid_key', this)" class="material-symbols-outlined text-[18px] text-muted/50 hover:text-accent px-2">visibility</button>
-                    </div>
+                    <div class="flex-1 overflow-y-auto custom-scrollbar p-6">
 
-                    <label class="font-label-caps text-[10px] text-muted/50" data-i18n="settings_spotify_id_label">ID de Cliente de Spotify</label>
-                    <div class="flex gap-2">
-                        <input type="password" id="settings_spotify_id" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]" placeholder="Client ID de Spotify"/>
-                        <button type="button" onclick="toggleSecretVisibility('settings_spotify_id', this)" class="material-symbols-outlined text-[18px] text-muted/50 hover:text-accent px-2">visibility</button>
-                    </div>
+                        <!-- GENERAL -->
+                        <div id="settingsTab-general" class="settings-tab-content flex flex-col gap-5">
+                            <div class="flex flex-col gap-2">
+                                <span class="font-label-caps text-[11px] text-accent/70" data-i18n="settings_language_title">Idioma</span>
+                                <div class="flex gap-2">
+                                    <button type="button" class="lang-btn flex-1 py-2 rounded-lg font-label-caps text-[11px] transition-colors" data-lang="es" onclick="applyLanguage('es')">Español</button>
+                                    <button type="button" class="lang-btn flex-1 py-2 rounded-lg font-label-caps text-[11px] transition-colors" data-lang="en" onclick="applyLanguage('en')">English</button>
+                                    <button type="button" class="lang-btn flex-1 py-2 rounded-lg font-label-caps text-[11px] transition-colors" data-lang="ja" onclick="applyLanguage('ja')">日本語</button>
+                                </div>
+                            </div>
 
-                    <label class="font-label-caps text-[10px] text-muted/50" data-i18n="settings_spotify_secret_label">Clave Secreta de Spotify</label>
-                    <div class="flex gap-2">
-                        <input type="password" id="settings_spotify_secret" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]" placeholder="Client Secret de Spotify"/>
-                        <button type="button" onclick="toggleSecretVisibility('settings_spotify_secret', this)" class="material-symbols-outlined text-[18px] text-muted/50 hover:text-accent px-2">visibility</button>
-                    </div>
-                </div>
+                            <div class="flex flex-col gap-2">
+                                <span class="font-label-caps text-[11px] text-accent/70" data-i18n="settings_folders_title">Carpetas Predeterminadas</span>
 
-                <div class="flex flex-col gap-2 border-t border-theme pt-3">
-                    <span class="font-label-caps text-[11px] text-accent/70" data-i18n="settings_identification_title">Identificación de Canciones</span>
-                    <label class="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" id="settings_plan_c_enabled" class="cicada-checkbox"/>
-                        <span class="font-data-sm text-[13px] text-muted/70" data-i18n="settings_plan_c_label">Adivinar por el nombre del archivo cuando no se reconoce la canción</span>
-                    </label>
-                    <p class="font-data-sm text-[11px] text-muted/40 pl-6" data-i18n="settings_plan_c_hint">Apagado por defecto: suele ser poco preciso. Si está apagado, esos archivos se reportan como error en vez de adivinar el título/artista.</p>
-                </div>
+                                <label class="font-label-caps text-[10px] text-muted/50" data-i18n="settings_library_dir_label">Carpeta de tu Biblioteca</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="settings_library_dir" placeholder="/Users/usuario/Musica/Organizada" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]"/>
+                                    <button type="button" onclick="pickFolder('settings_library_dir')" class="px-3 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors" data-i18n="common_choose">Elegir</button>
+                                </div>
 
-                <div class="flex flex-col gap-2 border-t border-theme pt-3">
-                    <span class="font-label-caps text-[11px] text-accent/70" data-i18n="settings_ipod_section_title">Módulo iPod</span>
-                    <label class="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" id="settings_ipod_ui_enabled" class="cicada-checkbox"/>
-                        <span class="font-data-sm text-[13px] text-muted/70" data-i18n="settings_ipod_ui_label">Mostrar la sección iPod en la interfaz</span>
-                    </label>
-                    <p class="font-data-sm text-[11px] text-muted/40 pl-6" data-i18n="settings_ipod_ui_hint">Oculta la sección iPod de la interfaz. No reduce el tamaño de instalación ni elimina dependencias — el módulo sigue instalado, solo se deja de mostrar.</p>
-                </div>
+                                <label class="font-label-caps text-[10px] text-muted/50" data-i18n="settings_input_dir_label">Carpeta de Origen (Metadatos)</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="settings_process_input_dir" placeholder="/Users/usuario/Musica/Entrada" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]"/>
+                                    <button type="button" onclick="pickFolder('settings_process_input_dir')" class="px-3 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors" data-i18n="common_choose">Elegir</button>
+                                </div>
 
-                <div class="flex flex-col gap-2 border-t border-theme pt-3">
-                    <span class="font-label-caps text-[11px] text-accent/70" data-i18n="settings_accessibility_title">Accesibilidad</span>
-                    <label class="flex items-center gap-2 cursor-pointer">
-                        <input type="checkbox" id="settings_dyslexic_font" class="cicada-checkbox" onchange="selectFontUI(this.checked ? 'dyslexic' : 'standard')"/>
-                        <span class="font-data-sm text-[13px] text-muted/70" data-i18n="settings_dyslexic_font_label">Fuente para dislexia</span>
-                    </label>
-                    <p class="font-data-sm text-[11px] text-muted/40 pl-6" data-i18n="settings_dyslexic_font_hint">Reemplaza la tipografía de toda la interfaz por OpenDyslexic. Funciona sin recargar la página.</p>
-
-                    <label class="flex items-center gap-2 cursor-pointer mt-1">
-                        <input type="checkbox" id="settings_colorblind_mode" class="cicada-checkbox" onchange="selectColorblindModeUI(this.checked)"/>
-                        <span class="font-data-sm text-[13px] text-muted/70" data-i18n="settings_colorblind_mode_label">Modo daltónico</span>
-                    </label>
-                    <p class="font-data-sm text-[11px] text-muted/40 pl-6" data-i18n="settings_colorblind_mode_hint">Cambia los colores de estado (procesando/saltado/error/cancelado) a una paleta distinguible para daltonismo rojo-verde. Se puede usar junto a cualquier tema.</p>
-                </div>
-
-
-                                <div class="flex flex-col gap-4 border-t border-theme pt-5">
-                    <!-- TEMA -->
-                    <div class="flex flex-col gap-2">
-                        <span class="font-label-caps text-[12px] text-muted tracking-widest font-bold" data-i18n="settings_theme_title">TEMA</span>
-                        <div class="flex gap-3">
-                            <button type="button" class="theme-btn flex-1 py-3 rounded-xl border-2 font-label-caps text-[13px] font-bold transition-all" data-theme-val="grafito" onclick="selectThemeUI('grafito')" data-i18n="settings_theme_dark">Grafito</button>
-                            <button type="button" class="theme-btn flex-1 py-3 rounded-xl border-2 font-label-caps text-[13px] font-bold transition-all" data-theme-val="aluminio" onclick="selectThemeUI('aluminio')" data-i18n="settings_theme_light">Aluminio</button>
+                                <label class="font-label-caps text-[10px] text-muted/50" data-i18n="settings_output_dir_label">Carpeta de Destino (Metadatos)</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="settings_process_output_dir" placeholder="/Users/usuario/Musica/Organizada" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]"/>
+                                    <button type="button" onclick="pickFolder('settings_process_output_dir')" class="px-3 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors" data-i18n="common_choose">Elegir</button>
+                                </div>
+                            </div>
                         </div>
-                        <input type="hidden" id="settings_theme" value="grafito">
-                    </div>
 
-                    <!-- COLOR NANO -->
-                    <div class="flex flex-col gap-2 mt-2">
-                        <span class="font-label-caps text-[12px] text-muted tracking-widest font-bold" data-i18n="settings_color_title">COLOR NANO</span>
-                        <div class="flex gap-4 items-center">
-                            <button type="button" class="color-btn w-8 h-8 rounded-full transition-all flex items-center justify-center relative" style="background-color: #0099FF;" data-color-val="azul" onclick="selectColorUI('azul')"></button>
-                            <button type="button" class="color-btn w-8 h-8 rounded-full transition-all flex items-center justify-center relative" style="background-color: #77C800;" data-color-val="verde" onclick="selectColorUI('verde')"></button>
-                            <button type="button" class="color-btn w-8 h-8 rounded-full transition-all flex items-center justify-center relative" style="background-color: #8A2BE2;" data-color-val="morado" onclick="selectColorUI('morado')"></button>
-                            <button type="button" class="color-btn w-8 h-8 rounded-full transition-all flex items-center justify-center relative" style="background-color: #FF8800;" data-color-val="naranja" onclick="selectColorUI('naranja')"></button>
-                            <button type="button" class="color-btn w-8 h-8 rounded-full transition-all flex items-center justify-center relative" style="background-color: #E62E6B;" data-color-val="rosa" onclick="selectColorUI('rosa')"></button>
+                        <!-- APARIENCIA -->
+                        <div id="settingsTab-apariencia" class="settings-tab-content hidden flex-col gap-5">
+                            <div class="flex flex-col gap-2">
+                                <span class="font-label-caps text-[12px] text-muted tracking-widest font-bold" data-i18n="settings_theme_title">TEMA</span>
+                                <div class="flex gap-3">
+                                    <button type="button" class="theme-btn flex-1 py-3 rounded-xl border-2 font-label-caps text-[13px] font-bold transition-all" data-theme-val="grafito" onclick="selectThemeUI('grafito')" data-i18n="settings_theme_dark">Grafito</button>
+                                    <button type="button" class="theme-btn flex-1 py-3 rounded-xl border-2 font-label-caps text-[13px] font-bold transition-all" data-theme-val="aluminio" onclick="selectThemeUI('aluminio')" data-i18n="settings_theme_light">Aluminio</button>
+                                </div>
+                                <input type="hidden" id="settings_theme" value="grafito">
+                            </div>
+
+                            <div class="flex flex-col gap-2">
+                                <span class="font-label-caps text-[12px] text-muted tracking-widest font-bold" data-i18n="settings_color_title">COLOR NANO</span>
+                                <div class="flex gap-4 items-center">
+                                    <button type="button" class="color-btn w-8 h-8 rounded-full transition-all flex items-center justify-center relative" style="background-color: #0099FF;" data-color-val="azul" onclick="selectColorUI('azul')"></button>
+                                    <button type="button" class="color-btn w-8 h-8 rounded-full transition-all flex items-center justify-center relative" style="background-color: #77C800;" data-color-val="verde" onclick="selectColorUI('verde')"></button>
+                                    <button type="button" class="color-btn w-8 h-8 rounded-full transition-all flex items-center justify-center relative" style="background-color: #8A2BE2;" data-color-val="morado" onclick="selectColorUI('morado')"></button>
+                                    <button type="button" class="color-btn w-8 h-8 rounded-full transition-all flex items-center justify-center relative" style="background-color: #FF8800;" data-color-val="naranja" onclick="selectColorUI('naranja')"></button>
+                                    <button type="button" class="color-btn w-8 h-8 rounded-full transition-all flex items-center justify-center relative" style="background-color: #E62E6B;" data-color-val="rosa" onclick="selectColorUI('rosa')"></button>
+                                </div>
+                                <input type="hidden" id="settings_color" value="azul">
+                            </div>
+
+                            <div class="flex flex-col gap-2 border-t border-theme pt-4">
+                                <span class="font-label-caps text-[11px] text-accent/70" data-i18n="settings_accessibility_title">Accesibilidad</span>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="settings_dyslexic_font" class="cicada-checkbox" onchange="selectFontUI(this.checked ? 'dyslexic' : 'standard')"/>
+                                    <span class="font-data-sm text-[13px] text-muted/70" data-i18n="settings_dyslexic_font_label">Fuente para dislexia</span>
+                                </label>
+                                <p class="font-data-sm text-[11px] text-muted/40 pl-6" data-i18n="settings_dyslexic_font_hint">Reemplaza la tipografía de toda la interfaz por OpenDyslexic. Funciona sin recargar la página.</p>
+
+                                <label class="flex items-center gap-2 cursor-pointer mt-1">
+                                    <input type="checkbox" id="settings_colorblind_mode" class="cicada-checkbox" onchange="selectColorblindModeUI(this.checked)"/>
+                                    <span class="font-data-sm text-[13px] text-muted/70" data-i18n="settings_colorblind_mode_label">Modo daltónico</span>
+                                </label>
+                                <p class="font-data-sm text-[11px] text-muted/40 pl-6" data-i18n="settings_colorblind_mode_hint">Cambia los colores de estado (procesando/saltado/error/cancelado) a una paleta distinguible para daltonismo rojo-verde. Se puede usar junto a cualquier tema.</p>
+                            </div>
                         </div>
-                        <input type="hidden" id="settings_color" value="azul">
+
+                        <!-- INTEGRACIONES -->
+                        <div id="settingsTab-integraciones" class="settings-tab-content hidden flex-col gap-5">
+                            <div class="flex flex-col gap-2">
+                                <span class="font-label-caps text-[12px] text-muted tracking-widest font-bold" data-i18n="settings_external_services_title">SERVICIOS EXTERNOS</span>
+
+                                <div class="flex items-center justify-between gap-2 mt-1">
+                                    <span class="font-label-caps text-[11px] text-accent/70" data-i18n="settings_spotify_title">Cuenta de Spotify</span>
+                                </div>
+                                <div class="flex items-center justify-between gap-2">
+                                    <span id="settings-spotify-status" class="font-data-sm text-[13px] text-muted/60" data-i18n="settings_spotify_not_connected">No conectado a Spotify</span>
+                                    <button type="button" onclick="window.location.href='/api/auth/login'" id="settings-spotify-connect-btn" class="px-3 py-2 rounded-lg bg-accent text-white font-label-caps text-[11px] hover:brightness-110 transition-all whitespace-nowrap" data-i18n="settings_spotify_connect_btn">Conectar con Spotify</button>
+                                </div>
+
+                                <div class="flex items-center gap-1.5 mt-2">
+                                    <span class="font-label-caps text-[11px] text-accent/70" data-i18n="settings_credentials_title">Claves de Acceso</span>
+                                    <button type="button" onclick="window.open('https://github.com/JJaroll/Cicada/blob/main/README.md#-configuraci%C3%B3n-de-claves-api', '_blank')" data-i18n-title="settings_credentials_help_tooltip" title="¿Cómo obtener las claves?" class="material-symbols-outlined text-[15px] text-muted/50 hover:text-accent transition-colors leading-none">help</button>
+                                </div>
+
+                                <label class="font-label-caps text-[10px] text-muted/50" data-i18n="settings_acoustid_label">Clave de AcoustID</label>
+                                <div class="flex gap-2">
+                                    <input type="password" id="settings_acoustid_key" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]" placeholder="Client key de AcoustID"/>
+                                    <button type="button" onclick="toggleSecretVisibility('settings_acoustid_key', this)" class="material-symbols-outlined text-[18px] text-muted/50 hover:text-accent px-2">visibility</button>
+                                </div>
+
+                                <label class="font-label-caps text-[10px] text-muted/50" data-i18n="settings_spotify_id_label">ID de Cliente de Spotify</label>
+                                <div class="flex gap-2">
+                                    <input type="password" id="settings_spotify_id" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]" placeholder="Client ID de Spotify"/>
+                                    <button type="button" onclick="toggleSecretVisibility('settings_spotify_id', this)" class="material-symbols-outlined text-[18px] text-muted/50 hover:text-accent px-2">visibility</button>
+                                </div>
+
+                                <label class="font-label-caps text-[10px] text-muted/50" data-i18n="settings_spotify_secret_label">Clave Secreta de Spotify</label>
+                                <div class="flex gap-2">
+                                    <input type="password" id="settings_spotify_secret" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]" placeholder="Client Secret de Spotify"/>
+                                    <button type="button" onclick="toggleSecretVisibility('settings_spotify_secret', this)" class="material-symbols-outlined text-[18px] text-muted/50 hover:text-accent px-2">visibility</button>
+                                </div>
+                            </div>
+
+                            <div class="flex flex-col gap-2 border-t border-theme pt-4">
+                                <span class="font-label-caps text-[12px] text-muted tracking-widest font-bold" data-i18n="settings_identification_behavior_title">COMPORTAMIENTO DE IDENTIFICACIÓN</span>
+                                <span class="font-label-caps text-[11px] text-accent/70 mt-1" data-i18n="settings_identification_title">Identificación de Canciones</span>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="settings_plan_c_enabled" class="cicada-checkbox"/>
+                                    <span class="font-data-sm text-[13px] text-muted/70" data-i18n="settings_plan_c_label">Adivinar por el nombre del archivo cuando no se reconoce la canción</span>
+                                </label>
+                                <p class="font-data-sm text-[11px] text-muted/40 pl-6" data-i18n="settings_plan_c_hint">Apagado por defecto: suele ser poco preciso. Si está apagado, esos archivos se reportan como error en vez de adivinar el título/artista.</p>
+                            </div>
+                        </div>
+
+                        <!-- MÓDULO IPOD -->
+                        <div id="settingsTab-ipod" class="settings-tab-content hidden flex-col gap-5">
+                            <div class="flex flex-col gap-2">
+                                <span class="font-label-caps text-[11px] text-accent/70" data-i18n="settings_ipod_section_title">Módulo iPod</span>
+                                <label class="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" id="settings_ipod_ui_enabled" class="cicada-checkbox"/>
+                                    <span class="font-data-sm text-[13px] text-muted/70" data-i18n="settings_ipod_ui_label">Mostrar la sección iPod en la interfaz</span>
+                                </label>
+                                <p class="font-data-sm text-[11px] text-muted/40 pl-6" data-i18n="settings_ipod_ui_hint">Oculta la sección iPod de la interfaz. No reduce el tamaño de instalación ni elimina dependencias — el módulo sigue instalado, solo se deja de mostrar.</p>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    <div class="flex gap-2 justify-end items-center px-6 py-4 border-t border-theme shrink-0">
+                        <span id="settings-status" class="font-data-sm text-[12px] text-secondary mr-auto"></span>
+                        <button type="button" onclick="closeSettings()" class="px-4 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[12px] transition-colors" data-i18n="common_cancel">Cancelar</button>
+                        <button type="button" id="settingsSaveBtn" onclick="saveSettings()" class="px-4 py-2 rounded-lg bg-accent text-white font-label-caps text-[12px] hover:brightness-110 transition-all" data-i18n="common_save">Guardar</button>
                     </div>
                 </div>
 
-<div class="flex flex-col gap-2 border-t border-theme pt-3">
-                    <span class="font-label-caps text-[11px] text-accent/70" data-i18n="settings_folders_title">Carpetas Predeterminadas</span>
-
-                    <label class="font-label-caps text-[10px] text-muted/50" data-i18n="settings_library_dir_label">Carpeta de tu Biblioteca</label>
-                    <div class="flex gap-2">
-                        <input type="text" id="settings_library_dir" placeholder="/Users/usuario/Musica/Organizada" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]"/>
-                        <button type="button" onclick="pickFolder('settings_library_dir')" class="px-3 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors" data-i18n="common_choose">Elegir</button>
-                    </div>
-
-                    <label class="font-label-caps text-[10px] text-muted/50" data-i18n="settings_input_dir_label">Carpeta de Origen (Metadatos)</label>
-                    <div class="flex gap-2">
-                        <input type="text" id="settings_process_input_dir" placeholder="/Users/usuario/Musica/Entrada" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]"/>
-                        <button type="button" onclick="pickFolder('settings_process_input_dir')" class="px-3 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors" data-i18n="common_choose">Elegir</button>
-                    </div>
-
-                    <label class="font-label-caps text-[10px] text-muted/50" data-i18n="settings_output_dir_label">Carpeta de Destino (Metadatos)</label>
-                    <div class="flex gap-2">
-                        <input type="text" id="settings_process_output_dir" placeholder="/Users/usuario/Musica/Organizada" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]"/>
-                        <button type="button" onclick="pickFolder('settings_process_output_dir')" class="px-3 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors" data-i18n="common_choose">Elegir</button>
-                    </div>
-                </div>
-
-                <div class="flex gap-2 justify-end items-center pt-2">
-                    <span id="settings-status" class="font-data-sm text-[12px] text-secondary mr-auto"></span>
-                    <button type="button" onclick="closeSettings()" class="px-4 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[12px] transition-colors" data-i18n="common_cancel">Cancelar</button>
-                    <button type="button" id="settingsSaveBtn" onclick="saveSettings()" class="px-4 py-2 rounded-lg bg-accent text-white font-label-caps text-[12px] hover:brightness-110 transition-all" data-i18n="common_save">Guardar</button>
-                </div>
             </div>
         </div>
 
@@ -1275,8 +1311,8 @@ async def get():
         <audio id="library-audio" preload="none"></audio>
 
         <script>window.CICADA_VERSION = "__CICADA_VERSION__";</script>
-        <script src="/static/js/i18n.js?v=2.2.4"></script>
-        <script src="/static/js/common.js?v=2.2.5"></script>
+        <script src="/static/js/i18n.js?v=2.2.5"></script>
+        <script src="/static/js/common.js?v=2.2.6"></script>
         <script src="/static/js/metadata.js?v=2.2.0"></script>
         <script src="/static/js/download.js?v=2.2.0"></script>
         <script src="/static/js/playlist.js?v=2.2.1"></script>
