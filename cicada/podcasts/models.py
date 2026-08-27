@@ -6,11 +6,12 @@ campos de identidad/metadata de RSS y los placeholders de estado local
 de descarga (``status``/``downloaded_path``) que la Etapa B (descarga)
 va a usar, para no tener que reescribir el schema de SQLite después.
 
-Se descartan a propósito, sin caso de uso en esta etapa: los campos de
-gestión automática de ``PodcastFeed`` (``episode_slots``, ``fill_mode``,
-``clear_when_listened``, etc. — Etapa D, diferida) y los de estado de
-sync al iPod en ``PodcastEpisode`` (``ipod_db_track_id``, ``play_count``,
-etc. — Etapa C).
+Se descartan a propósito, sin caso de uso todavía: los campos de gestión
+automática de ``PodcastFeed`` (``episode_slots``, ``fill_mode``,
+``clear_when_listened``, etc. — Etapa D, diferida) y el estado de
+reproducción del original (``ipod_db_track_id``, ``play_count``,
+``last_played`` — no confundir con ``status=on_ipod``, que solo dice si
+el episodio se sincronizó, no si se reprodujo).
 """
 from __future__ import annotations
 
@@ -20,6 +21,7 @@ from urllib.parse import urlsplit, urlunsplit
 STATUS_NOT_DOWNLOADED = "not_downloaded"
 STATUS_DOWNLOADING = "downloading"
 STATUS_DOWNLOADED = "downloaded"
+STATUS_ON_IPOD = "on_ipod"
 
 _IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".bmp")
 

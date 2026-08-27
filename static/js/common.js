@@ -8,6 +8,7 @@ function applyIpodUiVisibility() {
     if (navBtn) navBtn.classList.toggle("hidden", !ipodUiEnabled);
     if (typeof updateLibraryIpodButton === "function") updateLibraryIpodButton();
     if (typeof updateAudiobookIpodButton === "function") updateAudiobookIpodButton();
+    if (typeof updatePodcastIpodButton === "function") updatePodcastIpodButton();
     if (typeof updatePlaylistIpodButton === "function") updatePlaylistIpodButton();
     if (!ipodUiEnabled) {
         let activeView = document.querySelector(".view.active");

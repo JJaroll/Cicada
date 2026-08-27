@@ -846,6 +846,36 @@ async def get():
                             <p class="font-data-sm text-[13px] text-muted/40" data-i18n="audiobooks_hint">Elegí una carpeta para buscar archivos .m4b, .m4a, .mp3 o .aac.</p>
                         </div>
                     </div>
+
+                    <!-- Podcasts: suscribir, descargar y agregar episodios -->
+                    <div class="glass-card p-5 flex flex-col gap-3">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-outlined text-accent text-[20px]">podcasts</span>
+                            <span class="font-label-caps text-[12px] tracking-widest text-muted/60" data-i18n="podcasts_title">Podcasts</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <input type="text" id="podcast_feed_url" placeholder="https://ejemplo.com/feed.xml" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]"/>
+                            <button type="button" onclick="subscribePodcastFeed()" class="px-4 rounded-lg bg-accent text-white font-label-caps text-[11px] hover:brightness-110 transition-all" data-i18n="podcasts_subscribe_btn">Suscribirse</button>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div class="flex flex-col gap-1 max-h-48 overflow-y-auto custom-scrollbar" id="podcast-feeds-list">
+                                <p class="font-data-sm text-[13px] text-muted/40 p-2" data-i18n="podcasts_no_subscriptions">Todavía no hay podcasts suscriptos.</p>
+                            </div>
+                            <div class="flex flex-col gap-2">
+                                <div class="flex items-center gap-2 flex-wrap">
+                                    <span class="font-data-sm text-[13px] text-main truncate" id="podcast-episodes-title"></span>
+                                    <button type="button" id="podcast-add-ipod-btn" onclick="onPodcastIpodButton()" class="hidden ml-auto items-center gap-1 px-3 py-1 rounded-full bg-secondary/15 text-secondary font-label-caps text-[11px] hover:bg-secondary/25 transition-colors">
+                                        <span class="material-symbols-outlined text-[15px]">add_to_queue</span>
+                                        <span id="podcast-add-ipod-label" data-i18n="library_add_to_ipod">Agregar a iPod</span>
+                                    </button>
+                                    <button type="button" id="podcast-select-cancel-btn" onclick="exitPodcastSelectMode()" class="hidden items-center px-3 py-1 rounded-full bg-btn text-muted font-label-caps text-[11px] hover:bg-btn-hover transition-colors" data-i18n="common_cancel">Cancelar</button>
+                                </div>
+                                <div class="flex flex-col gap-1 max-h-48 overflow-y-auto custom-scrollbar" id="podcast-episodes-list">
+                                    <p class="font-data-sm text-[13px] text-muted/40 p-2" data-i18n="podcasts_pick_feed_hint">Suscribite a un feed para ver sus episodios.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Vista: Sincronizar iPod -->
@@ -1338,21 +1368,23 @@ async def get():
 
         <script>window.CICADA_VERSION = "__CICADA_VERSION__";</script>
         <script src="/static/js/i18n.js?v=2.2.5"></script>
-        <script src="/static/js/common.js?v=2.2.7"></script>
+        <script src="/static/js/common.js?v=2.2.8"></script>
         <script src="/static/js/metadata.js?v=2.2.0"></script>
         <script src="/static/js/download.js?v=2.2.0"></script>
         <script src="/static/js/playlist.js?v=2.2.1"></script>
         <script src="/static/js/library.js?v=2.2.1"></script>
         <script src="/static/js/library_audiobooks.js?v=1.0.0"></script>
+        <script src="/static/js/library_podcasts.js?v=1.0.0"></script>
         <script src="/static/js/player.js?v=2.2.0"></script>
         <script src="/static/js/ipod/api.js?v=2.2.1"></script>
         <script src="/static/js/ipod/render.js?v=2.2.4"></script>
-        <script src="/static/js/ipod/ui.js?v=2.2.3"></script>
+        <script src="/static/js/ipod/ui.js?v=2.2.4"></script>
         <script>
             // Inicialización de la UI
             applyLanguage(currentLang);
             showView('process');
             loadLibraryConfig();
+            loadPodcastFeeds();
             prefillProcessDirsFromSettings();
 
             // Cargar y aplicar tema inicial

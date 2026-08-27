@@ -115,6 +115,7 @@ async function scanIpod() {
         }
         if (typeof updateLibraryIpodButton === "function") updateLibraryIpodButton();
         if (typeof updateAudiobookIpodButton === "function") updateAudiobookIpodButton();
+        if (typeof updatePodcastIpodButton === "function") updatePodcastIpodButton();
         if (typeof updatePlaylistIpodButton === "function") updatePlaylistIpodButton();
     } catch (e) {
         console.error("Error escaneando iPod:", e);
@@ -510,12 +511,31 @@ async function syncBasketToIpod() {
             length_ms: it.length_ms || null,
             filetype: it.filetype || null,
             kind: it.kind || "music",
+            category: it.genre || null,
+            season_number: it.season_number || null,
+            episode_number: it.episode_number || null,
+            show_name: it.show_name || null,
         }));
         const playlists = ipodState.syncBasketPlaylists.map(p => ({ name: p.name, source_paths: p.source_paths }));
         const { res, data } = await ipodMediaSync({ tracks, consent_ack: consentAck, playlists });
         if (!res.ok) throw new Error(_ipodErr(data));
         if (data.success) {
             alert(t("ipod_write_ok").replace("{n}", data.tracks_written));
+            const syncedPodcastGuids = basket.filter(it => it.kind === "podcast" && it.guid).map(it => it.guid);
+            if (syncedPodcastGuids.length) {
+                try {
+                    await fetch('/api/podcasts/episodes/mark_synced', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ guids: syncedPodcastGuids })
+                    });
+                } catch (e) {
+                    // No bloquea el flujo de sync — el audio ya está en el iPod;
+                    // si esto falla, el episodio queda visible como "downloaded"
+                    // en vez de "on_ipod", lo cual es inexacto pero no destructivo.
+                    console.error("Error marcando episodios de podcast como sincronizados:", e);
+                }
+            }
             ipodState.syncBasket = [];
             ipodState.syncBasketPlaylists = [];
             updateSyncBasketBadge();

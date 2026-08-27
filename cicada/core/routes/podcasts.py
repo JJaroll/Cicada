@@ -1,9 +1,12 @@
-"""Router de podcasts: suscripción a feeds RSS, listado y descarga de episodios.
+"""Router de podcasts: suscripción a feeds RSS, listado, descarga y
+marcado de sincronización al iPod.
 
 Independiente del módulo iPod — la persistencia vive en
-~/.cicada/podcasts.db, no en el dispositivo. Etapa B: descarga a un
-caché local del host (~/.cicada/podcasts_cache/). Sin sincronización al
-iPod todavía (Etapa C — ver docs/VENDORED.md Paquete 8).
+~/.cicada/podcasts.db, no en el dispositivo. El sync real de audio
+reutiliza /api/ipod/media/sync (kind="podcast", ya soportado desde la
+Fase 5a) — este router solo arma el MediaTrackInput en frontend y, tras
+un sync exitoso confirmado por el caller, marca los episodios como
+on_ipod aquí.
 """
 from __future__ import annotations
 
@@ -18,7 +21,13 @@ from pydantic import BaseModel
 from cicada.podcasts import download_progress
 from cicada.podcasts.downloader import DownloadCancelled, episode_cache_dir, download_episode
 from cicada.podcasts.feed_parser import fetch_feed
-from cicada.podcasts.models import PodcastFeed, STATUS_DOWNLOADED, STATUS_DOWNLOADING, STATUS_NOT_DOWNLOADED
+from cicada.podcasts.models import (
+    PodcastFeed,
+    STATUS_DOWNLOADED,
+    STATUS_DOWNLOADING,
+    STATUS_NOT_DOWNLOADED,
+    STATUS_ON_IPOD,
+)
 from cicada.podcasts.subscription_store import SubscriptionStore
 
 log = logging.getLogger(__name__)
@@ -215,3 +224,36 @@ def get_download_progress(feed_url: str, guid: str) -> DownloadProgressSchema:
     """Consulta de progreso para polling desde la UI."""
     _store, episode = _find_episode(feed_url, guid)
     return _progress_schema(guid, episode.status)
+
+
+class MarkSyncedRequest(BaseModel):
+    guids: List[str]
+
+
+class MarkSyncedResponse(BaseModel):
+    updated: List[str]
+    count: int
+
+
+@router.post("/episodes/mark_synced", response_model=MarkSyncedResponse)
+def mark_episodes_synced(req: MarkSyncedRequest) -> MarkSyncedResponse:
+    """Marca episodios como on_ipod tras un sync exitoso ya confirmado
+    por el caller (/api/ipod/media/sync devolvió success=true).
+
+    No hace rollback: /media/sync es genuinamente todo-o-nada (copy_media
+    + apply() con backup/rollback transaccional sobre la base completa —
+    ver cicada/ipod/db/coordinator/media.py:sync_media_to_ipod), así que
+    si el sync falló, este endpoint simplemente no se llama y los
+    episodios quedan en downloaded, su estado real. Episodios que ya no
+    están en downloaded (por ejemplo, ya on_ipod de un sync anterior, o
+    inexistentes) se ignoran en vez de fallar, para que un guid viejo o
+    duplicado en la lista no aborte el resto.
+    """
+    store = SubscriptionStore()
+    updated = []
+    for guid in req.guids:
+        ep = store.get_episode(guid)
+        if ep is not None and ep.status == STATUS_DOWNLOADED:
+            store.set_episode_status(guid, status=STATUS_ON_IPOD)
+            updated.append(guid)
+    return MarkSyncedResponse(updated=updated, count=len(updated))
