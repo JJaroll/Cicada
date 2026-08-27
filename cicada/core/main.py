@@ -824,7 +824,7 @@ async def get():
                     </div>
 
                     <!-- Audiolibros: explorar carpeta -->
-                    <div class="glass-card p-5 flex flex-col gap-3">
+                    <div id="library-section-audiobooks" class="glass-card p-5 flex flex-col gap-3">
                         <div class="flex items-center gap-2">
                             <span class="material-symbols-outlined text-accent text-[20px]">menu_book</span>
                             <span class="font-label-caps text-[12px] tracking-widest text-muted/60" data-i18n="audiobooks_title">Audiolibros</span>
@@ -848,7 +848,7 @@ async def get():
                     </div>
 
                     <!-- Podcasts: suscribir, descargar y agregar episodios -->
-                    <div class="glass-card p-5 flex flex-col gap-3">
+                    <div id="library-section-podcasts" class="glass-card p-5 flex flex-col gap-3">
                         <div class="flex items-center gap-2">
                             <span class="material-symbols-outlined text-accent text-[20px]">podcasts</span>
                             <span class="font-label-caps text-[12px] tracking-widest text-muted/60" data-i18n="podcasts_title">Podcasts</span>
@@ -1007,6 +1007,11 @@ async def get():
                                 <span class="material-symbols-outlined text-[18px]">menu_book</span>
                                 <span class="flex-1 truncate" data-i18n="ipod_cat_audiobooks">Audiolibros</span>
                                 <span id="ipod-count-audiobooks" class="font-data-sm text-[11px] text-muted/60">0</span>
+                            </button>
+                            <!-- Solo visible si el dispositivo ya tiene fotos (photos_bytes > 0). Solo lectura: sin escritura, ver docs/VENDORED.md. -->
+                            <button type="button" id="ipod-cat-photos-btn" class="ipod-cat-btn hidden" data-cat="photos" onclick="switchIpodCategory('photos')">
+                                <span class="material-symbols-outlined text-[18px]">photo_library</span>
+                                <span class="flex-1 truncate" data-i18n="ipod_cat_photos">Fotos</span>
                             </button>
                             <!-- Separador + carrito de sincronización (pendientes de inyectar) -->
                             <div class="border-t border-theme my-2"></div>
@@ -1186,6 +1191,13 @@ async def get():
                                     </div>
                                     <div id="ipod-audiobook-chapters-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
                                 </div>
+                            </div>
+
+                            <!-- VISTA: FOTOS (solo indicador, sin listado — ver docs/VENDORED.md sobre por qué no hay escritura ni lectura detallada) -->
+                            <div id="ipod-view-photos" class="hidden flex-1 flex flex-col items-center justify-center gap-3 text-center px-8">
+                                <span class="material-symbols-outlined text-[40px] text-muted/40">photo_library</span>
+                                <p class="font-data-sm text-[14px] text-main" id="ipod-photos-summary" data-i18n="ipod_photos_summary">El iPod tiene fotos.</p>
+                                <p class="font-data-sm text-[12px] text-muted/50 max-w-sm" data-i18n="ipod_photos_readonly_hint">Cicada no gestiona fotos del iPod — esto es solo informativo.</p>
                             </div>
 
                             <!-- VISTA 7: SINCRONIZAR CON CICADA (elementos pendientes de inyectar) -->
@@ -1378,7 +1390,7 @@ async def get():
         <script src="/static/js/player.js?v=2.2.0"></script>
         <script src="/static/js/ipod/api.js?v=2.2.1"></script>
         <script src="/static/js/ipod/render.js?v=2.2.4"></script>
-        <script src="/static/js/ipod/ui.js?v=2.2.4"></script>
+        <script src="/static/js/ipod/ui.js?v=2.2.5"></script>
         <script>
             // Inicialización de la UI
             applyLanguage(currentLang);

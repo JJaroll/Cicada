@@ -126,6 +126,13 @@ async function scanIpod() {
 // --- RENDER DE ALMACENAMIENTO ---
 function renderIpodStorage(storage) {
     const storageText = document.getElementById("ipod-storage-text");
+
+    // Categoría "Fotos" (solo indicador, ver renderIpodPhotos): visible
+    // únicamente si el dispositivo ya tiene fotos ocupando espacio.
+    ipodState.photosBytes = (storage && storage.photos_bytes) || 0;
+    const photosBtn = document.getElementById("ipod-cat-photos-btn");
+    if (photosBtn) photosBtn.classList.toggle("hidden", ipodState.photosBytes <= 0);
+
     if (!storage || storage.total_bytes === 0) {
         if (storageText) storageText.textContent = "Capacidad disponible";
         return;
@@ -273,6 +280,7 @@ function switchIpodCategory(category) {
         "ipod-view-videos",
         "ipod-view-podcasts",
         "ipod-view-audiobooks",
+        "ipod-view-photos",
         "ipod-view-sync",
         "ipod-view-conflicts"
     ];
@@ -314,6 +322,9 @@ function renderCurrentIpodCategory() {
             break;
         case "audiobooks":
             renderIpodAudiobooks();
+            break;
+        case "photos":
+            renderIpodPhotos();
             break;
         case "sync":
             renderIpodSyncBasket();
@@ -1069,6 +1080,14 @@ function selectIpodAudiobook(idx) {
     renderIpodAudiobooks();
 }
 
+// --- VISTA: FOTOS (solo indicador — sin listado, sin escritura; ver docs/VENDORED.md) ---
+function renderIpodPhotos() {
+    const summaryEl = document.getElementById("ipod-photos-summary");
+    if (!summaryEl) return;
+    const bytes = ipodState.photosBytes || 0;
+    summaryEl.textContent = t("ipod_photos_summary_bytes").replace("{size}", _formatBytes(bytes));
+}
+
 // --- BÚSQUEDA Y FILTROS ---
 function handleIpodSearch(val) {
     ipodState.searchQuery = val.trim();
@@ -1121,12 +1140,21 @@ function handleIpodAddAction() {
             _mockAddVideo();
             break;
         case "podcasts":
-            _mockAddPodcast();
+            goToLibrarySection("library-section-podcasts");
             break;
         case "audiobooks":
-            _mockAddAudiobook();
+            goToLibrarySection("library-section-audiobooks");
             break;
     }
+}
+
+// Podcasts/Audiolibros se gestionan en Biblioteca (mismo lugar donde
+// música ya se prepara antes de mandarla al iPod) — evita mantener un
+// segundo renderizado del mismo flujo de suscripción/exploración acá.
+function goToLibrarySection(sectionId) {
+    showView("library");
+    const section = document.getElementById(sectionId);
+    if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function _mockAddVideo() {
@@ -1140,35 +1168,6 @@ function _mockAddVideo() {
     });
     updateIpodCategoryCounts();
     renderIpodVideos();
-}
-
-function _mockAddPodcast() {
-    const name = prompt("Nombre del Podcast a suscribir:");
-    if (!name) return;
-    ipodState.podcasts.push({
-        name: name,
-        episodes: [
-            { title: "Episodio 1: Introducción", date_added: Math.floor(Date.now() / 1000), duration_ms: 1200000 },
-            { title: "Episodio 2: Especial", date_added: Math.floor(Date.now() / 1000), duration_ms: 1850000 }
-        ]
-    });
-    updateIpodCategoryCounts();
-    renderIpodPodcasts();
-}
-
-function _mockAddAudiobook() {
-    const name = prompt("Título del audiolibro a agregar:");
-    if (!name) return;
-    ipodState.audiobooks.push({
-        title: name,
-        author: "Autor",
-        chapters: [
-            { title: "Capítulo 1", duration_ms: 900000 },
-            { title: "Capítulo 2", duration_ms: 1100000 }
-        ]
-    });
-    updateIpodCategoryCounts();
-    renderIpodAudiobooks();
 }
 
 function deleteIpodItem(type, idx) {
