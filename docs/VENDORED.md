@@ -1994,11 +1994,20 @@ intento de hardware: la vía más prometedora para retomar sigue siendo
 C/D/E/F sobre el propio Photo Database (mhfd/mhsd), que es el formato
 que sí está confirmado como la fuente de datos de la app de Fotos.
 
-**Para retomar sin repetir el trabajo de hoy**, todo preservado en
-`~/.cicada/photo_sync_forensics/` (fuera del repo — 2 GB, no apto para
-git; fuera también de la rotación de `~/.cicada/backups/`, que ya
-estaba en 20/20 y habría empezado a borrar estos backups en el próximo
-sync de cualquier tipo):
+**Estado del material preservado (actualizado 2026-08-27): eliminado
+deliberadamente.** `~/.cicada/photo_sync_forensics/` (2 GB, fuera del
+repo) se conservó tras la investigación para poder retomarla sin
+repetir el trabajo — pero la decisión final fue **no continuar** la
+integración de Fotos, así que el usuario liberó ese espacio borrando la
+carpeta por completo. Los backups/diffs/scripts descritos abajo **ya no
+existen en disco**; el resto de esta sección (las 7 hipótesis
+descartadas, el hallazgo de `frpd`, el diagnóstico completo) sigue
+siendo válido como registro de la investigación — solo el material
+binario referenciado dejó de estar disponible para consulta. Si en el
+futuro se retoma Fotos, hay que repetir la captura de backups/diffs
+desde cero.
+
+Lo que existía (para contexto histórico, ya no recuperable):
 
 - `before_musica_real_sync_20260820T220243Z.tar.zst` /
   `after_musica_real_sync_20260820T223432Z.tar.zst` — los dos backups
@@ -2121,8 +2130,10 @@ sin evidencia nueva.
   del archivo (no descartado: nunca se probó un factory-reset de
   Fotos antes de un sync).
 - Todo el material de las 5 rondas (backups reales, diffs, scripts)
-  sigue en `~/.cicada/photo_sync_forensics/`, sin tocar desde el
-  intento anterior.
+  **fue eliminado deliberadamente** (2026-08-27, liberación de espacio
+  — ver nota al inicio de esta sección) — la investigación de Fotos no
+  se va a retomar. Si en algún momento se reabre, hay que recapturar
+  backups/diffs desde cero, no hay atajo.
 
 Primer paso sugerido al retomar (barato, no necesita el dispositivo):
 buscar si hay evidencia pública de que el firmware de un Nano 7G lee
@@ -2142,10 +2153,14 @@ que Cicada había escrito en el 5º intento (visibles como "Photo 100"/
 "Photo 101", nombre genérico — el dispositivo no tenía un nombre real
 que mostrar para esas).
 
-**Captura inmediata para no perder el estado**: `Photo Database`
-post-iOpenPod copiado a
+**Captura inmediata para no perder el estado** (en su momento): `Photo
+Database` post-iOpenPod copiado a
 `~/.cicada/photo_sync_forensics/Photo_Database_post_iopenpod_20260821T205952Z`
-antes de cualquier otra escritura.
+antes de cualquier otra escritura. Esa copia, junto con el resto de
+`photo_sync_forensics/`, fue eliminada el 2026-08-27 (ver nota de
+estado al inicio de esta sección) — el diff campo por campo que sigue
+abajo queda como el registro permanente de lo que decía, ya que el
+archivo fuente no está disponible para volver a consultarlo.
 
 **Pregunta central respondida sin ambigüedad: iOpenPod REESCRIBIÓ por
 completo las entradas 100/101 de Cicada — no son los mismos bytes.**
@@ -2467,4 +2482,121 @@ video sin `resolution`. Corregido y verificado en el navegador real
 (`preview_start`, sin errores). Cache-busting `render.js` a `2.2.2`.
 `_mockAddVideo()` no se tocó — sigue enviando `resolution` explícito, que
 tiene prioridad sobre el fallback y no se ve afectado.
+
+### Paquete 8 (retomado) — gestión de podcasts vía RSS: Etapas A-D
+
+**Estado (2026-08-27): A/B/C implementadas y verificadas; D evaluada y
+diferida deliberadamente.** Contexto: el Paquete 8 original (arriba en
+este documento) excluyó en bloque `podcasts/` completo de iOpenPod por
+alcance, en Fase 5. Se reconsideró esa decisión — investigación de
+reusabilidad de los 4 archivos relevantes (`feed_parser.py`,
+`subscription_store.py`, `itunes_search.py`, `downloader.py`), evaluación
+de tamaño del cambio de alcance, y troceado en 4 etapas, todo mostrado al
+usuario antes de tocar código.
+
+**Etapa A — modelo, persistencia SQLite, fetch de feed.** Nuevo módulo
+`cicada/podcasts/`, independiente de `cicada/ipod/` (útil con o sin iPod
+conectado — decisión explícita para no atarlo a una futura separación de
+`cicada/ipod/` como plugin opcional). `models.py`
+(`PodcastFeed`/`PodcastEpisode`) vendorizado parcial de iOpenPod, con
+`gestión automática` (`episode_slots`/`fill_mode`/etc.) descartada desde
+el diseño — es exactamente lo que se convertiría en la Etapa D.
+`feed_parser.py` portado de `requests` a `httpx` (decisión explícita:
+Cicada ya lo usa async, no agregar una segunda librería HTTP solo para
+portar más literal). `subscription_store.py` **reescrito, no
+vendorizado**: el original persistía en un JSON dentro del propio iPod
+montado (`iPod_Control/iOpenPodPodcasts/subscriptions.json`, escrito vía
+`guarded_device_metadata_session`); acá vive en `~/.cicada/podcasts.db`
+(SQLite), mismo patrón que `cicada.ipod.sync.state.SyncStateDB`.
+Endpoints `POST /api/podcasts/subscribe` (idempotente — hace de
+subscribe y refresh) y `GET /api/podcasts`. `cicada/podcasts/NOTICE`
+nuevo con la misma atribución MIT/iOpenPod que `cicada/ipod/NOTICE`;
+`NOTICE` de raíz extendido para cubrir ambos módulos. Nueva dependencia:
+`feedparser` (`requests` deliberadamente no agregado). Verificado contra
+un feed RSS público real (anchor.fm), no XML sintético: 66 episodios
+parseados correctamente, idempotencia confirmada.
+
+**Etapa B — descarga de episodios a un caché local del host.** Nuevo
+`downloader.py`, **sin vendorizar** del original: el `downloader.py` de
+iOpenPod mezclaba streaming HTTP con `DeviceDownloadSafety` (validación
+de espacio libre y límites de nombre *del filesystem del iPod*, porque
+ahí el destino de descarga podía ser el propio dispositivo). Con el
+destino siempre en `~/.cicada/podcasts_cache/<hash(feed_url)>/`, esa capa
+no aplica — se escribió desde cero solo streaming simple (temp file +
+`os.replace` atómico). Progreso en memoria vía `asyncio.create_task` +
+polling (`download_progress.py`), sin infraestructura de cola real —
+decisión explícita para v1. Columna `last_error` agregada al modelo/SQLite
+(nullable, persiste tras un fallo aunque `status` vuelva a
+`not_downloaded`, se limpia solo al arrancar un nuevo intento) — para no
+perder por qué falló la última descarga si el servidor se reinicia con el
+error solo en memoria. Verificado con descargas reales contra el feed ya
+suscripto en la Etapa A: episodio completo confirmado reproducible con
+`mutagen` (duración coincide con `itunes:duration` del feed), y un fallo
+real forzado (corrompiendo la `audio_url` a un 404 real, no simulado)
+confirmando que no queda archivo temporal huérfano, el status vuelve a
+`not_downloaded`, y `last_error` queda poblado con el mensaje real.
+
+**Etapa C — integración con `/api/ipod/media/sync` (`kind="podcast"`).**
+Sin vendorización nueva — el armado del `MediaTrackInput` para un
+episodio reutiliza el criterio de campos que la Fase 5a ya soportaba sin
+cambios: `show_name=feed.title`, `genre`/`category=feed.category`,
+`episode_number`/`season_number` del episodio; `kind="podcast"` ya
+disparaba `MEDIA_TYPE_PODCAST`/`podcast_flag`/`skip_when_shuffling`/
+`remember_position` en `sync_media()`. Nuevo endpoint
+`POST /api/podcasts/episodes/mark_synced`, llamado por el frontend solo
+tras confirmar éxito del sync — investigado antes de implementar si
+`sync_media_to_ipod()`/`apply()` podía tener éxito parcial (algunos
+tracks del carrito escritos, otros no): confirmado leyendo el código real
+que es genuinamente todo-o-nada (`copy_media()` + `apply()` con
+backup/rollback transaccional sobre la base completa; en cualquier
+fallo, `apply()` restaura y `cleanup_media()` borra el audio recién
+copiado). Por eso no llamar a `mark_synced` en la rama de fallo es
+rollback correcto por construcción, sin lógica de reversión adicional. El
+`guid` del episodio viaja en el ítem del carrito solo para uso local del
+frontend (correlacionar qué marcar `on_ipod`); nunca se manda a
+`/media/sync` — confirmado con test explícito de que `MediaTrackInput`
+(sin `extra="forbid"`) ignora ese campo sin afectar ítems de música o
+audiolibro en un carrito mixto. Verificado con datos reales: suscripción
+y descarga real en la propia UI, `MediaTrackInput` armado por la UI real
+validado contra el schema Pydantic real, y `mark_synced` real confirmando
+la transición `downloaded → on_ipod` en SQLite. **No probado contra
+hardware real** — no había un iPod conectado durante la sesión de
+implementación.
+
+**Etapa D — matching automático / gestión de "próximo episodio"
+(`PodcastTrackMatcher`, `build_podcast_sync_plan`, `build_podcast_managed_plan`
+de `podcast_sync.py`): evaluada y diferida, no descartada.**
+
+- **Qué es:** la lógica de iOpenPod que decide automáticamente, sin
+  intervención del usuario, qué episodio ocupa cada "slot" de un podcast
+  en el iPod (`fill_mode="newest"` vs `"next"` — el episodio más
+  reciente, o el siguiente no escuchado), cuándo liberar un slot cuando
+  un episodio se marcó como escuchado, y el matching episodio↔track ya
+  sincronizado para no re-descargar/re-copiar lo que ya está en el
+  dispositivo.
+- **Por qué no es un port directo:** `PodcastTrackMatcher` recibe un
+  objeto `pc_track` con atributos (`.is_podcast`, etc.) que son del
+  modelo interno de iOpenPod, no de `TrackInfo`/`MediaTrackInput` de
+  Cicada — adaptarlo es un rediseño contra el modelo de datos real de
+  Cicada, no una copia con find-and-replace de nombres.
+- **Por qué se difiere (criterio, no falta de tiempo o código):** B+C ya
+  dan un flujo de podcasts genuinamente completo y usable — suscribir,
+  descargar, elegir manualmente qué sincronizar. D es una mejora de
+  conveniencia (automatizar esa elección manual), no una capacidad
+  faltante; nadie queda bloqueado sin ella. Además, diseñar bien
+  `fill_mode`/cantidad de slots/cuándo liberar un slot depende de ver
+  cómo la gente usa el flujo manual en la práctica — hoy, con B+C recién
+  implementadas, no hay ese uso real todavía. Es más fácil acertar el
+  diseño de automatización después de observar el flujo manual que
+  adivinarlo ahora solo porque el contexto de `podcast_sync.py` está
+  fresco. Mismo criterio aplicado con la investigación de Fotos (arriba
+  en este documento): documentada para retomar con intención, no
+  descartada por falta de interés.
+- **Primer paso sugerido al retomar:** no empezar por el código de
+  iOpenPod — empezar por instrumentar/preguntar cómo los primeros
+  usuarios de B+C gestionan sus slots a mano (¿siempre bajan el más
+  nuevo? ¿vuelven a marcar "escuchado" activamente, o prefieren que
+  Cicada lo infiera de `play_count`/`last_played`, que hoy ni siquiera
+  se trackean para podcasts?), y recién ahí decidir si `fill_mode`
+  "newest"/"next" de iOpenPod alcanza o hace falta algo distinto.
 
