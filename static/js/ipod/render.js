@@ -126,8 +126,9 @@ function ipodSyncBasketPlaylistRowHtml(p) {
 }
 
 function ipodSyncBasketTrackRowHtml(it) {
+    const icon = it.kind === "audiobook" ? "menu_book" : "music_note";
     return '<div class="flex items-center gap-3 px-2 py-1.5 rounded-lg bg-btn">' +
-        '<span class="material-symbols-outlined text-[18px] text-secondary flex-shrink-0">music_note</span>' +
+        '<span class="material-symbols-outlined text-[18px] text-secondary flex-shrink-0">' + icon + '</span>' +
         '<div class="flex-1 min-w-0">' +
         '<div class="font-data-sm text-[13px] text-main truncate">' + _escapeHtmlIpod(it.title || "—") + '</div>' +
         '<div class="font-data-sm text-[12px] text-muted/60 truncate">' +

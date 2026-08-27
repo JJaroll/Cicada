@@ -114,6 +114,7 @@ async function scanIpod() {
             _setIpodButtons(false);
         }
         if (typeof updateLibraryIpodButton === "function") updateLibraryIpodButton();
+        if (typeof updateAudiobookIpodButton === "function") updateAudiobookIpodButton();
         if (typeof updatePlaylistIpodButton === "function") updatePlaylistIpodButton();
     } catch (e) {
         console.error("Error escaneando iPod:", e);
@@ -502,11 +503,13 @@ async function syncBasketToIpod() {
             title: it.title || "",
             artist: it.artist || null,
             album: it.album || null,
+            album_artist: it.album_artist || null,
             genre: it.genre || null,
             year: it.year || null,
             track_number: it.track_number || null,
             length_ms: it.length_ms || null,
             filetype: it.filetype || null,
+            kind: it.kind || "music",
         }));
         const playlists = ipodState.syncBasketPlaylists.map(p => ({ name: p.name, source_paths: p.source_paths }));
         const { res, data } = await ipodMediaSync({ tracks, consent_ack: consentAck, playlists });

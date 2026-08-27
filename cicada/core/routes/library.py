@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import BaseModel
 
+from cicada.core.audiobook_scanner import scan_audiobook_folder
 from cicada.core.state import (
     audio_processor,
     load_app_config,
@@ -193,6 +194,16 @@ async def browse_library(library_dir: str):
         return {"tracks": tracks, "playlists": playlists}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error escaneando la biblioteca: {e}")
+
+
+@router.get("/api/library/browse_audiobooks")
+async def browse_audiobooks(library_dir: str):
+    if not library_dir:
+        raise HTTPException(status_code=400, detail="Falta especificar la carpeta a explorar.")
+    try:
+        return await asyncio.to_thread(scan_audiobook_folder, library_dir)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error escaneando audiolibros: {e}")
 
 
 def _resolve_path_within_library(raw_path: str) -> Path:
