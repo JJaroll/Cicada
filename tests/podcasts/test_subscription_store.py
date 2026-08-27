@@ -136,3 +136,78 @@ def test_db_persiste_entre_instancias_del_store(tmp_path: Path):
     feeds = reopened.get_feeds()
     assert len(feeds) == 1
     assert feeds[0].episodes[0].guid in ("ep-1", "ep-2")
+
+
+def test_get_episode_por_guid(tmp_path: Path):
+    store = SubscriptionStore(db_path=tmp_path / "podcasts.db")
+    store.add_feed(_sample_feed())
+
+    ep = store.get_episode("ep-1")
+    assert ep is not None
+    assert ep.title == "Episodio 1"
+
+
+def test_get_episode_inexistente_devuelve_none(tmp_path: Path):
+    store = SubscriptionStore(db_path=tmp_path / "podcasts.db")
+    assert store.get_episode("no-existe") is None
+
+
+def test_set_episode_status_actualiza_solo_status(tmp_path: Path):
+    store = SubscriptionStore(db_path=tmp_path / "podcasts.db")
+    store.add_feed(_sample_feed())
+
+    store.set_episode_status("ep-1", status="downloading")
+
+    ep = store.get_episode("ep-1")
+    assert ep.status == "downloading"
+    assert ep.downloaded_path == ""
+    assert ep.last_error is None
+
+
+def test_set_episode_status_con_downloaded_path_en_exito(tmp_path: Path):
+    store = SubscriptionStore(db_path=tmp_path / "podcasts.db")
+    store.add_feed(_sample_feed())
+
+    store.set_episode_status(
+        "ep-1", status="downloaded", downloaded_path="/tmp/ep1.mp3", clear_last_error=True
+    )
+
+    ep = store.get_episode("ep-1")
+    assert ep.status == "downloaded"
+    assert ep.downloaded_path == "/tmp/ep1.mp3"
+    assert ep.last_error is None
+
+
+def test_set_episode_status_con_last_error_en_fallo(tmp_path: Path):
+    store = SubscriptionStore(db_path=tmp_path / "podcasts.db")
+    store.add_feed(_sample_feed())
+
+    store.set_episode_status("ep-1", status="not_downloaded", last_error="Connection timed out")
+
+    ep = store.get_episode("ep-1")
+    assert ep.status == "not_downloaded"
+    assert ep.last_error == "Connection timed out"
+
+
+def test_set_episode_status_last_error_persiste_si_no_se_limpia_explicitamente(tmp_path: Path):
+    store = SubscriptionStore(db_path=tmp_path / "podcasts.db")
+    store.add_feed(_sample_feed())
+
+    store.set_episode_status("ep-1", status="not_downloaded", last_error="fallo de red")
+    # Una actualización de solo status (sin clear_last_error) no debe borrar el error.
+    store.set_episode_status("ep-1", status="not_downloaded")
+
+    ep = store.get_episode("ep-1")
+    assert ep.last_error == "fallo de red"
+
+
+def test_set_episode_status_clear_last_error_limpia_al_reintentar(tmp_path: Path):
+    store = SubscriptionStore(db_path=tmp_path / "podcasts.db")
+    store.add_feed(_sample_feed())
+    store.set_episode_status("ep-1", status="not_downloaded", last_error="fallo previo")
+
+    store.set_episode_status("ep-1", status="downloading", clear_last_error=True)
+
+    ep = store.get_episode("ep-1")
+    assert ep.status == "downloading"
+    assert ep.last_error is None

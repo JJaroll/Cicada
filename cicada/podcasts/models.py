@@ -59,9 +59,14 @@ class PodcastEpisode:
     episode_number: int | None = None
     season_number: int | None = None
 
-    # Estado local (no viene de RSS) — placeholder para Etapa B (descarga).
+    # Estado local (no viene de RSS).
     status: str = STATUS_NOT_DOWNLOADED
     downloaded_path: str = ""
+    last_error: str | None = None
+    """Mensaje del último intento de descarga fallido. Persiste incluso
+    después de que status vuelva a not_downloaded (permite reintentar sin
+    perder por qué falló el intento anterior); se limpia recién cuando una
+    nueva descarga arranca."""
 
     def to_dict(self) -> dict:
         return {
@@ -76,6 +81,7 @@ class PodcastEpisode:
             "season_number": self.season_number,
             "status": self.status,
             "downloaded_path": self.downloaded_path,
+            "last_error": self.last_error,
         }
 
     @classmethod
@@ -92,6 +98,7 @@ class PodcastEpisode:
             season_number=d.get("season_number"),
             status=d.get("status", STATUS_NOT_DOWNLOADED),
             downloaded_path=d.get("downloaded_path", ""),
+            last_error=d.get("last_error"),
         )
 
 

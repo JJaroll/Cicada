@@ -1,21 +1,27 @@
-"""Router de podcasts: suscripción a feeds RSS y listado de lo suscripto.
+"""Router de podcasts: suscripción a feeds RSS, listado y descarga de episodios.
 
 Independiente del módulo iPod — la persistencia vive en
-~/.cicada/podcasts.db, no en el dispositivo. Etapa A: sin descarga de
-episodios ni sincronización al iPod todavía (ver docs/VENDORED.md
-Paquete 8).
+~/.cicada/podcasts.db, no en el dispositivo. Etapa B: descarga a un
+caché local del host (~/.cicada/podcasts_cache/). Sin sincronización al
+iPod todavía (Etapa C — ver docs/VENDORED.md Paquete 8).
 """
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import List, Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from cicada.podcasts import download_progress
+from cicada.podcasts.downloader import DownloadCancelled, episode_cache_dir, download_episode
 from cicada.podcasts.feed_parser import fetch_feed
-from cicada.podcasts.models import PodcastFeed
+from cicada.podcasts.models import PodcastFeed, STATUS_DOWNLOADED, STATUS_DOWNLOADING, STATUS_NOT_DOWNLOADED
 from cicada.podcasts.subscription_store import SubscriptionStore
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/podcasts")
 
@@ -35,6 +41,17 @@ class EpisodeSchema(BaseModel):
     episode_number: Optional[int] = None
     season_number: Optional[int] = None
     status: str
+    downloaded_path: str
+    last_error: Optional[str] = None
+
+
+class DownloadProgressSchema(BaseModel):
+    guid: str
+    state: str  # "downloading" | "done" | "error" | "idle"
+    downloaded_bytes: int = 0
+    total_bytes: int = 0
+    error: Optional[str] = None
+    status: str  # status persistido actual del episodio (SQLite)
 
 
 class FeedSchema(BaseModel):
@@ -78,6 +95,8 @@ def _to_schema(feed: PodcastFeed) -> FeedSchema:
                 episode_number=ep.episode_number,
                 season_number=ep.season_number,
                 status=ep.status,
+                downloaded_path=ep.downloaded_path,
+                last_error=ep.last_error,
             )
             for ep in feed.episodes
         ],
@@ -115,3 +134,84 @@ def list_podcasts() -> PodcastsResponse:
     store = SubscriptionStore()
     feeds = store.get_feeds()
     return PodcastsResponse(feeds=[_to_schema(f) for f in feeds], count=len(feeds))
+
+
+def _find_episode(feed_url: str, guid: str):
+    store = SubscriptionStore()
+    feed = store.get_feed(feed_url)
+    if feed is None:
+        raise HTTPException(status_code=404, detail="No hay ninguna suscripción a ese feed.")
+    episode = next((e for e in feed.episodes if e.guid == guid), None)
+    if episode is None:
+        raise HTTPException(status_code=404, detail="Ese episodio no existe en el feed suscripto.")
+    return store, episode
+
+
+def _progress_schema(guid: str, persisted_status: str) -> DownloadProgressSchema:
+    progress = download_progress.get(guid)
+    if progress is None:
+        return DownloadProgressSchema(guid=guid, state="idle", status=persisted_status)
+    return DownloadProgressSchema(
+        guid=guid,
+        state=progress.state,
+        downloaded_bytes=progress.downloaded_bytes,
+        total_bytes=progress.total_bytes,
+        error=progress.error,
+        status=persisted_status,
+    )
+
+
+async def _run_download(feed_url: str, guid: str, audio_url: str) -> None:
+    store = SubscriptionStore()
+    progress = download_progress.get(guid)
+    assert progress is not None  # start() ya se llamó en el endpoint antes de crear la tarea
+
+    def on_progress(downloaded: int, total: int) -> None:
+        progress.downloaded_bytes = downloaded
+        progress.total_bytes = total
+
+    try:
+        dest_path = await download_episode(
+            audio_url, guid, episode_cache_dir(feed_url), progress_cb=on_progress
+        )
+        store.set_episode_status(
+            guid, status=STATUS_DOWNLOADED, downloaded_path=dest_path, clear_last_error=True
+        )
+        progress.state = "done"
+    except DownloadCancelled as e:
+        store.set_episode_status(guid, status=STATUS_NOT_DOWNLOADED, last_error=str(e))
+        progress.state = "error"
+        progress.error = str(e)
+    except Exception as e:
+        log.warning("Descarga de episodio %s falló: %s", guid, e)
+        store.set_episode_status(guid, status=STATUS_NOT_DOWNLOADED, last_error=str(e))
+        progress.state = "error"
+        progress.error = str(e)
+
+
+@router.post(
+    "/{feed_url:path}/episodes/{guid}/download",
+    response_model=DownloadProgressSchema,
+    status_code=202,
+)
+async def download_episode_endpoint(feed_url: str, guid: str) -> DownloadProgressSchema:
+    """Dispara la descarga de un episodio a un caché local. Idempotente:
+    si ya hay una descarga en curso para ese guid, no dispara otra —
+    devuelve el progreso de la que ya está corriendo."""
+    store, episode = _find_episode(feed_url, guid)
+
+    if download_progress.is_active(guid):
+        return _progress_schema(guid, episode.status)
+
+    store.set_episode_status(guid, status=STATUS_DOWNLOADING, clear_last_error=True)
+    download_progress.start(guid)
+    asyncio.create_task(_run_download(feed_url, guid, episode.audio_url))
+
+    return _progress_schema(guid, STATUS_DOWNLOADING)
+
+
+@router.get("/{feed_url:path}/episodes/{guid}/download", response_model=DownloadProgressSchema)
+def get_download_progress(feed_url: str, guid: str) -> DownloadProgressSchema:
+    """Consulta de progreso para polling desde la UI."""
+    _store, episode = _find_episode(feed_url, guid)
+    return _progress_schema(guid, episode.status)

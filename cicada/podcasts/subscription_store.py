@@ -71,7 +71,8 @@ class SubscriptionStore:
                     episode_number INTEGER,
                     season_number INTEGER,
                     status TEXT NOT NULL DEFAULT 'not_downloaded',
-                    downloaded_path TEXT NOT NULL DEFAULT ''
+                    downloaded_path TEXT NOT NULL DEFAULT '',
+                    last_error TEXT
                 );
 
                 CREATE INDEX IF NOT EXISTS idx_episodes_feed_url ON episodes(feed_url);
@@ -125,7 +126,13 @@ class SubscriptionStore:
             season_number=row["season_number"],
             status=row["status"],
             downloaded_path=row["downloaded_path"],
+            last_error=row["last_error"],
         )
+
+    def get_episode(self, guid: str) -> PodcastEpisode | None:
+        with self._connection() as conn:
+            row = conn.execute("SELECT * FROM episodes WHERE guid = ?", (guid,)).fetchone()
+            return self._row_to_episode(row) if row is not None else None
 
     # ── Escritura ────────────────────────────────────────────────────────
 
@@ -153,20 +160,22 @@ class SubscriptionStore:
                     """
                     INSERT INTO episodes (guid, feed_url, title, description, audio_url,
                                            pub_date, duration_seconds, size_bytes,
-                                           episode_number, season_number, status, downloaded_path)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                           episode_number, season_number, status, downloaded_path,
+                                           last_error)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(guid) DO UPDATE SET
                         feed_url=excluded.feed_url, title=excluded.title,
                         description=excluded.description, audio_url=excluded.audio_url,
                         pub_date=excluded.pub_date, duration_seconds=excluded.duration_seconds,
                         size_bytes=excluded.size_bytes, episode_number=excluded.episode_number,
                         season_number=excluded.season_number, status=excluded.status,
-                        downloaded_path=excluded.downloaded_path
+                        downloaded_path=excluded.downloaded_path, last_error=excluded.last_error
                     """,
                     (
                         ep.guid, feed.feed_url, ep.title, ep.description, ep.audio_url,
                         ep.pub_date, ep.duration_seconds, ep.size_bytes,
                         ep.episode_number, ep.season_number, ep.status, ep.downloaded_path,
+                        ep.last_error,
                     ),
                 )
             conn.commit()
@@ -174,6 +183,55 @@ class SubscriptionStore:
     def update_feed(self, feed: PodcastFeed) -> None:
         """Alias de add_feed — el upsert ya cubre "actualizar existente"."""
         self.add_feed(feed)
+
+    def set_episode_status(
+        self,
+        guid: str,
+        *,
+        status: str,
+        downloaded_path: str | None = None,
+        last_error: str | None = None,
+        clear_last_error: bool = False,
+    ) -> None:
+        """Actualiza el estado local de un episodio puntual (sin reescribir
+        el feed completo) — usado durante las transiciones de descarga.
+
+        `last_error` solo se escribe si se pasa explícitamente; para
+        limpiarlo (al arrancar una descarga nueva) hay que pasar
+        `clear_last_error=True` en vez de `last_error=None`, así una
+        actualización de solo `status`/`downloaded_path` no borra por
+        accidente el error de un intento anterior que no se está tocando.
+        """
+        with self._connection() as conn:
+            if downloaded_path is not None and last_error is not None:
+                conn.execute(
+                    "UPDATE episodes SET status = ?, downloaded_path = ?, last_error = ? WHERE guid = ?",
+                    (status, downloaded_path, last_error, guid),
+                )
+            elif downloaded_path is not None:
+                if clear_last_error:
+                    conn.execute(
+                        "UPDATE episodes SET status = ?, downloaded_path = ?, last_error = NULL WHERE guid = ?",
+                        (status, downloaded_path, guid),
+                    )
+                else:
+                    conn.execute(
+                        "UPDATE episodes SET status = ?, downloaded_path = ? WHERE guid = ?",
+                        (status, downloaded_path, guid),
+                    )
+            elif last_error is not None:
+                conn.execute(
+                    "UPDATE episodes SET status = ?, last_error = ? WHERE guid = ?",
+                    (status, last_error, guid),
+                )
+            elif clear_last_error:
+                conn.execute(
+                    "UPDATE episodes SET status = ?, last_error = NULL WHERE guid = ?",
+                    (status, guid),
+                )
+            else:
+                conn.execute("UPDATE episodes SET status = ? WHERE guid = ?", (status, guid))
+            conn.commit()
 
     def remove_feed(self, feed_url: str) -> PodcastFeed | None:
         removed = self.get_feed(feed_url)
