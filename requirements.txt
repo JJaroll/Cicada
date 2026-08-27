@@ -18,3 +18,5 @@ python-xlib; sys_platform == "linux"
 zstandard==0.25.0
 wasmtime
 numpy==1.26.4
+# Módulo Podcasts: parsing de feeds RSS/Atom
+feedparser==6.0.11

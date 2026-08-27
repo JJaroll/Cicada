@@ -1,7 +1,8 @@
 Cicada is licensed under the GNU General Public License v3.0 (see LICENSE).
 
-The iPod integration module (cicada/ipod/) incorporates third-party code
-under different, GPLv3-compatible licenses:
+The iPod integration module (cicada/ipod/) and the podcasts module
+(cicada/podcasts/) incorporate third-party code under different,
+GPLv3-compatible licenses:
 
 - Portions derived from iOpenPod
   Copyright (c) John Gibbons — MIT License
@@ -11,10 +12,11 @@ under different, GPLv3-compatible licenses:
   https://github.com/dstaley/hashab
   Clean-room reimplementation of Apple's white-box AES signing algorithm.
 
-Both are incorporated into Cicada and redistributed under GPLv3, as
+All are incorporated into Cicada and redistributed under GPLv3, as
 permitted by their original licenses (a permissive/public-domain license
 may be relicensed under GPLv3 by a downstream redistributor; this does not
 change the licensing of the original upstream projects themselves).
 
 Full attribution and a per-package record of what was vendored, from where,
-and at which upstream commit: cicada/ipod/NOTICE and docs/VENDORED.md.
+and at which upstream commit: cicada/ipod/NOTICE, cicada/podcasts/NOTICE,
+and docs/VENDORED.md.

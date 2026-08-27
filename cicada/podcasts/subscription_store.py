@@ -1,0 +1,185 @@
+"""Persistencia de suscripciones a podcasts.
+
+Reescrito respecto al origen (``src/iopenpod/podcasts/subscription_store.py``
+@ ``c66a4bdb`` — ver docs/VENDORED.md Paquete 8): en iOpenPod las
+suscripciones vivían en un JSON dentro del propio iPod montado, escrito
+vía un writer atómico específico del dispositivo. Acá viven en
+``~/.cicada/podcasts.db`` (SQLite), mismo patrón que
+``cicada.ipod.sync.state.SyncStateDB`` — la gestión de podcasts es útil
+con o sin iPod conectado, no debe depender de tener uno montado.
+"""
+from __future__ import annotations
+
+import os
+import sqlite3
+from contextlib import contextmanager
+from pathlib import Path
+from typing import Iterator, Optional
+
+from .models import PodcastEpisode, PodcastFeed
+
+
+def default_podcasts_db_path() -> Path:
+    """Ruta por defecto de la base de datos local (~/.cicada/podcasts.db o $CICADA_HOME/podcasts.db)."""
+    base = Path(os.environ.get("CICADA_HOME") or (Path.home() / ".cicada"))
+    return base / "podcasts.db"
+
+
+class SubscriptionStore:
+    """Acceso y persistencia de suscripciones a podcasts en SQLite."""
+
+    def __init__(self, db_path: Optional[Path | str] = None):
+        self.db_path = Path(db_path) if db_path is not None else default_podcasts_db_path()
+        self._init_db()
+
+    @contextmanager
+    def _connection(self) -> Iterator[sqlite3.Connection]:
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(str(self.db_path))
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON;")
+        conn.execute("PRAGMA journal_mode = WAL;")
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def _init_db(self) -> None:
+        with self._connection() as conn:
+            conn.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS feeds (
+                    feed_url TEXT PRIMARY KEY,
+                    title TEXT NOT NULL DEFAULT '',
+                    author TEXT NOT NULL DEFAULT '',
+                    description TEXT NOT NULL DEFAULT '',
+                    artwork_url TEXT NOT NULL DEFAULT '',
+                    category TEXT NOT NULL DEFAULT '',
+                    language TEXT NOT NULL DEFAULT '',
+                    last_refreshed REAL NOT NULL DEFAULT 0
+                );
+
+                CREATE TABLE IF NOT EXISTS episodes (
+                    guid TEXT PRIMARY KEY,
+                    feed_url TEXT NOT NULL REFERENCES feeds(feed_url) ON DELETE CASCADE,
+                    title TEXT NOT NULL DEFAULT '',
+                    description TEXT NOT NULL DEFAULT '',
+                    audio_url TEXT NOT NULL DEFAULT '',
+                    pub_date REAL NOT NULL DEFAULT 0,
+                    duration_seconds INTEGER NOT NULL DEFAULT 0,
+                    size_bytes INTEGER NOT NULL DEFAULT 0,
+                    episode_number INTEGER,
+                    season_number INTEGER,
+                    status TEXT NOT NULL DEFAULT 'not_downloaded',
+                    downloaded_path TEXT NOT NULL DEFAULT ''
+                );
+
+                CREATE INDEX IF NOT EXISTS idx_episodes_feed_url ON episodes(feed_url);
+                """
+            )
+            conn.commit()
+
+    # ── Lectura ──────────────────────────────────────────────────────────
+
+    def get_feeds(self) -> list[PodcastFeed]:
+        with self._connection() as conn:
+            feed_rows = conn.execute("SELECT * FROM feeds ORDER BY title COLLATE NOCASE").fetchall()
+            return [self._row_to_feed(conn, row) for row in feed_rows]
+
+    def get_feed(self, feed_url: str) -> PodcastFeed | None:
+        with self._connection() as conn:
+            row = conn.execute("SELECT * FROM feeds WHERE feed_url = ?", (feed_url,)).fetchone()
+            if row is None:
+                return None
+            return self._row_to_feed(conn, row)
+
+    def _row_to_feed(self, conn: sqlite3.Connection, row: sqlite3.Row) -> PodcastFeed:
+        ep_rows = conn.execute(
+            "SELECT * FROM episodes WHERE feed_url = ? ORDER BY pub_date DESC",
+            (row["feed_url"],),
+        ).fetchall()
+        episodes = [self._row_to_episode(r) for r in ep_rows]
+        return PodcastFeed(
+            feed_url=row["feed_url"],
+            title=row["title"],
+            author=row["author"],
+            description=row["description"],
+            artwork_url=row["artwork_url"],
+            category=row["category"],
+            language=row["language"],
+            last_refreshed=row["last_refreshed"],
+            episodes=episodes,
+        )
+
+    @staticmethod
+    def _row_to_episode(row: sqlite3.Row) -> PodcastEpisode:
+        return PodcastEpisode(
+            guid=row["guid"],
+            title=row["title"],
+            description=row["description"],
+            audio_url=row["audio_url"],
+            pub_date=row["pub_date"],
+            duration_seconds=row["duration_seconds"],
+            size_bytes=row["size_bytes"],
+            episode_number=row["episode_number"],
+            season_number=row["season_number"],
+            status=row["status"],
+            downloaded_path=row["downloaded_path"],
+        )
+
+    # ── Escritura ────────────────────────────────────────────────────────
+
+    def add_feed(self, feed: PodcastFeed) -> None:
+        """Guarda (o reemplaza) un feed y sus episodios. Idempotente."""
+        with self._connection() as conn:
+            conn.execute(
+                """
+                INSERT INTO feeds (feed_url, title, author, description, artwork_url,
+                                    category, language, last_refreshed)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(feed_url) DO UPDATE SET
+                    title=excluded.title, author=excluded.author,
+                    description=excluded.description, artwork_url=excluded.artwork_url,
+                    category=excluded.category, language=excluded.language,
+                    last_refreshed=excluded.last_refreshed
+                """,
+                (
+                    feed.feed_url, feed.title, feed.author, feed.description,
+                    feed.artwork_url, feed.category, feed.language, feed.last_refreshed,
+                ),
+            )
+            for ep in feed.episodes:
+                conn.execute(
+                    """
+                    INSERT INTO episodes (guid, feed_url, title, description, audio_url,
+                                           pub_date, duration_seconds, size_bytes,
+                                           episode_number, season_number, status, downloaded_path)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(guid) DO UPDATE SET
+                        feed_url=excluded.feed_url, title=excluded.title,
+                        description=excluded.description, audio_url=excluded.audio_url,
+                        pub_date=excluded.pub_date, duration_seconds=excluded.duration_seconds,
+                        size_bytes=excluded.size_bytes, episode_number=excluded.episode_number,
+                        season_number=excluded.season_number, status=excluded.status,
+                        downloaded_path=excluded.downloaded_path
+                    """,
+                    (
+                        ep.guid, feed.feed_url, ep.title, ep.description, ep.audio_url,
+                        ep.pub_date, ep.duration_seconds, ep.size_bytes,
+                        ep.episode_number, ep.season_number, ep.status, ep.downloaded_path,
+                    ),
+                )
+            conn.commit()
+
+    def update_feed(self, feed: PodcastFeed) -> None:
+        """Alias de add_feed — el upsert ya cubre "actualizar existente"."""
+        self.add_feed(feed)
+
+    def remove_feed(self, feed_url: str) -> PodcastFeed | None:
+        removed = self.get_feed(feed_url)
+        if removed is None:
+            return None
+        with self._connection() as conn:
+            conn.execute("DELETE FROM feeds WHERE feed_url = ?", (feed_url,))
+            conn.commit()
+        return removed

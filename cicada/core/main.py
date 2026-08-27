@@ -51,6 +51,7 @@ from cicada.core.routes.system import router as system_router
 from cicada.core.routes.library import router as library_router
 from cicada.core.routes.spotify import router as spotify_router
 from cicada.core.routes.process import router as process_router
+from cicada.core.routes.podcasts import router as podcasts_router
 if IPOD_AVAILABLE:
     app.include_router(ipod_router)
 app.include_router(settings_router)
@@ -58,6 +59,7 @@ app.include_router(system_router)
 app.include_router(library_router)
 app.include_router(spotify_router)
 app.include_router(process_router)
+app.include_router(podcasts_router)
 
 STATIC_DIR = (
     Path(sys._MEIPASS)
@@ -820,6 +822,30 @@ async def get():
                             <p class="font-data-sm text-[13px] text-muted/40" data-i18n="library_configure_hint">Configura la carpeta de tu biblioteca arriba para verla aquí.</p>
                         </div>
                     </div>
+
+                    <!-- Audiolibros: explorar carpeta -->
+                    <div class="glass-card p-5 flex flex-col gap-3">
+                        <div class="flex items-center gap-2">
+                            <span class="material-symbols-outlined text-accent text-[20px]">menu_book</span>
+                            <span class="font-label-caps text-[12px] tracking-widest text-muted/60" data-i18n="audiobooks_title">Audiolibros</span>
+                        </div>
+                        <div class="flex gap-2">
+                            <input type="text" id="audiobook_browse_dir" placeholder="/Users/usuario/Audiolibros" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]"/>
+                            <button type="button" onclick="pickFolder('audiobook_browse_dir')" class="px-3 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors" data-i18n="common_choose">Elegir</button>
+                            <button type="button" onclick="scanAudiobookFolder()" class="px-4 rounded-lg bg-accent text-white font-label-caps text-[11px] hover:brightness-110 transition-all" data-i18n="audiobooks_scan_btn">Buscar Audiolibros</button>
+                        </div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <button type="button" id="audiobook-add-ipod-btn" onclick="onAudiobookIpodButton()" class="hidden items-center gap-1 px-3 py-1 rounded-full bg-secondary/15 text-secondary font-label-caps text-[11px] hover:bg-secondary/25 transition-colors">
+                                <span class="material-symbols-outlined text-[15px]">add_to_queue</span>
+                                <span id="audiobook-add-ipod-label" data-i18n="library_add_to_ipod">Agregar a iPod</span>
+                            </button>
+                            <button type="button" id="audiobook-select-cancel-btn" onclick="exitAudiobookSelectMode()" class="hidden items-center px-3 py-1 rounded-full bg-btn text-muted font-label-caps text-[11px] hover:bg-btn-hover transition-colors" data-i18n="common_cancel">Cancelar</button>
+                            <span class="ml-auto font-data-sm text-[12px] text-muted/40" id="audiobook-count"></span>
+                        </div>
+                        <div class="flex flex-col gap-1" id="audiobook-browser">
+                            <p class="font-data-sm text-[13px] text-muted/40" data-i18n="audiobooks_hint">Elegí una carpeta para buscar archivos .m4b, .m4a, .mp3 o .aac.</p>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Vista: Sincronizar iPod -->
@@ -1312,15 +1338,16 @@ async def get():
 
         <script>window.CICADA_VERSION = "__CICADA_VERSION__";</script>
         <script src="/static/js/i18n.js?v=2.2.5"></script>
-        <script src="/static/js/common.js?v=2.2.6"></script>
+        <script src="/static/js/common.js?v=2.2.7"></script>
         <script src="/static/js/metadata.js?v=2.2.0"></script>
         <script src="/static/js/download.js?v=2.2.0"></script>
         <script src="/static/js/playlist.js?v=2.2.1"></script>
         <script src="/static/js/library.js?v=2.2.1"></script>
+        <script src="/static/js/library_audiobooks.js?v=1.0.0"></script>
         <script src="/static/js/player.js?v=2.2.0"></script>
         <script src="/static/js/ipod/api.js?v=2.2.1"></script>
-        <script src="/static/js/ipod/render.js?v=2.2.3"></script>
-        <script src="/static/js/ipod/ui.js?v=2.2.2"></script>
+        <script src="/static/js/ipod/render.js?v=2.2.4"></script>
+        <script src="/static/js/ipod/ui.js?v=2.2.3"></script>
         <script>
             // Inicialización de la UI
             applyLanguage(currentLang);
