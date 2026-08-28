@@ -235,6 +235,19 @@ async def test_api_track_remove(async_client: httpx.AsyncClient, mock_ipod_with_
     assert pl["tracks"] == []
 
 
+@pytest.mark.asyncio
+async def test_api_playlist_delete(async_client: httpx.AsyncClient, mock_ipod_with_playlist: Path):
+    resp_del = await async_client.post("/api/ipod/playlists/delete", json={
+        "playlist_name": "Mi Playlist", "consent_ack": True,
+    })
+    assert resp_del.status_code == 200
+    assert resp_del.json()["success"] is True
+
+    resp_pl = await async_client.get("/api/ipod/playlists")
+    names = {p["title"] for p in resp_pl.json()["playlists"]}
+    assert "Mi Playlist" not in names
+
+
 @pytest.fixture
 def mock_ipod_with_rating(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     mount = tmp_path / "ipod_mount"

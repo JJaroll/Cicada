@@ -215,10 +215,10 @@ def get_inflight_marker(guid: str, *, commit_dir: Optional[Path | str] = None) -
 
 def purge_staging_temps(mount: Path) -> None:
     """Elimina explícitamente cualquier archivo temporal `*.cicada-new` residual en el iPod."""
-    itunes_dir = mount / "iPod_Control" / "iTunes"
-    if not itunes_dir.is_dir():
+    control_dir = mount / "iPod_Control"
+    if not control_dir.is_dir():
         return
-    for dirpath, _dirnames, filenames in os.walk(itunes_dir):
+    for dirpath, _dirnames, filenames in os.walk(control_dir):
         for fn in filenames:
             if fn.endswith(".cicada-new"):
                 p = Path(dirpath) / fn
@@ -354,6 +354,13 @@ def apply(
         for stage_rel, target_rel in sequence:
             dest = assert_within_ipod_control(resolved_mount / target_rel, resolved_mount)
             temp_on_device = dest.with_name(dest.name + ".cicada-new")
+            if not temp_on_device.is_file():
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                src = plan.staging_dir / stage_rel
+                with open(src, "rb") as sf, open(temp_on_device, "wb") as df:
+                    for chunk in iter(lambda: sf.read(1 << 16), b""):
+                        df.write(chunk)
+                    flush_written_file(df)
             os.replace(temp_on_device, dest)
 
         for pdir in (itlp_dir, itunes_dir):

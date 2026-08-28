@@ -12,13 +12,16 @@ from __future__ import annotations
 
 import logging
 import shutil
+import subprocess
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field
+
+from cicada.shared.artwork import extract_embedded_artwork
 
 from cicada.ipod.db.coordinator.apply import (
     ApplyError,
@@ -54,6 +57,7 @@ from cicada.ipod.db.shared.constants import (
     MEDIA_TYPE_VIDEO_PODCAST,
 )
 from cicada.ipod.db.coordinator.media import (
+    delete_ipod_playlist,
     preserve_existing_playlists,
     remove_track_from_ipod,
     set_ipod_playlist,
@@ -142,6 +146,10 @@ class TrackSchema(BaseModel):
     last_played: int = 0
     location: str
     db_track_id: Optional[str] = None
+    media_type: Optional[int] = None
+    is_podcast: bool = False
+    is_audiobook: bool = False
+    is_video: bool = False
 
 
 class TracksResponse(BaseModel):
@@ -197,6 +205,7 @@ class VideoSchema(BaseModel):
     show_name: Optional[str] = None
     season_number: Optional[int] = None
     episode_number: Optional[int] = None
+    thumb: Optional[str] = None
 
 
 class VideosResponse(BaseModel):
@@ -298,6 +307,34 @@ def _track_schema_to_info(s: TrackSchema) -> TrackInfo:
 
 
 def _track_dict_to_schema(d: dict) -> TrackSchema:
+    mt = d.get("media_type") or 0
+    podcast_flag = d.get("podcast_flag") or 0
+    movie_flag = d.get("movie_flag") or d.get("movie_flag_2") or 0
+    ft = (d.get("Filetype") or d.get("filetype") or "").lower()
+    loc = (d.get("Location") or d.get("location") or "").lower()
+    genre = (d.get("Genre") or d.get("genre") or "").lower()
+
+    is_podcast = bool(
+        podcast_flag == 1
+        or (mt & MEDIA_TYPE_PODCAST) != 0
+        or mt == MEDIA_TYPE_VIDEO_PODCAST
+        or genre == "podcast"
+    )
+    is_audiobook = bool(
+        (mt & MEDIA_TYPE_AUDIOBOOK) != 0
+        or mt == MEDIA_TYPE_AUDIOBOOK
+        or ft == "m4b"
+        or loc.endswith(".m4b")
+        or genre in ("audiobook", "audiolibro", "audiobooks", "audiolibros")
+    )
+    is_video = bool(
+        mt in _VIDEO_MEDIA_TYPES
+        or (mt & (MEDIA_TYPE_VIDEO | MEDIA_TYPE_MUSIC_VIDEO | MEDIA_TYPE_TV_SHOW)) != 0
+        or movie_flag == 1
+        or ft in ("m4v", "mp4", "mov")
+        or loc.endswith((".m4v", ".mp4", ".mov"))
+    )
+
     return TrackSchema(
         title=d.get("Title") or d.get("title") or "",
         artist=d.get("Artist") or d.get("artist"),
@@ -320,6 +357,10 @@ def _track_dict_to_schema(d: dict) -> TrackSchema:
         last_played=d.get("last_played") or 0,
         location=d.get("Location") or d.get("location") or "",
         db_track_id=str(d.get("db_track_id") or d.get("dbid") or "") or None,
+        media_type=mt or None,
+        is_podcast=is_podcast,
+        is_audiobook=is_audiobook,
+        is_video=is_video,
     )
 
 
@@ -1019,10 +1060,46 @@ def import_playlist(req: ImportPlaylistRequest) -> ApplyResponse:
     except MountNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"}) from exc
+class DeletePlaylistRequest(BaseModel):
+    playlist_name: str
+    consent_ack: bool = False
+
+
+@router.post("/playlists/delete", response_model=ApplyResponse)
+def delete_playlist(req: DeletePlaylistRequest) -> ApplyResponse:
+    """Elimina una playlist existente del iPod."""
+    if not req.playlist_name or not req.playlist_name.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "El nombre de la playlist no puede estar vacío.", "code": "INVALID_NAME"},
+        )
+    try:
+        mount = resolve_mount()
+        dev = read_device_info(mount)
+        res = delete_ipod_playlist(
+            mount, req.playlist_name.strip(),
+            device_info=dev, consent_ack=req.consent_ack,
+        )
+        return ApplyResponse(
+            success=res.success,
+            backup_path=str(res.backup_path) if res.backup_path else None,
+            restored_from_backup=res.restored_from_backup,
+            first_write_committed=res.first_write_committed,
+            tracks_written=res.tracks_written,
+            error=res.error,
+        )
+    except ConsentRequiredError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail={"error": str(exc), "code": "CONSENT_REQUIRED"}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "INVALID_REQUEST"}) from exc
+    except MountNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"}) from exc
     except WriteGuardError as exc:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                             detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"}) from exc
-
 
 
 @router.get("/videos", response_model=VideosResponse)
@@ -1074,11 +1151,107 @@ def get_videos() -> VideosResponse:
             show_name=t.get("Show") or None,
             season_number=t.get("season_number") or None,
             episode_number=t.get("episode_number") or None,
+            thumb=f"/api/ipod/track/artwork?db_track_id={t.get('db_track_id')}" if t.get("db_track_id") is not None else None,
         )
         for t in lib.get("mhlt", [])
         if _is_video(t)
     ]
     return VideosResponse(videos=videos, count=len(videos))
+
+
+def _resolve_ipod_track_file(mount: Path, loc: str) -> Optional[Path]:
+    if not loc:
+        return None
+    norm = loc.replace(":", "/").replace("\\", "/").strip("/")
+    cand = mount / norm
+    if cand.exists():
+        return cand
+    parts = norm.split("/")
+    if "iPod_Control" in parts:
+        idx = parts.index("iPod_Control")
+        cand = mount / Path(*parts[idx:])
+        if cand.exists():
+            return cand
+    cand = mount / "iPod_Control" / norm
+    if cand.exists():
+        return cand
+    return None
+
+
+def _extract_video_frame(file_path: Path) -> Tuple[Optional[bytes], Optional[str]]:
+    ffmpeg_bin = shutil.which("ffmpeg")
+    if not ffmpeg_bin:
+        return None, None
+    try:
+        cmd = [
+            ffmpeg_bin, "-ss", "00:00:01", "-i", str(file_path),
+            "-vframes", "1", "-q:v", "2", "-f", "image2", "-"
+        ]
+        res = subprocess.run(cmd, capture_output=True, timeout=6)
+        if res.returncode == 0 and res.stdout:
+            return res.stdout, "image/jpeg"
+        cmd[2] = "00:00:00"
+        res = subprocess.run(cmd, capture_output=True, timeout=6)
+        if res.returncode == 0 and res.stdout:
+            return res.stdout, "image/jpeg"
+    except Exception:
+        pass
+    return None, None
+
+
+@router.get("/track/artwork")
+def get_ipod_track_artwork(
+    db_track_id: Optional[str] = None,
+    video_id: Optional[str] = None,
+    location: Optional[str] = None,
+):
+    target_id = db_track_id or video_id
+    try:
+        mount = resolve_mount()
+    except Exception:
+        raise HTTPException(status_code=404, detail="iPod no encontrado")
+
+    lib = _load_current_library(mount)
+    if not lib:
+        raise HTTPException(status_code=404, detail="Biblioteca no disponible")
+
+    matched_track = None
+    target_int = int(target_id) if target_id and target_id.isdigit() else None
+
+    for t in lib.get("mhlt", []):
+        if target_int is not None and t.get("db_track_id") == target_int:
+            matched_track = t
+            break
+        if target_id is not None and str(t.get("db_track_id")) == str(target_id):
+            matched_track = t
+            break
+        if location and (t.get("Location") == location or t.get("path") == location):
+            matched_track = t
+            break
+
+    if not matched_track:
+        raise HTTPException(status_code=404, detail="Pista no encontrada")
+
+    loc = matched_track.get("Location") or matched_track.get("path") or ""
+    track_file = _resolve_ipod_track_file(mount, loc)
+    if not track_file or not track_file.exists():
+        raise HTTPException(status_code=404, detail="Archivo no encontrado en el iPod")
+
+    # 1. Carátula embebida en tags de audio o video
+    img_bytes, mime = extract_embedded_artwork(track_file)
+
+    # 2. Si es video y no tiene cover embebido, fotograma de video vía ffmpeg
+    if not img_bytes and track_file.suffix.lower() in (".mp4", ".m4v", ".mov"):
+        img_bytes, mime = _extract_video_frame(track_file)
+
+    if not img_bytes:
+        raise HTTPException(status_code=404, detail="Carátula no encontrada")
+
+    return Response(
+        content=img_bytes,
+        media_type=mime or "image/jpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @router.delete("/videos/{video_id}", response_model=ApplyResponse)

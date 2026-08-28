@@ -1073,6 +1073,10 @@ async def get():
                                                 <span class="material-symbols-outlined text-[14px]">add</span>
                                                 <span data-i18n="ipod_playlist_add_songs">Agregar</span>
                                             </button>
+                                            <button type="button" id="ipod-playlist-delete-btn" onclick="deleteCurrentIpodPlaylist()" class="hidden items-center gap-1 px-2.5 py-1 rounded-full bg-red-500/10 hover:bg-red-500/20 text-red-400 font-label-caps text-[11px] transition-all" title="Eliminar playlist">
+                                                <span class="material-symbols-outlined text-[14px]">delete</span>
+                                                <span>Eliminar</span>
+                                            </button>
                                             <button type="button" id="ipod-playlist-save-order-btn" onclick="saveIpodPlaylistOrder()" class="gemini-border-btn hidden">
                                                 <span class="gemini-border-btn-inner" id="ipod-playlist-save-order-inner">
                                                     <span class="material-symbols-outlined text-[14px] text-accent">save</span>
@@ -1237,11 +1241,11 @@ async def get():
                             </div>
                             <button type="button" onclick="closeImportPlaylistModal()" class="material-symbols-outlined text-muted/60 hover:text-main transition-colors">close</button>
                         </div>
-                        <p class="font-data-sm text-[12px] text-muted/70">Selecciona una playlist de tu biblioteca local o Spotify para sincronizarla en el iPod.</p>
-                        <div id="ipod-import-playlist-options" class="flex flex-col gap-1.5 max-h-48 overflow-y-auto custom-scrollbar">
+                        <p class="font-data-sm text-[12px] text-muted/70">Selecciona una playlist replicada de tu biblioteca para sincronizarla en el iPod.</p>
+                        <div id="ipod-import-playlist-options" class="flex flex-col gap-2 max-h-[260px] overflow-y-auto custom-scrollbar pr-1">
                             <p class="font-data-sm text-[12px] text-muted/40">Cargando playlists disponibles...</p>
                         </div>
-                        <div class="flex justify-end gap-3 mt-2">
+                        <div class="flex justify-end gap-3 mt-1">
                             <button type="button" onclick="closeImportPlaylistModal()" class="px-4 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors" data-i18n="common_cancel">Cancelar</button>
                         </div>
                     </div>
@@ -1452,8 +1456,8 @@ async def get():
         <script src="/static/js/library_podcasts.js?v=1.0.1"></script>
         <script src="/static/js/player.js?v=2.2.1"></script>
         <script src="/static/js/ipod/api.js?v=2.2.2"></script>
-        <script src="/static/js/ipod/render.js?v=2.2.6"></script>
-        <script src="/static/js/ipod/ui.js?v=2.3.3"></script>
+        <script src="/static/js/ipod/render.js?v=2.2.8"></script>
+        <script src="/static/js/ipod/ui.js?v=2.3.6"></script>
         <script>
             // Inicialización de la UI
             applyLanguage(currentLang);

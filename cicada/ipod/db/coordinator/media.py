@@ -29,6 +29,7 @@ __all__ = [
     "sync_media_to_ipod",
     "update_ipod_playlist",
     "set_ipod_playlist",
+    "delete_ipod_playlist",
     "remove_track_from_ipod",
     "preserve_existing_playlists",
     "push_ratings_to_ipod",
@@ -284,6 +285,59 @@ def update_ipod_playlist(mount, playlist_name, ordered_dbids, *, device_info, co
     plan = create_plan(
         mount, tracks, device_info=device_info,
         playlists=regular or None, smart_playlists=smart or None,
+        sync_artwork=False,
+    )
+    if plan.consent_needed and not consent_ack:
+        raise ConsentRequiredError(
+            "Se requiere aceptar la advertencia de Music.app antes de escribir."
+        )
+    return apply(plan, mount=mount, device_info=device_info, consent_ack=consent_ack)
+
+
+def delete_ipod_playlist(mount, playlist_name, *, device_info, consent_ack=False):
+    """Elimina UNA playlist existente del iPod, preservando todas las pistas
+    y las demás playlists. Puro DB, sin borrar archivos de audio."""
+    from cicada.ipod.db.coordinator.apply import apply
+    from cicada.ipod.db.coordinator.consent import ConsentRequiredError
+    from cicada.ipod.db.coordinator.plan import create_plan
+    from cicada.ipod.db.models import PlaylistInfo
+    from cicada.ipod.db.parser import load_ipod_library
+    from cicada.ipod.db.writer._track_conversion import track_dict_to_info
+
+    mount = Path(mount)
+    cdb = mount / "iPod_Control" / "iTunes" / "iTunesCDB"
+    lib = load_ipod_library(str(cdb), mount=str(mount)) if cdb.is_file() else None
+    if not lib:
+        raise ValueError("No se pudo leer la biblioteca del iPod.")
+
+    tracks = [track_dict_to_info(t) for t in lib.get("mhlt", [])]
+    _heal_track_lengths(mount, tracks)
+
+    tid2db = _trackid_to_dbid(lib)
+    want = _norm_name(playlist_name)
+    regular, found = [], False
+    for pl in lib.get("mhlp", []):
+        if pl.get("master_flag"):
+            continue
+        if not found and _norm_name(pl.get("Title")) == want:
+            found = True
+            continue
+        regular.append(PlaylistInfo(name=pl.get("Title") or "Playlist",
+                                    track_ids=_playlist_dbids(pl, tid2db), master=False))
+
+    if not found:
+        raise ValueError(f"Playlist '{playlist_name}' no encontrada en el iPod.")
+
+    try:
+        from cicada.ipod.sync.playlists import extract_smart_playlists_for_preservation
+        smart = extract_smart_playlists_for_preservation(mount) or []
+    except Exception:
+        smart = []
+
+    plan = create_plan(
+        mount, tracks, device_info=device_info,
+        playlists=regular or None, smart_playlists=smart or None,
+        sync_artwork=False,
     )
     if plan.consent_needed and not consent_ack:
         raise ConsentRequiredError(
@@ -363,6 +417,7 @@ def set_ipod_playlist(mount, playlist_name, items, *, device_info, consent_ack=F
     plan = create_plan(
         mount, full_tracks, device_info=device_info,
         playlists=regular or None, smart_playlists=smart or None,
+        sync_artwork=bool(assignments),
     )
     if plan.consent_needed and not consent_ack:
         raise ConsentRequiredError(
@@ -424,6 +479,7 @@ def remove_track_from_ipod(mount, db_track_id, *, device_info, consent_ack=False
     plan = create_plan(
         mount, tracks, device_info=device_info,
         playlists=regular or None, smart_playlists=smart or None,
+        sync_artwork=False,
     )
     if plan.consent_needed and not consent_ack:
         raise ConsentRequiredError(
@@ -479,6 +535,7 @@ def push_ratings_to_ipod(mount, ratings: dict, *, device_info, consent_ack=False
     plan = create_plan(
         mount, tracks, device_info=device_info,
         playlists=regular or None, smart_playlists=smart or None,
+        sync_artwork=False,
     )
     if plan.consent_needed and not consent_ack:
         raise ConsentRequiredError(

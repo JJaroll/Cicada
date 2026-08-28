@@ -46,11 +46,13 @@ function _ipodCtxAttr(tr) {
 
 // --- Canciones (vista lista/grilla) ---
 function ipodSongRowHtml(tr, i) {
+    const artworkSrc = tr.db_track_id ? `/api/ipod/track/artwork?db_track_id=${encodeURIComponent(tr.db_track_id)}` : '';
     return `
             <div class="flex items-center gap-3 px-3 py-2 rounded-lg hover:bg-btn-hover transition-colors group cursor-pointer" onclick="playIpodTrack(${i})" oncontextmenu="${_ipodCtxAttr(tr)}" title="${t("ipod_play_title")}">
                 <span class="font-data-sm text-[12px] text-muted/40 w-7 text-right flex-shrink-0">${i + 1}</span>
-                <div class="w-8 h-8 rounded-lg bg-btn flex items-center justify-center flex-shrink-0 text-muted/40 group-hover:text-accent">
+                <div class="w-8 h-8 rounded-lg bg-btn flex items-center justify-center flex-shrink-0 text-muted/40 group-hover:text-accent relative overflow-hidden border border-white/5">
                     <span class="material-symbols-outlined text-[18px]">music_note</span>
+                    ${artworkSrc ? `<img src="${artworkSrc}" class="absolute inset-0 w-full h-full object-cover" loading="lazy" onerror="this.remove()" alt="">` : ''}
                 </div>
                 <div class="flex-1 min-w-0">
                     <div class="font-data-sm text-[13px] text-main font-medium truncate">${_escapeHtmlIpod(tr.title || t("track_untitled"))}</div>
@@ -69,11 +71,13 @@ function ipodSongRowHtml(tr, i) {
 }
 
 function ipodSongCardHtml(tr, i) {
+    const artworkSrc = tr.db_track_id ? `/api/ipod/track/artwork?db_track_id=${encodeURIComponent(tr.db_track_id)}` : '';
     return `
             <div class="ipod-media-card group cursor-pointer" onclick="playIpodTrack(${i})" oncontextmenu="${_ipodCtxAttr(tr)}" title="${t("ipod_play_title")}">
-                <div class="aspect-square w-full rounded-lg bg-black/10 dark:bg-white/5 flex items-center justify-center relative overflow-hidden">
+                <div class="aspect-square w-full rounded-lg bg-black/10 dark:bg-white/5 flex items-center justify-center relative overflow-hidden border border-white/5 shadow-inner">
                     <span class="material-symbols-outlined text-[36px] text-muted/30 group-hover:text-accent transition-colors">album</span>
-                    <span class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white font-data-sm text-[10px]">${_formatMs(tr.length_ms)}</span>
+                    ${artworkSrc ? `<img src="${artworkSrc}" class="absolute inset-0 w-full h-full object-cover" loading="lazy" onerror="this.remove()" alt="">` : ''}
+                    <span class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white font-data-sm text-[10px] z-10 backdrop-blur-sm">${_formatMs(tr.length_ms)}</span>
                 </div>
                 <div class="flex flex-col gap-0.5 min-w-0">
                     <h5 class="font-data-sm text-[13px] text-main font-medium truncate">${_escapeHtmlIpod(tr.title || t("track_untitled"))}</h5>
@@ -85,13 +89,21 @@ function ipodSongCardHtml(tr, i) {
 
 // --- Playlists ---
 function ipodPlaylistSidebarItemHtml(p, idx, isSelected) {
+    const isMaster = !!p.is_master;
     return `
-            <div onclick="selectIpodPlaylist(${idx})" class="flex items-center justify-between px-2.5 py-2 rounded-lg cursor-pointer transition-colors ${isSelected ? 'bg-accent-light text-accent font-semibold' : 'bg-btn hover:bg-btn-hover text-main'}">
+            <div onclick="selectIpodPlaylist(${idx})" oncontextmenu="showIpodPlaylistContextMenu(event, ${idx})" class="group flex items-center justify-between px-2.5 py-2 rounded-lg cursor-pointer transition-colors ${isSelected ? 'bg-accent-light text-accent font-semibold' : 'bg-btn hover:bg-btn-hover text-main'}">
                 <div class="flex items-center gap-2 min-w-0">
-                    <span class="material-symbols-outlined text-[16px] ${p.is_master ? 'text-secondary' : 'text-muted/60'}">${p.is_master ? 'folder_special' : 'queue_music'}</span>
+                    <span class="material-symbols-outlined text-[16px] ${isMaster ? 'text-secondary' : 'text-muted/60'}">${isMaster ? 'folder_special' : 'queue_music'}</span>
                     <span class="font-data-sm text-[13px] truncate">${_escapeHtmlIpod(p.title || "—")}</span>
                 </div>
-                <span class="font-data-sm text-[11px] text-muted/60 flex-shrink-0 ml-1">${p.count || 0}</span>
+                <div class="flex items-center gap-1 flex-shrink-0 ml-1">
+                    <span class="font-data-sm text-[11px] text-muted/60">${p.count || 0}</span>
+                    ${!isMaster ? `
+                        <button type="button" onclick="deleteIpodPlaylist(event, ${idx})" class="opacity-0 group-hover:opacity-100 hover:text-red-400 p-0.5 rounded transition-opacity" title="Eliminar playlist">
+                            <span class="material-symbols-outlined text-[15px]">close</span>
+                        </button>
+                    ` : ''}
+                </div>
             </div>
         `;
 }
@@ -99,9 +111,10 @@ function ipodPlaylistSidebarItemHtml(p, idx, isSelected) {
 function ipodPlaylistTrackRowHtml(tr, i, isMaster) {
     const drag = isMaster ? "" :
         ` draggable="true" ondragstart="handleIpodTrackDragStart(event, ${i})" ondragend="handleIpodTrackDragEnd(event)" ondragover="handleIpodTrackDragOver(event)" ondrop="handleIpodTrackDrop(event)"`;
+    const ctxAttr = isMaster ? _ipodCtxAttr(tr) : `showIpodPlaylistTrackContextMenu(event, ${i})`;
     return `
-            <div data-ipod-track-idx="${i}"${drag}
-                class="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-btn-hover transition-colors ${isMaster ? '' : 'cursor-grab'}">
+            <div data-ipod-track-idx="${i}"${drag} oncontextmenu="${ctxAttr}"
+                class="group flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-btn-hover transition-colors ${isMaster ? '' : 'cursor-grab'}">
                 ${isMaster ? '' : '<span class="material-symbols-outlined text-[16px] text-muted/30 flex-shrink-0">drag_indicator</span>'}
                 <span class="font-data-sm text-[12px] text-muted/40 w-6 text-right flex-shrink-0">${i + 1}</span>
                 <div class="flex-1 min-w-0">
@@ -110,6 +123,11 @@ function ipodPlaylistTrackRowHtml(tr, i, isMaster) {
                 </div>
                 ${tr.source_path ? `<span class="material-symbols-outlined text-[15px] text-accent flex-shrink-0" title="${t('ipod_playlist_new_track')}">fiber_new</span>` : ''}
                 <span class="font-data-sm text-[11px] text-muted/50">${_formatMs(tr.length_ms)}</span>
+                ${!isMaster ? `
+                    <button type="button" onclick="removeTrackFromIpodPlaylist(event, ${i})" class="opacity-0 group-hover:opacity-100 text-muted/40 hover:text-red-400 p-0.5 rounded transition-opacity flex-shrink-0" title="Quitar de la playlist">
+                        <span class="material-symbols-outlined text-[16px]">close</span>
+                    </button>
+                ` : ''}
             </div>`;
 }
 
@@ -205,12 +223,11 @@ function ipodVideoCardHtml(vid, idx) {
                 <span class="material-symbols-outlined text-[15px]">close</span>
             </button>
             <div class="aspect-video w-full rounded-lg bg-gradient-to-br from-neutral-800 to-neutral-950 flex items-center justify-center overflow-hidden relative border border-white/5 shadow-inner group-hover:scale-[1.01] transition-transform">
-                ${vid.thumb ? `<img src="${vid.thumb}" class="w-full h-full object-cover"/>` : `
-                    <div class="flex flex-col items-center justify-center gap-1 text-muted/30 group-hover:text-accent transition-colors">
-                        <span class="material-symbols-outlined text-[36px]">movie</span>
-                    </div>
-                `}
-                ${dur ? `<span class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/80 text-white/90 font-data-sm text-[10px] backdrop-blur-sm">${dur}</span>` : ""}
+                <div class="flex flex-col items-center justify-center gap-1 text-muted/30 group-hover:text-accent transition-colors">
+                    <span class="material-symbols-outlined text-[36px]">movie</span>
+                </div>
+                <img src="${vid.thumb || `/api/ipod/track/artwork?video_id=${encodeURIComponent(videoId)}`}" class="absolute inset-0 w-full h-full object-cover" loading="lazy" onerror="this.remove()" alt="">
+                ${dur ? `<span class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/80 text-white/90 font-data-sm text-[10px] backdrop-blur-sm z-10">${dur}</span>` : ""}
             </div>
             <div class="flex flex-col gap-0.5 mt-2 min-w-0">
                 <span class="font-data-sm text-[12px] text-main truncate font-medium" title="${_escapeHtmlIpod(vid.title || `Video #${idx + 1}`)}">${_escapeHtmlIpod(vid.title || `Video #${idx + 1}`)}</span>

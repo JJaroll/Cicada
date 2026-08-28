@@ -191,6 +191,20 @@ function renderIpodStorage(storage) {
     }
 }
 
+function _isMusicTrack(t) {
+    if (!t) return false;
+    if (t.is_podcast || t.is_audiobook || t.is_video) return false;
+    const mt = t.media_type || 0;
+    if (mt === 0x0002 || mt === 0x0200 || mt === 0x0004 || mt === 0x0006 || mt === 0x0020 || mt === 0x2000) return false;
+    const ft = (t.filetype || "").toLowerCase();
+    const loc = (t.location || "").toLowerCase();
+    const genre = (t.genre || "").toLowerCase();
+    if (ft === "m4b" || loc.endsWith(".m4b") || genre.includes("audiobook") || genre.includes("audiolibro")) return false;
+    if (["mp4", "m4v", "mov"].includes(ft) || loc.endsWith(".mp4") || loc.endsWith(".m4v") || loc.endsWith(".mov")) return false;
+    if (genre === "podcast") return false;
+    return true;
+}
+
 // --- CARGA DE CONTENIDO ---
 async function loadIpodLibrary() {
     try {
@@ -203,6 +217,7 @@ async function loadIpodLibrary() {
         ]);
 
         ipodState.tracks = (tRes.status === "fulfilled" && tRes.value.res.ok) ? (tRes.value.data.tracks || []) : [];
+        ipodState.songs = ipodState.tracks.filter(_isMusicTrack);
         ipodState.playlists = (pRes.status === "fulfilled" && pRes.value.res.ok) ? (pRes.value.data.playlists || []) : [];
         ipodState.videos = (vRes.status === "fulfilled" && vRes.value.res.ok) ? (vRes.value.data.videos || []) : [];
         ipodState.podcasts = (podRes.status === "fulfilled" && podRes.value.res.ok) ? (podRes.value.data.podcasts || []) : [];
@@ -228,7 +243,8 @@ function updateIpodCategoryCounts() {
     const cPods = document.getElementById("ipod-count-podcasts");
     const cAbs = document.getElementById("ipod-count-audiobooks");
 
-    if (cSongs) cSongs.textContent = ipodState.tracks.length;
+    const songs = ipodState.songs || ipodState.tracks.filter(_isMusicTrack);
+    if (cSongs) cSongs.textContent = songs.length;
     if (cPls) cPls.textContent = ipodState.playlists.length;
     if (cVideos) cVideos.textContent = ipodState.videos.length;
     if (cPods) cPods.textContent = ipodState.podcasts.length;
@@ -242,7 +258,8 @@ function populateIpodFilterDropdowns() {
     const artists = new Set();
     const albums = new Set();
 
-    for (const t of ipodState.tracks) {
+    const songs = ipodState.songs || ipodState.tracks.filter(_isMusicTrack);
+    for (const t of songs) {
         if (t.genre) genres.add(t.genre);
         if (t.year && t.year > 0) years.add(t.year);
         if (t.artist) artists.add(t.artist);
@@ -593,7 +610,8 @@ function renderIpodSongs() {
     const gridContainer = document.getElementById("ipod-songs-grid");
     if (!listContainer || !gridContainer) return;
 
-    let filtered = ipodState.tracks.filter(t => {
+    const songs = ipodState.songs || ipodState.tracks.filter(_isMusicTrack);
+    let filtered = songs.filter(t => {
         if (ipodState.searchQuery) {
             const q = ipodState.searchQuery.toLowerCase();
             const matches = (t.title && t.title.toLowerCase().includes(q)) ||
@@ -972,8 +990,9 @@ function renderIpodPlaylists() {
     const selectedPl = ipodState.playlists[ipodState.selectedPlaylistIndex];
     if (selectedPl) {
         const isMaster = !!selectedPl.is_master;
-        // Master = todas las canciones (no reordenable); usuario = sus pistas reales.
-        const plTracks = isMaster ? ipodState.tracks : (selectedPl.tracks || []);
+        const songs = ipodState.songs || ipodState.tracks.filter(_isMusicTrack);
+        // Master = todas las canciones de música (no reordenable); usuario = sus pistas reales.
+        const plTracks = isMaster ? songs : (selectedPl.tracks || []);
         if (titleEl) titleEl.textContent = selectedPl.title || "Playlist";
         if (countEl) countEl.textContent = plTracks.length + " " + t("ipod_tracks_count");
 
@@ -987,6 +1006,11 @@ function renderIpodPlaylists() {
         if (addBtn) {
             addBtn.classList.toggle("hidden", isMaster);
             addBtn.classList.toggle("inline-flex", !isMaster);
+        }
+        const delBtn = document.getElementById("ipod-playlist-delete-btn");
+        if (delBtn) {
+            delBtn.classList.toggle("hidden", isMaster);
+            delBtn.classList.toggle("inline-flex", !isMaster);
         }
 
         tracksList.innerHTML = plTracks.map((tr, i) => ipodPlaylistTrackRowHtml(tr, i, isMaster)).join("");
@@ -1097,6 +1121,81 @@ async function saveIpodPlaylistOrder() {
                 <span data-i18n="ipod_playlist_save_order">Guardar cambios</span>
             `;
         }
+    }
+}
+
+function removeTrackFromIpodPlaylist(event, trackIdx) {
+    if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+    }
+    const pl = ipodState.playlists[ipodState.selectedPlaylistIndex];
+    if (!pl || pl.is_master || !pl.tracks) return;
+    pl.tracks.splice(trackIdx, 1);
+    ipodPlaylistDirty = true;
+    renderIpodPlaylists();
+}
+
+async function deleteIpodPlaylist(event, plIdxOrName) {
+    if (event) {
+        event.stopPropagation();
+        event.preventDefault();
+    }
+    let pl = null;
+    if (typeof plIdxOrName === "number") {
+        pl = ipodState.playlists[plIdxOrName];
+    } else if (typeof plIdxOrName === "string") {
+        pl = ipodState.playlists.find(p => p.title === plIdxOrName);
+    }
+    if (!pl || pl.is_master) return;
+
+    if (!confirm(`¿Deseas eliminar la playlist '${pl.title}' del iPod?\n(Las canciones seguirán guardadas en el iPod)`)) return;
+
+    try {
+        const gate = await _ipodWriteGate();
+        if (!gate) return;
+
+        const res = await fetch("/api/ipod/playlists/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ playlist_name: pl.title, consent_ack: gate.consentAck })
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            alert(t("ipod_write_failed") + (data.error || _ipodErr(data)));
+            return;
+        }
+        ipodPlaylistDirty = false;
+        ipodState.selectedPlaylistIndex = 0;
+        await loadIpodLibrary();
+        await scanIpod();
+    } catch (e) {
+        alert(t("error_prefix") + e.message);
+    }
+}
+
+function deleteCurrentIpodPlaylist() {
+    deleteIpodPlaylist(null, ipodState.selectedPlaylistIndex);
+}
+
+function showIpodPlaylistContextMenu(event, plIdx) {
+    event.preventDefault();
+    event.stopPropagation();
+    const pl = ipodState.playlists[plIdx];
+    if (!pl || pl.is_master) return;
+    deleteIpodPlaylist(event, plIdx);
+}
+
+function showIpodPlaylistTrackContextMenu(event, trackIdx) {
+    event.preventDefault();
+    event.stopPropagation();
+    const pl = ipodState.playlists[ipodState.selectedPlaylistIndex];
+    if (!pl || !pl.tracks) return;
+    const tr = pl.tracks[trackIdx];
+    if (!tr) return;
+
+    if (confirm(`¿Deseas quitar '${tr.title || "esta canción"}' de la playlist '${pl.title}'?`)) {
+        removeTrackFromIpodPlaylist(event, trackIdx);
     }
 }
 
@@ -1523,7 +1622,9 @@ async function submitCreatePlaylist() {
 }
 
 // Modal Importar Playlist
-function openImportPlaylistModal() {
+let _availableImportPlaylists = [];
+
+async function openImportPlaylistModal() {
     const modal = document.getElementById("ipod-import-playlist-modal");
     const container = document.getElementById("ipod-import-playlist-options");
     if (modal) {
@@ -1531,18 +1632,97 @@ function openImportPlaylistModal() {
         modal.classList.add("flex");
     }
 
-    // Listar playlists locales disponibles desde la biblioteca de Cicada
     if (container) {
         container.innerHTML = `
-            <div onclick="selectImportPlaylist('Mis Favoritas (Cicada)')" class="flex items-center justify-between p-2 rounded-lg bg-btn hover:bg-btn-hover cursor-pointer">
-                <span class="font-data-sm text-[13px] text-main">Mis Favoritas (Cicada)</span>
-                <span class="font-label-caps text-[10px] text-accent">Importar</span>
-            </div>
-            <div onclick="selectImportPlaylist('Descargas Recientes')" class="flex items-center justify-between p-2 rounded-lg bg-btn hover:bg-btn-hover cursor-pointer">
-                <span class="font-data-sm text-[13px] text-main">Descargas Recientes</span>
-                <span class="font-label-caps text-[10px] text-accent">Importar</span>
+            <div class="flex items-center justify-center py-6 text-muted/40 gap-2">
+                <span class="material-symbols-outlined text-[18px] animate-spin">progress_activity</span>
+                <span class="font-data-sm text-[13px]">Buscando playlists replicadas en la biblioteca...</span>
             </div>
         `;
+    }
+
+    try {
+        let dir = "";
+        try {
+            const resCfg = await fetch('/api/library/config');
+            const cfg = await resCfg.json();
+            dir = cfg.library_dir || "";
+        } catch (e) {}
+
+        if (!dir) {
+            if (container) {
+                container.innerHTML = `
+                    <div class="p-4 text-center text-muted/50 font-data-sm text-[13px]">
+                        No hay una biblioteca de música configurada.
+                    </div>
+                `;
+            }
+            return;
+        }
+
+        const res = await fetch('/api/library/browse?library_dir=' + encodeURIComponent(dir));
+        const data = await res.json();
+        const playlists = data.playlists || [];
+        const tracks = data.tracks || [];
+
+        const trackMap = new Map();
+        tracks.forEach(tr => {
+            if (tr.path) trackMap.set(tr.path, tr);
+        });
+
+        _availableImportPlaylists = playlists.map(pl => {
+            const resolvedTracks = (pl.paths || []).map(p => {
+                const found = trackMap.get(p);
+                if (found) return found;
+                const filename = p.split('/').pop().replace(/\.[^.]+$/, '');
+                return { path: p, title: filename, artist: '', album: '', filetype: (p.split('.').pop() || '').toLowerCase() };
+            });
+            return {
+                name: pl.name,
+                paths: pl.paths || [],
+                tracks: resolvedTracks
+            };
+        });
+
+        if (_availableImportPlaylists.length === 0) {
+            if (container) {
+                container.innerHTML = `
+                    <div class="p-6 text-center text-muted/40 font-data-sm text-[13px]">
+                        No se encontraron playlists replicadas en la biblioteca.
+                    </div>
+                `;
+            }
+            return;
+        }
+
+        if (container) {
+            container.innerHTML = _availableImportPlaylists.map((pl, idx) => {
+                const count = (pl.paths || []).length;
+                return `
+                    <div class="group flex items-center justify-between p-2.5 rounded-lg bg-btn hover:bg-btn-hover transition-colors">
+                        <div class="flex items-center gap-2.5 min-w-0 pr-2">
+                            <span class="material-symbols-outlined text-[20px] text-accent flex-shrink-0">playlist_play</span>
+                            <div class="min-w-0">
+                                <div class="font-data-sm text-[13px] text-main font-medium truncate">${_escapeHtmlIpod(pl.name)}</div>
+                                <div class="font-data-sm text-[11px] text-muted/60">${count} ${count === 1 ? 'canción' : 'canciones'}</div>
+                            </div>
+                        </div>
+                        <button type="button" id="import-pl-btn-${idx}" onclick="selectImportPlaylist(${idx})" class="px-3 py-1 rounded-full bg-accent text-white font-label-caps text-[11px] hover:brightness-110 transition-all flex items-center gap-1 flex-shrink-0">
+                            <span class="material-symbols-outlined text-[13px]">download</span>
+                            <span>Importar</span>
+                        </button>
+                    </div>
+                `;
+            }).join("");
+        }
+    } catch (e) {
+        if (container) {
+            container.innerHTML = `
+                <div class="p-4 text-center text-red-400 font-data-sm text-[13px]">
+                    Error al cargar playlists: ${_escapeHtmlIpod(e.message)}
+                </div>
+            `;
+        }
     }
 }
 
@@ -1554,20 +1734,82 @@ function closeImportPlaylistModal() {
     }
 }
 
-async function selectImportPlaylist(name) {
+async function selectImportPlaylist(idx) {
+    const pl = _availableImportPlaylists[idx];
+    if (!pl) return;
+
+    const btn = document.getElementById(`import-pl-btn-${idx}`);
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `
+            <span class="material-symbols-outlined text-[13px] animate-spin">progress_activity</span>
+            <span>Importando...</span>
+        `;
+        btn.classList.add("pointer-events-none", "opacity-80");
+    }
+
     try {
         const gate = await _ipodWriteGate();
-        if (!gate) return;
-        const { res, data } = await ipodPlaylistsImport({ source_name: name, tracks: [], consent_ack: gate.consentAck });
-        if (!res.ok) { alert(_ipodErr(data)); return; }
-        ipodState.playlists.push({ title: name, count: 0, is_master: false, tracks: [] });
-        updateIpodCategoryCounts();
-        renderIpodPlaylists();
+        if (!gate) {
+            if (btn) {
+                btn.disabled = false;
+                btn.innerHTML = `<span class="material-symbols-outlined text-[13px]">download</span><span>Importar</span>`;
+                btn.classList.remove("pointer-events-none", "opacity-80");
+            }
+            return;
+        }
+
+        const ipodTracks = ipodState.tracks || [];
+        const items = pl.tracks.map(tr => {
+            const normTitle = (tr.title || "").trim().toLowerCase();
+            const normArtist = (tr.artist || "").trim().toLowerCase();
+            const filename = (tr.path || "").split("/").pop();
+
+            const matched = ipodTracks.find(it => {
+                if (normTitle && (it.title || "").trim().toLowerCase() === normTitle) {
+                    if (!normArtist || (it.artist || "").trim().toLowerCase() === normArtist) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+
+            if (matched && matched.db_track_id != null) {
+                return { db_track_id: parseInt(matched.db_track_id, 10) };
+            }
+
+            return {
+                source_path: tr.path,
+                title: tr.title || filename.replace(/\.[^.]+$/, ""),
+                artist: tr.artist || "",
+                album: tr.album || "",
+                filetype: tr.filetype || (filename.split(".").pop() || "").toLowerCase()
+            };
+        });
+
+        const { res, data } = await ipodPlaylistsImport({
+            source_name: pl.name,
+            tracks: items,
+            consent_ack: gate.consentAck
+        });
+
+        if (!res.ok || !data.success) {
+            alert(t("ipod_write_failed") + (data.error || _ipodErr(data)));
+            return;
+        }
+
+        alert(`Playlist '${pl.name}' importada exitosamente al iPod (${items.length} canciones).`);
         closeImportPlaylistModal();
-        selectIpodPlaylist(ipodState.playlists.length - 1);
-        alert(`Playlist '${name}' importada.`);
+        await loadIpodLibrary();
+        await scanIpod();
     } catch (e) {
         alert(t("error_prefix") + e.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `<span class="material-symbols-outlined text-[13px]">download</span><span>Importar</span>`;
+            btn.classList.remove("pointer-events-none", "opacity-80");
+        }
     }
 }
 

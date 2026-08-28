@@ -178,6 +178,7 @@ def create_plan(
     staging_base: Optional[str | Path] = None,
     consent_dir: Optional[str | Path] = None,
     timestamp: Optional[datetime] = None,
+    sync_artwork: Optional[bool] = None,
 ) -> Plan:
     """Construye un plan de escritura dry-run completo en staging off-device.
 
@@ -205,7 +206,7 @@ def create_plan(
     if caps is None:
         caps = capabilities_for_family_gen("iPod Nano", "7th Gen")
 
-    cover_art_formats: tuple[ArtworkFormat, ...] = caps.cover_art_formats if caps else ()
+    cover_art_formats: tuple[ArtworkFormat, ...] = caps.cover_art_formats if (caps and sync_artwork is not False) else ()
     artwork_relpaths = artwork_target_relpaths(cover_art_formats)
 
     consent_needed = not has_music_app_consent(guid_str, consent_dir=consent_dir)
@@ -225,7 +226,7 @@ def create_plan(
 
     mount_path = Path(mount)
     artwork_sources: list[ArtworkSourceTrack] = []
-    if cover_art_formats:
+    if cover_art_formats and sync_artwork is not False:
         for track in tracks:
             audio_path: Optional[Path] = None
             if track.source_path:
