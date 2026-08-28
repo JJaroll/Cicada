@@ -33,12 +33,22 @@ elif sys.platform.startswith("linux"):
     HIDDEN_IMPORTS.append("pystray._xorg")
     HIDDEN_IMPORTS.append("Xlib")
 
+from PyInstaller.utils.hooks import collect_submodules
+
+# run.py usa runpy.run_module("cicada.core.main", ...) — un import
+# dinámico por string que el analizador estático de PyInstaller no
+# puede seguir. Sin esto, el paquete cicada/ completo (y por ende toda
+# la app) queda fuera del bundle: compila sin error, pero el binario
+# final falla con ModuleNotFoundError: No module named 'cicada' al
+# arrancar. Confirmado corriendo un build real.
+CICADA_SUBMODULES = collect_submodules("cicada")
+
 a = Analysis(
     ["run.py"],
     pathex=[],
     binaries=[],
     datas=[("static", "static")],
-    hiddenimports=HIDDEN_IMPORTS,
+    hiddenimports=HIDDEN_IMPORTS + CICADA_SUBMODULES,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
