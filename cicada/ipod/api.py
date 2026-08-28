@@ -792,11 +792,37 @@ def eject_device(force: bool = False) -> EjectResponse:
         return EjectResponse(ejected=False, message=str(exc))
 
 
+def _real_device_name(mount: Path | str | None) -> Optional[str]:
+    """``Title`` de la playlist maestra del ``iTunesCDB`` — el nombre real
+    que el usuario le puso al iPod en Finder/Música/iTunes (no hay un
+    registro de identidad separado en el dispositivo; confirmado contra
+    iOpenPod, cuya función de renombrar el iPod solo reescribe este mismo
+    campo). ``None`` si el dispositivo nunca fue sincronizado (sin
+    iTunesCDB o sin playlist maestra todavía)."""
+    if not mount:
+        return None
+    cdb = Path(mount) / "iPod_Control" / "iTunes" / "iTunesCDB"
+    if not cdb.is_file():
+        return None
+    try:
+        lib = load_ipod_library(str(cdb), mount=str(mount))
+    except Exception:
+        return None
+    if not lib:
+        return None
+    for pl in lib.get("mhlp", []):
+        if pl.get("master_flag"):
+            title = pl.get("Title")
+            return title if title else None
+    return None
+
+
 def _ipod_to_ui(info: DeviceInfo) -> Dict[str, Any]:
     storage_data = _calculate_ipod_storage(info.mount) if info.mount else None
+    generic_name = f"{info.family or 'iPod'} {info.generation or ''}".strip()
     return {
         "mount": str(info.mount),
-        "ipod_name": f"{info.family or 'iPod'} {info.generation or ''}".strip(),
+        "ipod_name": _real_device_name(info.mount) or generic_name,
         "model_family": info.family,
         "generation": info.generation,
         "color": info.color,

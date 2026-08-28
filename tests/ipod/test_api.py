@@ -950,6 +950,33 @@ async def test_api_media_sync_primera_vez_usa_nombre_default(
 
 
 @pytest.mark.asyncio
+async def test_api_scan_muestra_nombre_real_del_dispositivo(
+    async_client: httpx.AsyncClient, mock_ipod_with_custom_name: Path,
+):
+    """ipod_name debe ser el Title real de la playlist maestra (lo que el
+    usuario ve/edita en Finder/Música), no el genérico family+generation
+    — la UI ya lo esperaba (static/js/ipod/ui.js lee ipod.ipod_name) pero
+    el backend siempre mandaba el genérico."""
+    resp = await async_client.get("/api/ipod/scan")
+    assert resp.status_code == 200
+    ip = resp.json()["ipods"][0]
+    assert ip["ipod_name"] == "iPod de Juan"
+
+
+@pytest.mark.asyncio
+async def test_api_scan_sin_sync_previo_usa_nombre_generico(
+    async_client: httpx.AsyncClient, mock_ipod_virgen: Path,
+):
+    """Sin iTunesCDB (dispositivo nunca sincronizado por nadie), no hay
+    Title que leer — cae al genérico family+generation, mismo texto que
+    ya se mostraba antes de este cambio."""
+    resp = await async_client.get("/api/ipod/scan")
+    assert resp.status_code == 200
+    ip = resp.json()["ipods"][0]
+    assert ip["ipod_name"] == "iPod Nano 7th Gen"
+
+
+@pytest.mark.asyncio
 async def test_api_media_sync_video_reusa_pipeline_de_artwork_existente(
     async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path,
 ):
