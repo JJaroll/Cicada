@@ -822,60 +822,6 @@ async def get():
                             <p class="font-data-sm text-[13px] text-muted/40" data-i18n="library_configure_hint">Configura la carpeta de tu biblioteca arriba para verla aquí.</p>
                         </div>
                     </div>
-
-                    <!-- Audiolibros: explorar carpeta -->
-                    <div id="library-section-audiobooks" class="glass-card p-5 flex flex-col gap-3">
-                        <div class="flex items-center gap-2">
-                            <span class="material-symbols-outlined text-accent text-[20px]">menu_book</span>
-                            <span class="font-label-caps text-[12px] tracking-widest text-muted/60" data-i18n="audiobooks_title">Audiolibros</span>
-                        </div>
-                        <div class="flex gap-2">
-                            <input type="text" id="audiobook_browse_dir" placeholder="/Users/usuario/Audiolibros" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]"/>
-                            <button type="button" onclick="pickFolder('audiobook_browse_dir')" class="px-3 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors" data-i18n="common_choose">Elegir</button>
-                            <button type="button" onclick="scanAudiobookFolder()" class="px-4 rounded-lg bg-accent text-white font-label-caps text-[11px] hover:brightness-110 transition-all" data-i18n="audiobooks_scan_btn">Buscar Audiolibros</button>
-                        </div>
-                        <div class="flex items-center gap-2 flex-wrap">
-                            <button type="button" id="audiobook-add-ipod-btn" onclick="onAudiobookIpodButton()" class="hidden items-center gap-1 px-3 py-1 rounded-full bg-secondary/15 text-secondary font-label-caps text-[11px] hover:bg-secondary/25 transition-colors">
-                                <span class="material-symbols-outlined text-[15px]">add_to_queue</span>
-                                <span id="audiobook-add-ipod-label" data-i18n="library_add_to_ipod">Agregar a iPod</span>
-                            </button>
-                            <button type="button" id="audiobook-select-cancel-btn" onclick="exitAudiobookSelectMode()" class="hidden items-center px-3 py-1 rounded-full bg-btn text-muted font-label-caps text-[11px] hover:bg-btn-hover transition-colors" data-i18n="common_cancel">Cancelar</button>
-                            <span class="ml-auto font-data-sm text-[12px] text-muted/40" id="audiobook-count"></span>
-                        </div>
-                        <div class="flex flex-col gap-1" id="audiobook-browser">
-                            <p class="font-data-sm text-[13px] text-muted/40" data-i18n="audiobooks_hint">Elegí una carpeta para buscar archivos .m4b, .m4a, .mp3 o .aac.</p>
-                        </div>
-                    </div>
-
-                    <!-- Podcasts: suscribir, descargar y agregar episodios -->
-                    <div id="library-section-podcasts" class="glass-card p-5 flex flex-col gap-3">
-                        <div class="flex items-center gap-2">
-                            <span class="material-symbols-outlined text-accent text-[20px]">podcasts</span>
-                            <span class="font-label-caps text-[12px] tracking-widest text-muted/60" data-i18n="podcasts_title">Podcasts</span>
-                        </div>
-                        <div class="flex gap-2">
-                            <input type="text" id="podcast_feed_url" placeholder="https://ejemplo.com/feed.xml" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]"/>
-                            <button type="button" onclick="subscribePodcastFeed()" class="px-4 rounded-lg bg-accent text-white font-label-caps text-[11px] hover:brightness-110 transition-all" data-i18n="podcasts_subscribe_btn">Suscribirse</button>
-                        </div>
-                        <div class="grid grid-cols-2 gap-3">
-                            <div class="flex flex-col gap-1 max-h-48 overflow-y-auto custom-scrollbar" id="podcast-feeds-list">
-                                <p class="font-data-sm text-[13px] text-muted/40 p-2" data-i18n="podcasts_no_subscriptions">Todavía no hay podcasts suscriptos.</p>
-                            </div>
-                            <div class="flex flex-col gap-2">
-                                <div class="flex items-center gap-2 flex-wrap">
-                                    <span class="font-data-sm text-[13px] text-main truncate" id="podcast-episodes-title"></span>
-                                    <button type="button" id="podcast-add-ipod-btn" onclick="onPodcastIpodButton()" class="hidden ml-auto items-center gap-1 px-3 py-1 rounded-full bg-secondary/15 text-secondary font-label-caps text-[11px] hover:bg-secondary/25 transition-colors">
-                                        <span class="material-symbols-outlined text-[15px]">add_to_queue</span>
-                                        <span id="podcast-add-ipod-label" data-i18n="library_add_to_ipod">Agregar a iPod</span>
-                                    </button>
-                                    <button type="button" id="podcast-select-cancel-btn" onclick="exitPodcastSelectMode()" class="hidden items-center px-3 py-1 rounded-full bg-btn text-muted font-label-caps text-[11px] hover:bg-btn-hover transition-colors" data-i18n="common_cancel">Cancelar</button>
-                                </div>
-                                <div class="flex flex-col gap-1 max-h-48 overflow-y-auto custom-scrollbar" id="podcast-episodes-list">
-                                    <p class="font-data-sm text-[13px] text-muted/40 p-2" data-i18n="podcasts_pick_feed_hint">Suscribite a un feed para ver sus episodios.</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Vista: Sincronizar iPod -->
@@ -1152,44 +1098,102 @@ async def get():
                             </div>
 
                             <!-- VISTA 5: PODCASTS (2 Columnas: Podcasts + Episodios) -->
-                            <div id="ipod-view-podcasts" class="hidden flex gap-4 flex-1 overflow-hidden">
-                                <div class="w-[240px] flex-shrink-0 flex flex-col gap-2 border-r border-theme pr-3 overflow-hidden">
-                                    <h4 class="font-label-caps text-[11px] text-secondary uppercase tracking-wider">Podcasts</h4>
-                                    <div id="ipod-podcasts-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
-                                    <div class="flex flex-col gap-1.5 pt-2 border-t border-theme mt-auto">
-                                        <button type="button" onclick="handleIpodAddAction()" class="w-full py-2 bg-accent text-white rounded-lg font-label-caps text-[11px] hover:brightness-110 transition-all flex items-center justify-center gap-1">
-                                            <span class="material-symbols-outlined text-[16px]">add</span>
-                                            <span>+ Suscribir Podcast</span>
-                                        </button>
+                            <div id="ipod-view-podcasts" class="hidden flex-col gap-4 flex-1 overflow-y-auto custom-scrollbar">
+                                <div class="flex gap-4" style="min-height: 260px;">
+                                    <div class="w-[240px] flex-shrink-0 flex flex-col gap-2 border-r border-theme pr-3 overflow-hidden">
+                                        <h4 class="font-label-caps text-[11px] text-secondary uppercase tracking-wider">Podcasts</h4>
+                                        <div id="ipod-podcasts-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
+                                        <div class="flex flex-col gap-1.5 pt-2 border-t border-theme mt-auto">
+                                            <button type="button" onclick="handleIpodAddAction()" class="w-full py-2 bg-accent text-white rounded-lg font-label-caps text-[11px] hover:brightness-110 transition-all flex items-center justify-center gap-1">
+                                                <span class="material-symbols-outlined text-[16px]">add</span>
+                                                <span>+ Suscribir Podcast</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="flex-1 flex flex-col gap-2 overflow-hidden min-w-0">
+                                        <div class="flex items-center justify-between pb-1">
+                                            <h4 id="ipod-podcast-title" class="font-label-caps text-[13px] text-main font-semibold truncate">Episodios</h4>
+                                            <span id="ipod-podcast-count" class="font-data-sm text-[12px] text-muted/60">0 episodios</span>
+                                        </div>
+                                        <div id="ipod-podcast-episodes-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
                                     </div>
                                 </div>
-                                <div class="flex-1 flex flex-col gap-2 overflow-hidden min-w-0">
-                                    <div class="flex items-center justify-between pb-1">
-                                        <h4 id="ipod-podcast-title" class="font-label-caps text-[13px] text-main font-semibold truncate">Episodios</h4>
-                                        <span id="ipod-podcast-count" class="font-data-sm text-[12px] text-muted/60">0 episodios</span>
+
+                                <!-- Agregar más: suscribir/descargar/agregar al carrito (movido de Biblioteca) -->
+                                <div class="glass-card p-5 flex flex-col gap-3 border-t border-theme pt-4">
+                                    <div class="flex items-center gap-2">
+                                        <span class="material-symbols-outlined text-accent text-[20px]">podcasts</span>
+                                        <span class="font-label-caps text-[12px] tracking-widest text-muted/60" data-i18n="podcasts_title">Podcasts</span>
                                     </div>
-                                    <div id="ipod-podcast-episodes-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
+                                    <div class="flex gap-2">
+                                        <input type="text" id="podcast_feed_url" placeholder="https://ejemplo.com/feed.xml" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]"/>
+                                        <button type="button" onclick="subscribePodcastFeed()" class="px-4 rounded-lg bg-accent text-white font-label-caps text-[11px] hover:brightness-110 transition-all" data-i18n="podcasts_subscribe_btn">Suscribirse</button>
+                                    </div>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div class="flex flex-col gap-1 max-h-48 overflow-y-auto custom-scrollbar" id="podcast-feeds-list">
+                                            <p class="font-data-sm text-[13px] text-muted/40 p-2" data-i18n="podcasts_no_subscriptions">Todavía no hay podcasts suscriptos.</p>
+                                        </div>
+                                        <div class="flex flex-col gap-2">
+                                            <div class="flex items-center gap-2 flex-wrap">
+                                                <span class="font-data-sm text-[13px] text-main truncate" id="podcast-episodes-title"></span>
+                                                <button type="button" id="podcast-add-ipod-btn" onclick="onPodcastIpodButton()" class="hidden ml-auto items-center gap-1 px-3 py-1 rounded-full bg-secondary/15 text-secondary font-label-caps text-[11px] hover:bg-secondary/25 transition-colors">
+                                                    <span class="material-symbols-outlined text-[15px]">add_to_queue</span>
+                                                    <span id="podcast-add-ipod-label" data-i18n="library_add_to_ipod">Agregar a iPod</span>
+                                                </button>
+                                                <button type="button" id="podcast-select-cancel-btn" onclick="exitPodcastSelectMode()" class="hidden items-center px-3 py-1 rounded-full bg-btn text-muted font-label-caps text-[11px] hover:bg-btn-hover transition-colors" data-i18n="common_cancel">Cancelar</button>
+                                            </div>
+                                            <div class="flex flex-col gap-1 max-h-48 overflow-y-auto custom-scrollbar" id="podcast-episodes-list">
+                                                <p class="font-data-sm text-[13px] text-muted/40 p-2" data-i18n="podcasts_pick_feed_hint">Suscribite a un feed para ver sus episodios.</p>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 
                             <!-- VISTA 6: AUDIOLIBROS (2 Columnas: Libros + Capítulos) -->
-                            <div id="ipod-view-audiobooks" class="hidden flex gap-4 flex-1 overflow-hidden">
-                                <div class="w-[240px] flex-shrink-0 flex flex-col gap-2 border-r border-theme pr-3 overflow-hidden">
-                                    <h4 class="font-label-caps text-[11px] text-secondary uppercase tracking-wider">Audiolibros</h4>
-                                    <div id="ipod-audiobooks-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
-                                    <div class="flex flex-col gap-1.5 pt-2 border-t border-theme mt-auto">
-                                        <button type="button" onclick="handleIpodAddAction()" class="w-full py-2 bg-accent text-white rounded-lg font-label-caps text-[11px] hover:brightness-110 transition-all flex items-center justify-center gap-1">
-                                            <span class="material-symbols-outlined text-[16px]">add</span>
-                                            <span>+ Agregar Audiolibro</span>
-                                        </button>
+                            <div id="ipod-view-audiobooks" class="hidden flex-col gap-4 flex-1 overflow-y-auto custom-scrollbar">
+                                <div class="flex gap-4" style="min-height: 260px;">
+                                    <div class="w-[240px] flex-shrink-0 flex flex-col gap-2 border-r border-theme pr-3 overflow-hidden">
+                                        <h4 class="font-label-caps text-[11px] text-secondary uppercase tracking-wider">Audiolibros</h4>
+                                        <div id="ipod-audiobooks-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
+                                        <div class="flex flex-col gap-1.5 pt-2 border-t border-theme mt-auto">
+                                            <button type="button" onclick="handleIpodAddAction()" class="w-full py-2 bg-accent text-white rounded-lg font-label-caps text-[11px] hover:brightness-110 transition-all flex items-center justify-center gap-1">
+                                                <span class="material-symbols-outlined text-[16px]">add</span>
+                                                <span>+ Agregar Audiolibro</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    <div class="flex-1 flex flex-col gap-2 overflow-hidden min-w-0">
+                                        <div class="flex items-center justify-between pb-1">
+                                            <h4 id="ipod-audiobook-title" class="font-label-caps text-[13px] text-main font-semibold truncate">Capítulos</h4>
+                                            <span id="ipod-audiobook-count" class="font-data-sm text-[12px] text-muted/60">0 pistas</span>
+                                        </div>
+                                        <div id="ipod-audiobook-chapters-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
                                     </div>
                                 </div>
-                                <div class="flex-1 flex flex-col gap-2 overflow-hidden min-w-0">
-                                    <div class="flex items-center justify-between pb-1">
-                                        <h4 id="ipod-audiobook-title" class="font-label-caps text-[13px] text-main font-semibold truncate">Capítulos</h4>
-                                        <span id="ipod-audiobook-count" class="font-data-sm text-[12px] text-muted/60">0 pistas</span>
+
+                                <!-- Agregar más: explorar carpeta/agregar al carrito (movido de Biblioteca) -->
+                                <div class="glass-card p-5 flex flex-col gap-3 border-t border-theme pt-4">
+                                    <div class="flex items-center gap-2">
+                                        <span class="material-symbols-outlined text-accent text-[20px]">menu_book</span>
+                                        <span class="font-label-caps text-[12px] tracking-widest text-muted/60" data-i18n="audiobooks_title">Audiolibros</span>
                                     </div>
-                                    <div id="ipod-audiobook-chapters-list" class="flex-1 overflow-y-auto custom-scrollbar flex flex-col gap-1"></div>
+                                    <div class="flex gap-2">
+                                        <input type="text" id="audiobook_browse_dir" placeholder="/Users/usuario/Audiolibros" class="cicada-input flex-1 rounded-lg px-3 py-2 text-[14px]"/>
+                                        <button type="button" onclick="pickFolder('audiobook_browse_dir')" class="px-3 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] transition-colors" data-i18n="common_choose">Elegir</button>
+                                        <button type="button" onclick="scanAudiobookFolder()" class="px-4 rounded-lg bg-accent text-white font-label-caps text-[11px] hover:brightness-110 transition-all" data-i18n="audiobooks_scan_btn">Buscar Audiolibros</button>
+                                    </div>
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <button type="button" id="audiobook-add-ipod-btn" onclick="onAudiobookIpodButton()" class="hidden items-center gap-1 px-3 py-1 rounded-full bg-secondary/15 text-secondary font-label-caps text-[11px] hover:bg-secondary/25 transition-colors">
+                                            <span class="material-symbols-outlined text-[15px]">add_to_queue</span>
+                                            <span id="audiobook-add-ipod-label" data-i18n="library_add_to_ipod">Agregar a iPod</span>
+                                        </button>
+                                        <button type="button" id="audiobook-select-cancel-btn" onclick="exitAudiobookSelectMode()" class="hidden items-center px-3 py-1 rounded-full bg-btn text-muted font-label-caps text-[11px] hover:bg-btn-hover transition-colors" data-i18n="common_cancel">Cancelar</button>
+                                        <span class="ml-auto font-data-sm text-[12px] text-muted/40" id="audiobook-count"></span>
+                                    </div>
+                                    <div class="flex flex-col gap-1" id="audiobook-browser">
+                                        <p class="font-data-sm text-[13px] text-muted/40" data-i18n="audiobooks_hint">Elegí una carpeta para buscar archivos .m4b, .m4a, .mp3 o .aac.</p>
+                                    </div>
                                 </div>
                             </div>
 
@@ -1390,7 +1394,7 @@ async def get():
         <script src="/static/js/player.js?v=2.2.0"></script>
         <script src="/static/js/ipod/api.js?v=2.2.1"></script>
         <script src="/static/js/ipod/render.js?v=2.2.4"></script>
-        <script src="/static/js/ipod/ui.js?v=2.2.5"></script>
+        <script src="/static/js/ipod/ui.js?v=2.2.6"></script>
         <script>
             // Inicialización de la UI
             applyLanguage(currentLang);

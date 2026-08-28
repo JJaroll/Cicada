@@ -1140,21 +1140,24 @@ function handleIpodAddAction() {
             _mockAddVideo();
             break;
         case "podcasts":
-            goToLibrarySection("library-section-podcasts");
+            focusIpodAddField("podcast_feed_url");
             break;
         case "audiobooks":
-            goToLibrarySection("library-section-audiobooks");
+            focusIpodAddField("audiobook_browse_dir");
             break;
     }
 }
 
-// Podcasts/Audiolibros se gestionan en Biblioteca (mismo lugar donde
-// música ya se prepara antes de mandarla al iPod) — evita mantener un
-// segundo renderizado del mismo flujo de suscripción/exploración acá.
-function goToLibrarySection(sectionId) {
-    showView("library");
-    const section = document.getElementById(sectionId);
-    if (section) section.scrollIntoView({ behavior: "smooth", block: "start" });
+// El botón "+" de Podcasts/Audiolibros no dispara la acción directo —
+// en ese momento el campo todavía está vacío (sin URL, sin carpeta
+// elegida), así que no habría nada que ejecutar. Hace foco (y scroll si
+// el bloque de "agregar más" quedó fuera del viewport) para que el
+// usuario complete el dato antes de continuar.
+function focusIpodAddField(fieldId) {
+    const field = document.getElementById(fieldId);
+    if (!field) return;
+    field.scrollIntoView({ behavior: "smooth", block: "center" });
+    field.focus();
 }
 
 function _mockAddVideo() {
