@@ -2563,40 +2563,13 @@ la transición `downloaded → on_ipod` en SQLite. **No probado contra
 hardware real** — no había un iPod conectado durante la sesión de
 implementación.
 
-**Etapa D — matching automático / gestión de "próximo episodio"
-(`PodcastTrackMatcher`, `build_podcast_sync_plan`, `build_podcast_managed_plan`
-de `podcast_sync.py`): evaluada y diferida, no descartada.**
+**Etapa D — matching automático / gestión de "próximo episodio": DESCARTADA (2026-08-28), no se va a implementar.**
 
-- **Qué es:** la lógica de iOpenPod que decide automáticamente, sin
-  intervención del usuario, qué episodio ocupa cada "slot" de un podcast
-  en el iPod (`fill_mode="newest"` vs `"next"` — el episodio más
-  reciente, o el siguiente no escuchado), cuándo liberar un slot cuando
-  un episodio se marcó como escuchado, y el matching episodio↔track ya
-  sincronizado para no re-descargar/re-copiar lo que ya está en el
-  dispositivo.
-- **Por qué no es un port directo:** `PodcastTrackMatcher` recibe un
-  objeto `pc_track` con atributos (`.is_podcast`, etc.) que son del
-  modelo interno de iOpenPod, no de `TrackInfo`/`MediaTrackInput` de
-  Cicada — adaptarlo es un rediseño contra el modelo de datos real de
-  Cicada, no una copia con find-and-replace de nombres.
-- **Por qué se difiere (criterio, no falta de tiempo o código):** B+C ya
-  dan un flujo de podcasts genuinamente completo y usable — suscribir,
-  descargar, elegir manualmente qué sincronizar. D es una mejora de
-  conveniencia (automatizar esa elección manual), no una capacidad
-  faltante; nadie queda bloqueado sin ella. Además, diseñar bien
-  `fill_mode`/cantidad de slots/cuándo liberar un slot depende de ver
-  cómo la gente usa el flujo manual en la práctica — hoy, con B+C recién
-  implementadas, no hay ese uso real todavía. Es más fácil acertar el
-  diseño de automatización después de observar el flujo manual que
-  adivinarlo ahora solo porque el contexto de `podcast_sync.py` está
-  fresco. Mismo criterio aplicado con la investigación de Fotos (arriba
-  en este documento): documentada para retomar con intención, no
-  descartada por falta de interés.
-- **Primer paso sugerido al retomar:** no empezar por el código de
-  iOpenPod — empezar por instrumentar/preguntar cómo los primeros
-  usuarios de B+C gestionan sus slots a mano (¿siempre bajan el más
-  nuevo? ¿vuelven a marcar "escuchado" activamente, o prefieren que
-  Cicada lo infiera de `play_count`/`last_played`, que hoy ni siquiera
-  se trackean para podcasts?), y recién ahí decidir si `fill_mode`
-  "newest"/"next" de iOpenPod alcanza o hace falta algo distinto.
+Era la lógica de iOpenPod (`PodcastTrackMatcher`, `build_podcast_sync_plan`,
+`build_podcast_managed_plan` de `podcast_sync.py`) para elegir
+automáticamente qué episodio ocupa cada "slot" de un podcast en el iPod.
+Motivo del descarte: conveniencia no solicitada — B+C (suscribir,
+descargar, elegir manualmente qué sincronizar) ya son un flujo completo
+y usable, y el costo de rediseñarla contra el modelo de datos real de
+Cicada (no es un port directo) supera el beneficio esperado.
 
