@@ -841,6 +841,114 @@ async def test_api_media_sync_podcast_respeta_artist_album_explicitos(
     assert track.get("Album") == "Temporada 2"
 
 
+@pytest.fixture
+def mock_ipod_with_custom_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Igual que mock_ipod, pero la playlist maestra inicial ya tiene un
+    nombre real puesto por el usuario (simulando Finder/Música) — para
+    verificar que un sync de Cicada no lo pisa con el genérico 'iPod'."""
+    mount = tmp_path / "ipod_mount"
+    device_dir = mount / "iPod_Control" / "Device"
+    device_dir.mkdir(parents=True, exist_ok=True)
+    (device_dir / "SysInfoExtended").write_bytes(plistlib.dumps({
+        "FireWireGUID": GUID_STR, "FamilyID": 18,
+        "SerialNumber": "C17X1234F19R", "ModelNumStr": "MD481",
+    }))
+    itunes_dir = mount / "iPod_Control" / "iTunes"
+    itlp_dir = itunes_dir / "iTunes Library.itlp"
+    itlp_dir.mkdir(parents=True, exist_ok=True)
+
+    caps = capabilities_for_family_gen("iPod Nano", "7th Gen")
+    dev = DeviceInfo(
+        mount=mount, firewire_guid=GUID_STR, family="iPod Nano",
+        generation="7th Gen", family_id=18, checksum=ChecksumType.HASHAB,
+        guid_provenance="disk", capabilities=caps,
+    )
+    init_tracks = [
+        TrackInfo(title="Initial Track", artist="Initial Artist", album="Initial Album",
+                  location=":iPod_Control:Music:F00:INIT.mp3", db_track_id=100),
+    ]
+    init_plan = create_plan(mount, init_tracks, device_info=dev, master_playlist_name="iPod de Juan")
+
+    (itunes_dir / "iTunesCDB").write_bytes((init_plan.staging_dir / "iTunesCDB").read_bytes())
+    for fn in ("Library.itdb", "Locations.itdb", "Locations.itdb.cbk", "Dynamic.itdb", "Extras.itdb", "Genius.itdb"):
+        (itlp_dir / fn).write_bytes((init_plan.staging_dir / "iTunes Library.itlp" / fn).read_bytes())
+
+    monkeypatch.setattr("cicada.ipod.device.write_guard._candidate_mounts", lambda: [mount])
+    monkeypatch.setenv("CICADA_HOME", str(tmp_path / "cicada_home"))
+    return mount
+
+
+@pytest.mark.asyncio
+async def test_api_media_sync_preserva_nombre_real_del_dispositivo(
+    async_client: httpx.AsyncClient, mock_ipod_with_custom_name: Path, tmp_path: Path,
+):
+    """Bug de pérdida de datos activo: MediaSyncRequest no expone
+    master_playlist_name, así que sync_media_to_ipod() usaba siempre el
+    default "iPod" — cada sync de Cicada pisaba en silencio un nombre
+    real (p. ej. "iPod de Juan", puesto por el usuario en Finder/Música)
+    con el genérico. Fix: si el caller no especifica un nombre explícito
+    (caso real hoy, sin UI de rename), se preserva el Title de la
+    playlist maestra ya existente — lib ya se parsea para preservar
+    tracks, sin lectura extra. Round-trip real: sync vía el endpoint
+    HTTP tal como lo hace el frontend, releyendo el iTunesCDB instalado."""
+    src = tmp_path / "cancion.mp3"
+    src.write_bytes(b"AUDIO-BYTES" * 50)
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [{"source_path": str(src), "title": "Cancion Nueva", "artist": "X"}],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["success"] is True
+
+    lib = load_ipod_library(
+        str(mock_ipod_with_custom_name / "iPod_Control" / "iTunes" / "iTunesCDB"),
+        mount=str(mock_ipod_with_custom_name),
+    )
+    master = next(pl for pl in lib["mhlp"] if pl.get("master_flag"))
+    assert master.get("Title") == "iPod de Juan"
+
+
+@pytest.fixture
+def mock_ipod_virgen(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Dispositivo sin iTunesCDB previo — primera sincronización real,
+    sin playlist maestra que preservar."""
+    mount = tmp_path / "ipod_mount"
+    device_dir = mount / "iPod_Control" / "Device"
+    device_dir.mkdir(parents=True, exist_ok=True)
+    (device_dir / "SysInfoExtended").write_bytes(plistlib.dumps({
+        "FireWireGUID": GUID_STR, "FamilyID": 18,
+        "SerialNumber": "C17X1234F19R", "ModelNumStr": "MD481",
+    }))
+    (mount / "iPod_Control" / "iTunes" / "iTunes Library.itlp").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr("cicada.ipod.device.write_guard._candidate_mounts", lambda: [mount])
+    monkeypatch.setenv("CICADA_HOME", str(tmp_path / "cicada_home"))
+    return mount
+
+
+@pytest.mark.asyncio
+async def test_api_media_sync_primera_vez_usa_nombre_default(
+    async_client: httpx.AsyncClient, mock_ipod_virgen: Path, tmp_path: Path,
+):
+    """Sin iTunesCDB previo (primera sync real de un dispositivo nunca
+    tocado por Cicada), no hay Title que preservar — debe caer al
+    default "iPod", no romper ni dejar la maestra sin nombre."""
+    src = tmp_path / "cancion.mp3"
+    src.write_bytes(b"AUDIO-BYTES" * 50)
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [{"source_path": str(src), "title": "Primera Cancion", "artist": "X"}],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["success"] is True
+
+    lib = load_ipod_library(
+        str(mock_ipod_virgen / "iPod_Control" / "iTunes" / "iTunesCDB"),
+        mount=str(mock_ipod_virgen),
+    )
+    master = next(pl for pl in lib["mhlp"] if pl.get("master_flag"))
+    assert master.get("Title") == "iPod"
+
+
 @pytest.mark.asyncio
 async def test_api_media_sync_video_reusa_pipeline_de_artwork_existente(
     async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path,

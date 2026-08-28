@@ -538,6 +538,23 @@ def _build_playlists(mount, lib, sent_playlists, src_to_dbid):
     return regular, smart
 
 
+def _existing_master_playlist_name(lib) -> str | None:
+    """``Title`` de la playlist maestra actual del dispositivo, si existe.
+
+    El "nombre del iPod" que el usuario ve/edita en Finder/Música/iTunes
+    ES este campo — no hay un registro de identidad separado en el
+    dispositivo (confirmado contra iOpenPod: su función de renombrar el
+    iPod solo reescribe este ``Title``). ``lib`` ya viene parseado por el
+    caller (preservación de tracks existentes), sin lectura extra."""
+    if not lib:
+        return None
+    for pl in lib.get("mhlp", []):
+        if pl.get("master_flag"):
+            title = pl.get("Title")
+            return title if title else None
+    return None
+
+
 def sync_media_to_ipod(
     mount: str | Path,
     new_tracks,
@@ -545,7 +562,7 @@ def sync_media_to_ipod(
     device_info,
     consent_ack: bool = False,
     keep_existing: bool = True,
-    master_playlist_name: str = "iPod",
+    master_playlist_name: str | None = None,
     playlists=None,
 ):
     """Copia el audio de ``new_tracks`` (cada uno con ``source_path`` local) al iPod
@@ -553,6 +570,15 @@ def sync_media_to_ipod(
 
     ``playlists``: lista opcional de ``{"name", "source_paths"}`` a **crear** en el
     iPod. Las playlists existentes se **preservan** siempre (round-trip).
+
+    ``master_playlist_name``: si es ``None`` (caso normal — hoy no hay UI de
+    rename), se preserva el nombre que el dispositivo ya tenía puesto (leído
+    del ``Title`` de la playlist maestra existente, sin costo extra: ya se
+    parsea el ``iTunesCDB`` para preservar tracks). Sin eso, cada sync pisaba
+    en silencio un nombre real (p. ej. "iPod de Juan", puesto por el usuario
+    en Finder/Música) con el genérico "iPod" — pérdida de datos activa.
+    Si el dispositivo nunca tuvo una playlist maestra (primera sync), o el
+    caller pasa un nombre explícito, se usa ese valor.
 
     Orden: asigna locations → ``create_plan`` (valida seguridad; no copia si falla)
     → copia audio → ``apply`` (instala la base con su backup+rollback). En cualquier
@@ -582,6 +608,9 @@ def sync_media_to_ipod(
             existing = [track_dict_to_info(t) for t in lib.get("mhlt", [])]
             _heal_track_lengths(mount, existing)
     full = existing + new_tracks
+
+    if master_playlist_name is None:
+        master_playlist_name = _existing_master_playlist_name(lib) or "iPod"
 
     reg_playlists, smart_playlists = _build_playlists(mount, lib, playlists, src_to_dbid)
 
