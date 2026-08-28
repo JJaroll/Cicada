@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from cicada.podcasts import download_progress
+from cicada.podcasts.artwork import embed_artwork
 from cicada.podcasts.downloader import DownloadCancelled, episode_cache_dir, download_episode
 from cicada.podcasts.feed_parser import fetch_feed
 from cicada.podcasts.models import (
@@ -170,7 +171,7 @@ def _progress_schema(guid: str, persisted_status: str) -> DownloadProgressSchema
     )
 
 
-async def _run_download(feed_url: str, guid: str, audio_url: str) -> None:
+async def _run_download(feed_url: str, guid: str, audio_url: str, artwork_url: str) -> None:
     store = SubscriptionStore()
     progress = download_progress.get(guid)
     assert progress is not None  # start() ya se llamó en el endpoint antes de crear la tarea
@@ -183,6 +184,12 @@ async def _run_download(feed_url: str, guid: str, audio_url: str) -> None:
         dest_path = await download_episode(
             audio_url, guid, episode_cache_dir(feed_url), progress_cb=on_progress
         )
+        try:
+            await embed_artwork(dest_path, artwork_url)
+        except Exception as exc:
+            # El audio ya está descargado y es válido — sin carátula sigue
+            # siendo un episodio usable, no debe fallar la descarga entera.
+            log.debug("No se pudo embeber artwork para %s: %s", guid, exc)
         store.set_episode_status(
             guid, status=STATUS_DOWNLOADED, downloaded_path=dest_path, clear_last_error=True
         )
@@ -212,9 +219,12 @@ async def download_episode_endpoint(feed_url: str, guid: str) -> DownloadProgres
     if download_progress.is_active(guid):
         return _progress_schema(guid, episode.status)
 
+    feed = store.get_feed(feed_url)
+    artwork_url = feed.artwork_url if feed is not None else ""
+
     store.set_episode_status(guid, status=STATUS_DOWNLOADING, clear_last_error=True)
     download_progress.start(guid)
-    asyncio.create_task(_run_download(feed_url, guid, episode.audio_url))
+    asyncio.create_task(_run_download(feed_url, guid, episode.audio_url, artwork_url))
 
     return _progress_schema(guid, STATUS_DOWNLOADING)
 
