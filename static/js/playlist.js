@@ -19,13 +19,20 @@ async function loadSpotifyPlaylists() {
         }
 
         listEl.innerHTML = userPlaylists.map(function(p, i) {
-            let cover = p.image_url
-                ? '<img src="' + p.image_url + '" class="w-10 h-10 rounded object-cover bg-input flex-shrink-0"/>'
-                : '<div class="w-10 h-10 rounded bg-input flex items-center justify-center flex-shrink-0"><span class="material-symbols-outlined text-[18px] text-muted/40">queue_music</span></div>';
-            return '<div class="playlist-item flex items-center gap-3 bg-btn border border-theme rounded-lg p-2 cursor-pointer hover:bg-btn-hover transition-colors" data-index="' + i + '" onclick="selectPlaylist(' + i + ')">' +
+            let cover;
+            let isLiked = (p.is_liked || p.id === "liked-songs");
+            if (isLiked) {
+                cover = '<div class="w-10 h-10 rounded bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 flex items-center justify-center flex-shrink-0 shadow-sm"><span class="material-symbols-outlined text-[20px] text-white">favorite</span></div>';
+            } else if (p.image_url) {
+                cover = '<img src="' + p.image_url + '" class="w-10 h-10 rounded object-cover bg-input flex-shrink-0"/>';
+            } else {
+                cover = '<div class="w-10 h-10 rounded bg-input flex items-center justify-center flex-shrink-0"><span class="material-symbols-outlined text-[18px] text-muted/40">queue_music</span></div>';
+            }
+            let displayName = isLiked ? t("playlists_liked_songs") : p.name;
+            return '<div class="playlist-item flex items-center gap-3 bg-btn border border-theme rounded-lg p-2 cursor-pointer hover:bg-btn-hover transition-colors' + (isLiked ? ' border-primary/30' : '') + '" data-index="' + i + '" onclick="selectPlaylist(' + i + ')">' +
                 cover +
                 '<div class="overflow-hidden flex-1">' +
-                '<p class="font-data-sm text-[14px] truncate">' + escapeHtml(p.name) + '</p>' +
+                '<p class="font-data-sm text-[14px] truncate' + (isLiked ? ' font-medium text-white' : '') + '">' + escapeHtml(displayName) + '</p>' +
                 '<p class="font-label-caps text-[11px] text-muted/40 truncate">' + p.track_count + t("playlists_track_count_suffix") + '</p>' +
                 '</div></div>';
         }).join("");
@@ -42,10 +49,11 @@ async function selectPlaylist(index) {
     let el = document.querySelector('.playlist-item[data-index="' + index + '"]');
     if (el) el.classList.add("ring-2", "ring-primary");
 
-    currentPlaylistName = playlist.name;
+    let isLiked = (playlist.is_liked || playlist.id === "liked-songs");
+    currentPlaylistName = isLiked ? t("playlists_liked_songs") : playlist.name;
     let titleEl = document.getElementById("playlist-detail-title");
     titleEl.removeAttribute("data-i18n");
-    titleEl.textContent = playlist.name;
+    titleEl.textContent = currentPlaylistName;
 
     let trackListEl = document.getElementById("playlist-track-list");
     trackListEl.innerHTML = '<p class="font-data-sm text-[13px] text-muted/40">' + t("playlists_loading_songs") + '</p>';
@@ -59,11 +67,13 @@ async function selectPlaylist(index) {
     document.getElementById("generate-m3u8-controls").classList.remove("flex");
     document.getElementById("replicate-empty-hint").classList.remove("hidden");
 
+    let resolveUrl = isLiked ? 'https://open.spotify.com/collection/tracks' : ('https://open.spotify.com/playlist/' + playlist.id);
+
     try {
         let res = await fetch('/api/spotify/resolve', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({url: 'https://open.spotify.com/playlist/' + playlist.id})
+            body: JSON.stringify({url: resolveUrl})
         });
         let data = await res.json();
         if (!res.ok) throw new Error(data.detail || t("error_unknown"));

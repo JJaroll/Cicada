@@ -17,7 +17,10 @@ from cicada.core.app_paths import get_app_data_dir
 logger = logging.getLogger(__name__)
 
 _SPOTIFY_URL_RE = re.compile(
-    r"open\.spotify\.com/(?:intl-\w+/)?(track|album|playlist)/([a-zA-Z0-9]+)"
+    r"open\.spotify\.com/(?:intl-\w+/)?(track|album|playlist|collection)(?:/([a-zA-Z0-9_-]+))?"
+)
+_SPOTIFY_URI_RE = re.compile(
+    r"spotify:(track|album|playlist|collection|user:[^:]+:collection)(?::([a-zA-Z0-9_-]+))?"
 )
 
 
@@ -26,14 +29,14 @@ class DownloadManager:
     Gestor de descargas de Cicada.
     Resuelve tracks/álbumes/playlists de Spotify vía el flujo OAuth2
     "Authorization Code" (login del usuario, requerido por Spotify para leer
-    playlists privadas/colaborativas) contra la API oficial, y descarga su
-    audio correspondiente desde YouTube Music.
+    playlists privadas/colaborativas y canciones guardadas) contra la API oficial,
+    y descarga su audio correspondiente desde YouTube Music.
     """
 
     AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
     TOKEN_URL = "https://accounts.spotify.com/api/token"
     REDIRECT_URI = "http://127.0.0.1:8000/api/auth/callback"
-    SCOPE = "playlist-read-private playlist-read-collaborative"
+    SCOPE = "playlist-read-private playlist-read-collaborative user-library-read user-read-private"
 
     TOKEN_FILE = get_app_data_dir() / ".spotify_token.json"
     TOKEN_EXPIRY_MARGIN_SECONDS = 60
@@ -150,10 +153,24 @@ class DownloadManager:
 
     @staticmethod
     def _parse_spotify_url(spotify_url: str) -> Tuple[str, str]:
-        match = _SPOTIFY_URL_RE.search(spotify_url)
-        if not match:
-            raise ValueError(f"URL de Spotify no reconocida (se esperaba track/album/playlist): {spotify_url}")
-        return match.group(1), match.group(2)
+        cleaned = spotify_url.strip()
+        if cleaned in ("liked-songs", "collection/tracks", "spotify:collection:tracks", "collection:tracks", "liked"):
+            return "collection", "tracks"
+
+        match = _SPOTIFY_URL_RE.search(cleaned)
+        if match:
+            res_type = match.group(1)
+            res_id = match.group(2) or ("tracks" if res_type == "collection" else "")
+            return res_type, res_id
+
+        uri_match = _SPOTIFY_URI_RE.search(cleaned)
+        if uri_match:
+            res_type = uri_match.group(1)
+            if "collection" in res_type:
+                return "collection", "tracks"
+            return res_type, uri_match.group(2) or ""
+
+        raise ValueError(f"URL de Spotify no reconocida (se esperaba track/album/playlist/collection): {spotify_url}")
 
     @staticmethod
     def _first_artist(artists: Optional[List[dict]]) -> str:
@@ -315,11 +332,67 @@ class DownloadManager:
 
         return tracks
 
+    async def _fetch_saved_tracks(self, client: httpx.AsyncClient, headers: dict) -> List[Dict[str, Any]]:
+        try:
+            response = await client.get("https://api.spotify.com/v1/me/tracks", headers=headers, params={"limit": 50})
+            response.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 403:
+                raise ValueError(
+                    "No se pudo acceder a tus 'Canciones que te gustan'. "
+                    "Por favor, reconecta tu cuenta de Spotify en la aplicación para autorizar el permiso 'user-library-read'."
+                ) from e
+            raise
+
+        data = response.json()
+        items = await self._fetch_paginated_items(client, data.get("next"), headers, data.get("items", []))
+
+        valid_tracks = [
+            item.get("track") for item in items if item and item.get("track")
+        ]
+
+        track_ids = [t.get("id") for t in valid_tracks if t and t.get("id")]
+        bpm_map = await self._fetch_bpm_map(client, track_ids, headers)
+
+        tracks = []
+        for track_data in valid_tracks:
+            if not track_data:
+                continue
+            parsed = self._parse_track_item(track_data)
+            bpm = bpm_map.get(track_data.get("id"))
+            if bpm is not None:
+                parsed["bpm"] = bpm
+            tracks.append(parsed)
+
+        return tracks
+
     async def get_user_playlists(self) -> List[Dict[str, Any]]:
         token = await self.get_user_token()
         headers = {"Authorization": f"Bearer {token}"}
 
         async with httpx.AsyncClient(timeout=15.0) as client:
+            # 1. Obtener ID del usuario actual para filtrar solo playlists propias o colaborativas
+            current_user_id = None
+            try:
+                user_res = await client.get("https://api.spotify.com/v1/me", headers=headers)
+                if user_res.status_code == 200:
+                    current_user_id = user_res.json().get("id")
+            except Exception as e:
+                logger.warning(f"No se pudo obtener el ID del usuario actual de Spotify: {e}")
+
+            # 2. Consultar conteo de 'Canciones que te gustan' (Saved Tracks)
+            liked_count = 0
+            has_liked_songs = False
+            try:
+                liked_res = await client.get("https://api.spotify.com/v1/me/tracks", headers=headers, params={"limit": 1})
+                if liked_res.status_code == 200:
+                    liked_data = liked_res.json()
+                    liked_count = liked_data.get("total", 0)
+                    has_liked_songs = True
+            except Exception as e:
+                logger.warning(f"No se pudo consultar 'Canciones que te gustan' (posible falta de scope user-library-read): {e}")
+
+            # 3. Consultar playlists del usuario
             response = await client.get(
                 "https://api.spotify.com/v1/me/playlists",
                 headers=headers,
@@ -331,15 +404,36 @@ class DownloadManager:
             items = await self._fetch_paginated_items(client, data.get("next"), headers, data.get("items", []))
 
         playlists = []
+
+        # Agregar entrada especial para "Canciones que te gustan" al inicio
+        if has_liked_songs:
+            playlists.append({
+                "id": "liked-songs",
+                "name": "Canciones que te gustan",
+                "description": "Tus canciones favoritas guardadas en Spotify",
+                "track_count": liked_count,
+                "image_url": "",
+                "is_liked": True,
+            })
+
         for item in items:
             if not item:
                 continue
+
+            owner_id = (item.get("owner") or {}).get("id")
+            is_collaborative = bool(item.get("collaborative"))
+
+            # Filtrar: solo playlists creadas por el propio usuario o donde es colaborador
+            if current_user_id and owner_id and owner_id != current_user_id and not is_collaborative:
+                continue
+
             playlists.append({
                 "id": item.get("id", ""),
                 "name": item.get("name", ""),
                 "description": item.get("description") or "",
                 "track_count": (item.get("items") or item.get("tracks") or {}).get("total", 0),
                 "image_url": self._best_image(item.get("images")),
+                "is_liked": False,
             })
         return playlists
 
@@ -349,6 +443,10 @@ class DownloadManager:
         headers = {"Authorization": f"Bearer {token}"}
 
         async with httpx.AsyncClient(timeout=15.0) as client:
+            if resource_type in ("collection", "liked") or resource_id in ("liked-songs", "tracks"):
+                if resource_type == "collection" or resource_id == "liked-songs":
+                    return await self._fetch_saved_tracks(client, headers)
+
             if resource_type == "track":
                 response = await client.get(f"https://api.spotify.com/v1/tracks/{resource_id}", headers=headers)
                 response.raise_for_status()

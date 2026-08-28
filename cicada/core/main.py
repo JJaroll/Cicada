@@ -128,7 +128,7 @@ async def get():
             }
           }
         </script>
-        <link rel="stylesheet" href="/static/css/app.css?v=2.2.3">
+        <link rel="stylesheet" href="/static/css/app.css?v=2.2.4">
     </head>
     <body class="bg-app text-main font-body-md text-body-md h-screen flex justify-center p-4">
         <div class="app-shell w-full h-full max-w-[1920px] mx-auto flex gap-4">
@@ -1003,11 +1003,6 @@ async def get():
                                             <span class="material-symbols-outlined text-[16px]">grid_view</span>
                                         </button>
                                     </div>
-
-                                    <!-- Botón Agregar (+) -->
-                                    <button type="button" id="ipod-add-btn" onclick="handleIpodAddAction()" class="p-1.5 rounded-lg bg-accent text-white hover:brightness-110 transition-all inline-flex items-center justify-center" data-i18n-title="ipod_add_media" title="Agregar">
-                                        <span class="material-symbols-outlined text-[18px]">add</span>
-                                    </button>
                                 </div>
                             </div>
 
@@ -1058,7 +1053,7 @@ async def get():
                                     <div class="flex flex-col gap-1.5 pt-2 border-t border-theme mt-auto">
                                         <button type="button" onclick="openCreatePlaylistModal()" class="w-full py-2 bg-accent text-white rounded-lg font-label-caps text-[11px] hover:brightness-110 transition-all flex items-center justify-center gap-1">
                                             <span class="material-symbols-outlined text-[16px]">add</span>
-                                            <span data-i18n="ipod_create_playlist">+ Crear Playlist</span>
+                                            <span data-i18n="ipod_create_playlist">Crear Playlist</span>
                                         </button>
                                         <button type="button" onclick="openImportPlaylistModal()" class="w-full py-1.5 bg-btn hover:bg-btn-hover text-muted hover:text-main rounded-lg font-label-caps text-[11px] transition-colors flex items-center justify-center gap-1">
                                             <span class="material-symbols-outlined text-[16px]">download</span>
@@ -1093,7 +1088,7 @@ async def get():
                                 <div id="ipod-videos-empty" class="hidden text-center py-12 text-muted font-data-sm text-[13px] flex flex-col items-center gap-2">
                                     <span class="material-symbols-outlined text-[40px] text-muted/40">movie</span>
                                     <p data-i18n="ipod_no_items">No hay videos en el iPod.</p>
-                                    <button type="button" onclick="handleIpodAddAction()" class="mt-2 px-4 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] text-accent transition-colors">+ Agregar Videos</button>
+                                    <button type="button" onclick="handleIpodAddAction()" class="mt-2 px-4 py-2 rounded-lg bg-btn hover:bg-btn-hover font-label-caps text-[11px] text-accent transition-colors">Agregar Videos</button>
                                 </div>
                             </div>
 
@@ -1106,7 +1101,7 @@ async def get():
                                         <div class="flex flex-col gap-1.5 pt-2 border-t border-theme mt-auto">
                                             <button type="button" onclick="handleIpodAddAction()" class="w-full py-2 bg-accent text-white rounded-lg font-label-caps text-[11px] hover:brightness-110 transition-all flex items-center justify-center gap-1">
                                                 <span class="material-symbols-outlined text-[16px]">add</span>
-                                                <span>+ Suscribir Podcast</span>
+                                                <span>Suscribir Podcast</span>
                                             </button>
                                         </div>
                                     </div>
@@ -1159,7 +1154,7 @@ async def get():
                                         <div class="flex flex-col gap-1.5 pt-2 border-t border-theme mt-auto">
                                             <button type="button" onclick="handleIpodAddAction()" class="w-full py-2 bg-accent text-white rounded-lg font-label-caps text-[11px] hover:brightness-110 transition-all flex items-center justify-center gap-1">
                                                 <span class="material-symbols-outlined text-[16px]">add</span>
-                                                <span>+ Agregar Audiolibro</span>
+                                                <span>Agregar Audiolibro</span>
                                             </button>
                                         </div>
                                     </div>
@@ -1335,7 +1330,12 @@ async def get():
 
                 <div id="player-panel" class="hidden flex flex-col gap-6 h-full">
                     <div class="flex justify-between items-center">
-                        <span class="font-label-caps text-[12px] text-sidebar/40" data-i18n="player_title">Reproductor</span>
+                        <div class="flex items-center gap-2">
+                            <button type="button" id="player-collapse-btn" onclick="togglePlayerPanel(false)" class="p-1 rounded-lg hover:bg-black/10 dark:hover:bg-white/10 text-sidebar/50 hover:text-sidebar transition-all duration-200 flex items-center justify-center cursor-pointer" data-i18n-title="player_hide" title="Ocultar reproductor">
+                                <span class="material-symbols-outlined text-[18px]">chevron_right</span>
+                            </button>
+                            <span class="font-label-caps text-[12px] text-sidebar/40" data-i18n="player_title">Reproductor</span>
+                        </div>
                         <span class="font-data-sm text-[12px] text-sidebar/40" data-i18n="player_cicada_label">Cicada</span>
                     </div>
                     <div class="flex-1 flex flex-col justify-center items-center text-center">
@@ -1378,23 +1378,29 @@ async def get():
                 </div>
             </div>
         </main>
+
+        <!-- Botón flotante para reabrir el reproductor (Caelestia Shell style) -->
+        <button id="player-expand-btn" type="button" onclick="togglePlayerPanel(true)" class="hidden fixed right-0 top-1/2 -translate-y-1/2 z-40 flex items-center gap-1.5 pl-2.5 pr-3 py-3 rounded-l-2xl bg-sidebar/90 dark:bg-card/90 backdrop-blur-xl border-l border-y border-theme shadow-2xl text-sidebar hover:text-accent hover:pl-3.5 transition-all duration-300 group cursor-pointer" data-i18n-title="player_show" title="Mostrar reproductor">
+            <span class="material-symbols-outlined text-[20px] transition-transform duration-300 group-hover:-translate-x-0.5">chevron_left</span>
+            <span class="material-symbols-outlined text-[16px] text-accent opacity-75 group-hover:opacity-100 transition-opacity" id="player-mini-indicator">music_note</span>
+        </button>
         </div>
 
         <audio id="library-audio" preload="none"></audio>
 
         <script>window.CICADA_VERSION = "__CICADA_VERSION__";</script>
-        <script src="/static/js/i18n.js?v=2.2.5"></script>
-        <script src="/static/js/common.js?v=2.2.8"></script>
+        <script src="/static/js/i18n.js?v=2.2.7"></script>
+        <script src="/static/js/common.js?v=2.2.10"></script>
         <script src="/static/js/metadata.js?v=2.2.0"></script>
         <script src="/static/js/download.js?v=2.2.0"></script>
         <script src="/static/js/playlist.js?v=2.2.1"></script>
         <script src="/static/js/library.js?v=2.2.1"></script>
         <script src="/static/js/library_audiobooks.js?v=1.0.0"></script>
         <script src="/static/js/library_podcasts.js?v=1.0.0"></script>
-        <script src="/static/js/player.js?v=2.2.0"></script>
-        <script src="/static/js/ipod/api.js?v=2.2.1"></script>
+        <script src="/static/js/player.js?v=2.2.1"></script>
+        <script src="/static/js/ipod/api.js?v=2.2.2"></script>
         <script src="/static/js/ipod/render.js?v=2.2.4"></script>
-        <script src="/static/js/ipod/ui.js?v=2.2.6"></script>
+        <script src="/static/js/ipod/ui.js?v=2.2.8"></script>
         <script>
             // Inicialización de la UI
             applyLanguage(currentLang);

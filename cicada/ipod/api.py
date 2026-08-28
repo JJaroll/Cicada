@@ -793,14 +793,20 @@ def eject_device(force: bool = False) -> EjectResponse:
 
 
 def _real_device_name(mount: Path | str | None) -> Optional[str]:
-    """``Title`` de la playlist maestra del ``iTunesCDB`` — el nombre real
-    que el usuario le puso al iPod en Finder/Música/iTunes (no hay un
-    registro de identidad separado en el dispositivo; confirmado contra
-    iOpenPod, cuya función de renombrar el iPod solo reescribe este mismo
-    campo). ``None`` si el dispositivo nunca fue sincronizado (sin
-    iTunesCDB o sin playlist maestra todavía)."""
+    """Nombre del dispositivo mostrado en la UI:
+    1. Prioridad: Etiqueta / Nombre del volumen en el SO (Finder en macOS, Explorador en Windows).
+    2. Fallback: Title de la playlist maestra del iTunesCDB.
+    3. Fallback: None (el caller usará el nombre genérico del modelo)."""
     if not mount:
         return None
+
+    # 1. Nombre de volumen en el SO (Finder / Explorador)
+    from cicada.ipod.device.volume_id import get_volume_label
+    vol_label = get_volume_label(mount)
+    if vol_label:
+        return vol_label
+
+    # 2. Fallback a Title de la playlist maestra en iTunesCDB
     cdb = Path(mount) / "iPod_Control" / "iTunes" / "iTunesCDB"
     if not cdb.is_file():
         return None
@@ -910,31 +916,106 @@ def get_storage_info() -> StorageInfoSchema:
     return _calculate_ipod_storage(mount)
 
 
+class PlaylistSetItem(BaseModel):
+    db_track_id: Optional[str] = None
+    source_path: Optional[str] = None
+    title: Optional[str] = None
+    artist: Optional[str] = None
+    album: Optional[str] = None
+    filetype: Optional[str] = None
+
+
 class CreatePlaylistRequest(BaseModel):
     name: str
+    consent_ack: bool = False
 
 
 class ImportPlaylistRequest(BaseModel):
     source_name: str
-    tracks: List[TrackSchema] = []
+    tracks: List[PlaylistSetItem] = []
+    consent_ack: bool = False
 
 
-@router.post("/playlists/create")
-def create_playlist(req: CreatePlaylistRequest) -> Dict[str, Any]:
-    """Crear una playlist en el iPod. Aún no implementado (irá por plan/apply)."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail={"error": "La creación de playlists en el iPod aún no está disponible.", "code": "NOT_IMPLEMENTED"},
-    )
+@router.post("/playlists/create", response_model=ApplyResponse)
+def create_playlist(req: CreatePlaylistRequest) -> ApplyResponse:
+    """Crea una nueva playlist (vacía) en el iPod."""
+    if not req.name or not req.name.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "El nombre de la playlist no puede estar vacío.", "code": "INVALID_NAME"},
+        )
+    try:
+        mount = resolve_mount()
+        dev = read_device_info(mount)
+        res = set_ipod_playlist(
+            mount, req.name.strip(), [],
+            device_info=dev, consent_ack=req.consent_ack,
+        )
+        return ApplyResponse(
+            success=res.success,
+            backup_path=str(res.backup_path) if res.backup_path else None,
+            restored_from_backup=res.restored_from_backup,
+            first_write_committed=res.first_write_committed,
+            tracks_written=res.tracks_written,
+            error=res.error,
+        )
+    except ConsentRequiredError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail={"error": str(exc), "code": "CONSENT_REQUIRED"}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "INVALID_REQUEST"}) from exc
+    except UnsafeDeviceError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "UNSAFE_DEVICE"}) from exc
+    except MountNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"}) from exc
+    except WriteGuardError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"}) from exc
 
 
-@router.post("/playlists/import")
-def import_playlist(req: ImportPlaylistRequest) -> Dict[str, Any]:
-    """Importar una playlist al iPod. Aún no implementado (irá por plan/apply)."""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail={"error": "La importación de playlists al iPod aún no está disponible.", "code": "NOT_IMPLEMENTED"},
-    )
+@router.post("/playlists/import", response_model=ApplyResponse)
+def import_playlist(req: ImportPlaylistRequest) -> ApplyResponse:
+    """Importa una playlist al iPod."""
+    if not req.source_name or not req.source_name.strip():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "El nombre de la playlist no puede estar vacío.", "code": "INVALID_NAME"},
+        )
+    try:
+        mount = resolve_mount()
+        dev = read_device_info(mount)
+        items = [i.dict(exclude_none=True) for i in req.tracks]
+        res = set_ipod_playlist(
+            mount, req.source_name.strip(), items,
+            device_info=dev, consent_ack=req.consent_ack,
+        )
+        return ApplyResponse(
+            success=res.success,
+            backup_path=str(res.backup_path) if res.backup_path else None,
+            restored_from_backup=res.restored_from_backup,
+            first_write_committed=res.first_write_committed,
+            tracks_written=res.tracks_written,
+            error=res.error,
+        )
+    except ConsentRequiredError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN,
+                            detail={"error": str(exc), "code": "CONSENT_REQUIRED"}) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "INVALID_REQUEST"}) from exc
+    except UnsafeDeviceError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "UNSAFE_DEVICE"}) from exc
+    except MountNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
+                            detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"}) from exc
+    except WriteGuardError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"}) from exc
+
 
 
 @router.get("/videos", response_model=VideosResponse)
@@ -959,10 +1040,27 @@ def get_videos() -> VideosResponse:
     if not lib:
         return VideosResponse(videos=[], count=0)
 
+    def _is_video(t: dict) -> bool:
+        mt = t.get("media_type") or 0
+        if (mt & MEDIA_TYPE_PODCAST) != 0 or mt == MEDIA_TYPE_VIDEO_PODCAST or t.get("podcast_flag") == 1:
+            return False
+        if mt == MEDIA_TYPE_AUDIOBOOK or (mt & MEDIA_TYPE_AUDIOBOOK) != 0:
+            return False
+
+        if mt in _VIDEO_MEDIA_TYPES or (mt & (MEDIA_TYPE_VIDEO | MEDIA_TYPE_MUSIC_VIDEO | MEDIA_TYPE_TV_SHOW)) != 0:
+            return True
+        if t.get("movie_flag") == 1 or t.get("movie_flag_2") == 1:
+            return True
+        ft = (t.get("filetype") or "").lower()
+        loc = (t.get("Location") or t.get("path") or "").lower()
+        if ft in ("m4v", "mp4", "mov") or loc.endswith((".m4v", ".mp4", ".mov")):
+            return True
+        return False
+
     videos = [
         VideoSchema(
             id=str(t.get("db_track_id") or ""),
-            title=t.get("Title") or "",
+            title=t.get("Title") or (t.get("Location") and Path(t["Location"]).stem) or "Video",
             kind=_video_kind_label(t.get("media_type")),
             duration_ms=t.get("length") or None,
             size_bytes=t.get("size") or None,
@@ -971,20 +1069,20 @@ def get_videos() -> VideosResponse:
             episode_number=t.get("episode_number") or None,
         )
         for t in lib.get("mhlt", [])
-        if t.get("media_type") in _VIDEO_MEDIA_TYPES
+        if _is_video(t)
     ]
     return VideosResponse(videos=videos, count=len(videos))
 
 
 @router.delete("/videos/{video_id}", response_model=ApplyResponse)
-def delete_video(video_id: str) -> ApplyResponse:
+def delete_video(video_id: str, consent_ack: bool = False) -> ApplyResponse:
     """Elimina un video del iPod (base + archivo). Sin caso especial: es la
     misma pista genérica que ``POST /track/remove`` ya borra para
     cualquier media_type — este endpoint solo traduce el ``id`` de la URL."""
     try:
         mount = resolve_mount()
         dev = read_device_info(mount)
-        res = remove_track_from_ipod(mount, video_id, device_info=dev, consent_ack=False)
+        res = remove_track_from_ipod(mount, video_id, device_info=dev, consent_ack=consent_ack)
         return ApplyResponse(
             success=res.success,
             backup_path=str(res.backup_path) if res.backup_path else None,
@@ -1307,13 +1405,6 @@ def reorder_playlist(req: PlaylistReorderRequest) -> ApplyResponse:
                             detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"}) from exc
 
 
-class PlaylistSetItem(BaseModel):
-    db_track_id: Optional[str] = None
-    source_path: Optional[str] = None
-    title: Optional[str] = None
-    artist: Optional[str] = None
-    album: Optional[str] = None
-    filetype: Optional[str] = None
 
 
 class PlaylistSetRequest(BaseModel):

@@ -27,7 +27,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["VolumeFingerprint", "volume_fingerprint"]
+__all__ = ["VolumeFingerprint", "volume_fingerprint", "get_volume_label"]
 
 _ZERO_UUID = "00000000-0000-0000-0000-000000000000"
 
@@ -90,4 +90,66 @@ def volume_fingerprint(mount: str | Path) -> Optional[VolumeFingerprint]:
             )
     except OSError:
         pass
+    return None
+
+
+def get_volume_label(mount: str | Path | None) -> Optional[str]:
+    """Obtiene el nombre / etiqueta del volumen tal como se muestra en el sistema
+    operativo (Finder en macOS, Explorador de archivos en Windows / Linux)."""
+    if not mount:
+        return None
+    mount = Path(mount)
+
+    # 1. Windows: consultar GetVolumeInformationW para obtener el Volume Label
+    if sys.platform.startswith("win"):
+        try:
+            import ctypes
+            drive_str = str(mount)
+            if not drive_str.endswith("\\"):
+                drive_str += "\\"
+            vol_buf = ctypes.create_unicode_buffer(1024)
+            fs_buf = ctypes.create_unicode_buffer(1024)
+            serial_num = ctypes.c_ulong()
+            max_len = ctypes.c_ulong()
+            flags = ctypes.c_ulong()
+
+            res = ctypes.windll.kernel32.GetVolumeInformationW(
+                ctypes.c_wchar_p(drive_str),
+                vol_buf,
+                ctypes.sizeof(vol_buf),
+                ctypes.byref(serial_num),
+                ctypes.byref(max_len),
+                ctypes.byref(flags),
+                fs_buf,
+                ctypes.sizeof(fs_buf),
+            )
+            if res:
+                label = vol_buf.value.strip()
+                if label:
+                    return label
+        except Exception:
+            pass
+
+    # 2. macOS / Darwin: el nombre del volumen en /Volumes/<Name> o diskutil VolumeName
+    if sys.platform == "darwin":
+        try:
+            mount_str = str(mount.resolve() if mount.exists() else mount)
+            if mount_str.startswith("/Volumes/") and mount.name and mount.name != "Volumes":
+                return mount.name
+            dinfo = _diskutil_info(mount)
+            vname = str(dinfo.get("VolumeName") or "").strip()
+            if vname:
+                return vname
+        except Exception:
+            pass
+
+    # 3. Linux: unidades extraíbles montadas bajo /media o /run/media
+    if sys.platform.startswith("linux"):
+        try:
+            mount_str = str(mount)
+            if (mount_str.startswith("/media/") or mount_str.startswith("/run/media/")) and mount.name:
+                return mount.name
+        except Exception:
+            pass
+
     return None

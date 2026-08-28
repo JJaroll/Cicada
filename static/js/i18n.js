@@ -186,7 +186,7 @@ const I18N = {
         ipod_filter_album: "Álbum",
         ipod_view_list: "Lista",
         ipod_view_grid: "Cuadros",
-        ipod_create_playlist: "+ Crear Playlist",
+        ipod_create_playlist: "Crear Playlist",
         ipod_import_playlist: "Importar Playlist",
         ipod_add_media: "Agregar",
         ipod_delete_item: "Eliminar",
@@ -205,6 +205,7 @@ const I18N = {
         spotify_preparing_download: "Preparando descarga",
         spotify_waiting_first_track: "Esperando la primera pista...",
         playlists_my_playlists_title: "Mis Playlists", playlists_loading: "Cargando tus playlists...",
+        playlists_liked_songs: "Canciones que te gustan",
         playlists_choose_hint: "Elige una playlist de la izquierda para ver sus canciones.",
         playlists_choose_title: "Elige una playlist",
         playlists_local_library_label: "Tu Biblioteca Local", playlists_replicate_btn: "Replicar Playlist",
@@ -266,7 +267,8 @@ const I18N = {
         player_waiting_title: "En espera...", player_configure_source_hint: "Configura una fuente para comenzar",
         player_remaining_time_label: "Tiempo Restante", player_progress_label: "Avance",
         player_cancel_process_btn: "Cancelar Proceso", player_title: "Reproductor",
-        player_nothing_playing: "Nada sonando", player_choose_song_hint: "Elige una canción de tu biblioteca"
+        player_nothing_playing: "Nada sonando", player_choose_song_hint: "Elige una canción de tu biblioteca",
+        player_hide: "Ocultar reproductor", player_show: "Mostrar reproductor"
     },
     en: {
         nav_metadata: "Metadata", nav_download: "Download", nav_playlist: "Playlist", nav_library: "Library", nav_ipod: "iPod",
@@ -442,7 +444,7 @@ const I18N = {
         ipod_filter_album: "Album",
         ipod_view_list: "List",
         ipod_view_grid: "Grid",
-        ipod_create_playlist: "+ Create Playlist",
+        ipod_create_playlist: "Create Playlist",
         ipod_import_playlist: "Import Playlist",
         ipod_add_media: "Add",
         ipod_delete_item: "Delete",
@@ -461,6 +463,7 @@ const I18N = {
         spotify_preparing_download: "Preparing download",
         spotify_waiting_first_track: "Waiting for the first track...",
         playlists_my_playlists_title: "My Playlists", playlists_loading: "Loading your playlists...",
+        playlists_liked_songs: "Liked Songs",
         playlists_choose_hint: "Choose a playlist on the left to see its songs.",
         playlists_choose_title: "Choose a playlist",
         playlists_local_library_label: "Your Local Library", playlists_replicate_btn: "Replicate Playlist",
@@ -522,7 +525,8 @@ const I18N = {
         player_waiting_title: "Waiting...", player_configure_source_hint: "Set up a source to get started",
         player_remaining_time_label: "Time Remaining", player_progress_label: "Progress",
         player_cancel_process_btn: "Cancel Process", player_title: "Player",
-        player_nothing_playing: "Nothing playing", player_choose_song_hint: "Choose a song from your library"
+        player_nothing_playing: "Nothing playing", player_choose_song_hint: "Choose a song from your library",
+        player_hide: "Hide player", player_show: "Show player"
     },
     ja: {
         nav_metadata: "メタデータ", nav_download: "ダウンロード", nav_playlist: "プレイリスト", nav_library: "ライブラリ", nav_ipod: "iPod",
@@ -698,7 +702,7 @@ const I18N = {
         ipod_filter_album: "アルバム",
         ipod_view_list: "リスト",
         ipod_view_grid: "グリッド",
-        ipod_create_playlist: "+ プレイリスト作成",
+        ipod_create_playlist: "プレイリスト作成",
         ipod_import_playlist: "プレイリストをインポート",
         ipod_add_media: "追加",
         ipod_delete_item: "削除",
@@ -717,6 +721,7 @@ const I18N = {
         spotify_preparing_download: "ダウンロードを準備中",
         spotify_waiting_first_track: "最初の曲を待機中...",
         playlists_my_playlists_title: "マイプレイリスト", playlists_loading: "プレイリストを読み込み中...",
+        playlists_liked_songs: "お気に入りの曲",
         playlists_choose_hint: "左のリストからプレイリストを選んで曲を表示します。",
         playlists_choose_title: "プレイリストを選択",
         playlists_local_library_label: "ローカルライブラリ", playlists_replicate_btn: "プレイリストを複製",
@@ -778,6 +783,7 @@ const I18N = {
         player_waiting_title: "待機中...", player_configure_source_hint: "ソースを設定して開始してください",
         player_remaining_time_label: "残り時間", player_progress_label: "進捗",
         player_cancel_process_btn: "処理をキャンセル", player_title: "プレーヤー",
-        player_nothing_playing: "再生中の曲はありません", player_choose_song_hint: "ライブラリから曲を選択してください"
+        player_nothing_playing: "再生中の曲はありません", player_choose_song_hint: "ライブラリから曲を選択してください",
+        player_hide: "プレーヤーを非表示", player_show: "プレーヤーを表示"
     }
 };

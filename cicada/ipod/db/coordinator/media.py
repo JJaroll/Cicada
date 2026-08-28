@@ -610,7 +610,8 @@ def sync_media_to_ipod(
     full = existing + new_tracks
 
     if master_playlist_name is None:
-        master_playlist_name = _existing_master_playlist_name(lib) or "iPod"
+        from cicada.ipod.device.volume_id import get_volume_label
+        master_playlist_name = get_volume_label(mount) or _existing_master_playlist_name(lib) or "iPod"
 
     reg_playlists, smart_playlists = _build_playlists(mount, lib, playlists, src_to_dbid)
 

@@ -574,14 +574,21 @@ async def test_api_playlists_list(async_client: httpx.AsyncClient, mock_ipod: Pa
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path,payload", [
-    ("/api/ipod/playlists/create", {"name": "X"}),
-    ("/api/ipod/playlists/import", {"source_name": "X", "tracks": []}),
-])
-async def test_api_playlist_writes_no_implementadas(async_client: httpx.AsyncClient, path, payload):
-    resp = await async_client.post(path, json=payload)
-    assert resp.status_code == 501
-    assert resp.json()["detail"]["code"] == "NOT_IMPLEMENTED"
+async def test_api_playlist_create_and_import(async_client: httpx.AsyncClient, mock_ipod: Path):
+    # Crear playlist
+    resp = await async_client.post("/api/ipod/playlists/create", json={"name": "Nueva Playlist", "consent_ack": True})
+    assert resp.status_code == 200
+    assert resp.json()["success"] is True
+
+    # Verificar que aparece en /playlists
+    resp = await async_client.get("/api/ipod/playlists")
+    titles = [p["title"] for p in resp.json()["playlists"]]
+    assert "Nueva Playlist" in titles
+
+    # Importar playlist
+    resp_imp = await async_client.post("/api/ipod/playlists/import", json={"source_name": "Playlist Importada", "tracks": [], "consent_ack": True})
+    assert resp_imp.status_code == 200
+    assert resp_imp.json()["success"] is True
 
 
 @pytest.mark.asyncio

@@ -114,12 +114,56 @@ let currentStatusPillKey = "player_waiting_status";
 let currentStatusPillColor = statusColor("success");
 
 // --- Navegación entre vistas ---
+let isPlayerCollapsed = false;
+try {
+    isPlayerCollapsed = localStorage.getItem("cicada_player_collapsed") === "true";
+} catch (e) {}
+
+function togglePlayerPanel(show) {
+    let processModule = document.getElementById("process-module");
+    let expandBtn = document.getElementById("player-expand-btn");
+    
+    isPlayerCollapsed = !show;
+    try {
+        localStorage.setItem("cicada_player_collapsed", isPlayerCollapsed ? "true" : "false");
+    } catch (e) {}
+
+    if (show) {
+        if (processModule) {
+            processModule.classList.remove("player-collapsed");
+        }
+        if (expandBtn) {
+            expandBtn.classList.add("translate-x-full");
+            setTimeout(function() {
+                expandBtn.classList.add("hidden");
+                expandBtn.classList.remove("translate-x-full");
+            }, 300);
+        }
+    } else {
+        if (processModule) {
+            processModule.classList.add("player-collapsed");
+        }
+        if (expandBtn) {
+            expandBtn.classList.remove("hidden");
+            expandBtn.classList.add("translate-x-full");
+            requestAnimationFrame(function() {
+                expandBtn.classList.remove("translate-x-full");
+            });
+        }
+    }
+}
+
+let currentView = "process";
+
 function showView(name) {
-    if (name === "ipod" && !ipodUiEnabled) {
+    currentView = name;
+    if (name === "ipod" && typeof ipodUiEnabled !== "undefined" && !ipodUiEnabled) {
         name = "process";
     }
     document.querySelectorAll(".view").forEach(function(el) { el.classList.remove("active"); });
-    document.getElementById("view-" + name).classList.add("active");
+    let targetView = document.getElementById("view-" + name);
+    if (targetView) targetView.classList.add("active");
+
     document.querySelectorAll(".nav-item").forEach(function(el) {
         if (el.dataset.view === name) {
             el.classList.add("nav-item-active");
@@ -129,33 +173,60 @@ function showView(name) {
             el.classList.add("nav-item-inactive");
         }
     });
-    // El módulo derecho no aporta nada en PLAYLISTS (se oculta); en LIBRARY funciona
-    // como reproductor en vez de panel de progreso.
+    // El módulo derecho no aporta nada en PLAYLISTS (se oculta); en LIBRARY y IPOD funciona
+    // como reproductor en vez de panel de progreso, permitiendo colapsarse con estilo Caelestia Shell.
     let processModule = document.getElementById("process-module");
     let progressPanel = document.getElementById("progress-panel");
     let playerPanel = document.getElementById("player-panel");
+    let expandBtn = document.getElementById("player-expand-btn");
+
     if (name === "playlists") {
-        processModule.style.display = "none";
+        if (processModule) processModule.style.display = "none";
+        if (expandBtn) expandBtn.classList.add("hidden");
     } else if (name === "library" || name === "ipod") {
-        // En iPod, el módulo derecho es el reproductor (compartido con Biblioteca):
-        // al reproducir una canción del iPod, este panel la refleja.
-        processModule.style.display = "flex";
-        progressPanel.classList.add("hidden");
-        progressPanel.classList.remove("flex");
-        playerPanel.classList.remove("hidden");
-        playerPanel.classList.add("flex");
+        // En iPod y Biblioteca, el módulo derecho es el reproductor
+        if (processModule) processModule.style.display = "flex";
+        if (progressPanel) {
+            progressPanel.classList.add("hidden");
+            progressPanel.classList.remove("flex");
+        }
+        if (playerPanel) {
+            playerPanel.classList.remove("hidden");
+            playerPanel.classList.add("flex");
+        }
+
+        if (isPlayerCollapsed) {
+            if (processModule) processModule.classList.add("player-collapsed");
+            if (expandBtn) {
+                expandBtn.classList.remove("hidden", "translate-x-full");
+            }
+        } else {
+            if (processModule) processModule.classList.remove("player-collapsed");
+            if (expandBtn) {
+                expandBtn.classList.add("hidden");
+            }
+        }
     } else {
-        processModule.style.display = "flex";
-        playerPanel.classList.add("hidden");
-        playerPanel.classList.remove("flex");
-        progressPanel.classList.remove("hidden");
-        progressPanel.classList.add("flex");
+        if (processModule) {
+            processModule.style.display = "flex";
+            processModule.classList.remove("player-collapsed");
+        }
+        if (expandBtn) expandBtn.classList.add("hidden");
+        if (playerPanel) {
+            playerPanel.classList.add("hidden");
+            playerPanel.classList.remove("flex");
+        }
+        if (progressPanel) {
+            progressPanel.classList.remove("hidden");
+            progressPanel.classList.add("flex");
+        }
     }
 
     if (name === "ipod" && typeof scanIpod === "function") {
         scanIpod();
     }
 }
+const switchView = showView;
 
 function setWsStatus(key, color) {
     currentWsStatusKey = key;

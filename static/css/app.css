@@ -350,3 +350,50 @@ details.library-group[open] > summary::before {
     font-size: 11px;
 }
 
+/* --- Caelestia Shell Smooth Player Animations --- */
+#process-module {
+    transition: width 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                min-width 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                max-width 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.35s cubic-bezier(0.16, 1, 0.3, 1),
+                transform 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                margin 0.45s cubic-bezier(0.16, 1, 0.3, 1),
+                padding 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+    will-change: width, transform, opacity;
+}
+
+#process-module.player-collapsed {
+    width: 0 !important;
+    min-width: 0 !important;
+    max-width: 0 !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transform: translateX(40px) scale(0.96);
+    overflow: hidden !important;
+    border: none !important;
+}
+
+#player-expand-btn {
+    box-shadow: -4px 0 25px rgba(0, 0, 0, 0.25);
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+                padding 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+                box-shadow 0.3s ease,
+                background-color 0.2s ease;
+}
+
+#player-expand-btn:hover {
+    box-shadow: -6px 0 30px rgba(16, 185, 129, 0.35);
+}
+
+#player-expand-btn.translate-x-full {
+    transform: translate(100%, -50%) !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+}
+
+

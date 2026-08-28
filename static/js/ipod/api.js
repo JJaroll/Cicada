@@ -58,3 +58,6 @@ async function ipodSyncPlayback() { return _ipodPost("/api/ipod/sync/playback", 
 async function ipodTrackRate(payload) { return _ipodPost("/api/ipod/track/rate", payload); }
 async function ipodConflictResolve(payload) { return _ipodPost("/api/ipod/conflicts/resolve", payload); }
 async function ipodConflictResolveAll(payload) { return _ipodPost("/api/ipod/conflicts/resolve-all", payload); }
+async function ipodVideoDelete(videoId, consentAck = false) {
+    return _ipodFetch(`/api/ipod/videos/${encodeURIComponent(videoId)}?consent_ack=${consentAck}`, { method: "DELETE" });
+}

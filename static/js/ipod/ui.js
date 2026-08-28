@@ -1139,7 +1139,7 @@ function handleIpodAddAction() {
             openCreatePlaylistModal();
             break;
         case "videos":
-            _mockAddVideo();
+            addVideoToIpod();
             break;
         case "podcasts":
             focusIpodAddField("podcast_feed_url");
@@ -1162,25 +1162,71 @@ function focusIpodAddField(fieldId) {
     field.focus();
 }
 
-function _mockAddVideo() {
-    const name = prompt("Título del video a agregar:");
-    if (!name) return;
-    ipodState.videos.push({
-        title: name,
-        resolution: "720x480 (iPod Video)",
-        duration_ms: 180000,
-        size: 45000000
-    });
-    updateIpodCategoryCounts();
-    renderIpodVideos();
+async function addVideoToIpod() {
+    try {
+        const resFile = await fetch("/api/select_file");
+        const dataFile = await resFile.json();
+        if (!dataFile || !dataFile.path) return;
+        const filePath = dataFile.path;
+        const ext = filePath.split(".").pop().toLowerCase();
+        if (!["mp4", "m4v", "mov"].includes(ext)) {
+            alert("Por favor selecciona un archivo de video compatible (.mp4, .m4v, .mov).");
+            return;
+        }
+
+        const gate = await _ipodWriteGate();
+        if (!gate) return;
+
+        const filename = filePath.split("/").pop().split("\\").pop();
+        const title = filename.replace(/\.[^/.]+$/, "");
+
+        const track = {
+            source_path: filePath,
+            title: title,
+            filetype: ext,
+            kind: "movie"
+        };
+
+        const { res, data } = await ipodMediaSync({
+            tracks: [track],
+            consent_ack: gate.consentAck
+        });
+
+        if (!res.ok) {
+            alert(_ipodErr(data));
+            return;
+        }
+
+        alert(`Video '${title}' agregado con éxito al iPod.`);
+        await scanIpod();
+    } catch (e) {
+        alert(t("error_prefix") + e.message);
+    }
 }
 
-function deleteIpodItem(type, idx) {
+async function deleteIpodItem(type, idx) {
     if (!confirm(t("ipod_delete_confirm"))) return;
     if (type === "video") {
-        ipodState.videos.splice(idx, 1);
-        updateIpodCategoryCounts();
-        renderIpodVideos();
+        const vid = ipodState.videos[idx];
+        if (!vid) return;
+        if (!vid.id) {
+            ipodState.videos.splice(idx, 1);
+            updateIpodCategoryCounts();
+            renderIpodVideos();
+            return;
+        }
+        try {
+            const gate = await _ipodWriteGate();
+            if (!gate) return;
+            const { res, data } = await ipodVideoDelete(vid.id, gate.consentAck);
+            if (!res.ok) { alert(_ipodErr(data)); return; }
+            ipodState.videos.splice(idx, 1);
+            updateIpodCategoryCounts();
+            renderIpodVideos();
+            await scanIpod();
+        } catch (e) {
+            alert(t("error_prefix") + e.message);
+        }
     }
 }
 
@@ -1212,12 +1258,15 @@ async function submitCreatePlaylist() {
     }
 
     try {
-        const { res, data } = await ipodPlaylistsCreate({ name });
+        const gate = await _ipodWriteGate();
+        if (!gate) return;
+        const { res, data } = await ipodPlaylistsCreate({ name, consent_ack: gate.consentAck });
         if (!res.ok) { alert(_ipodErr(data)); return; }
-        ipodState.playlists.push({ title: name, count: 0, is_master: false });
+        ipodState.playlists.push({ title: name, count: 0, is_master: false, tracks: [] });
         updateIpodCategoryCounts();
         renderIpodPlaylists();
         closeCreatePlaylistModal();
+        selectIpodPlaylist(ipodState.playlists.length - 1);
     } catch (e) {
         alert(t("error_prefix") + e.message);
     }
@@ -1257,12 +1306,15 @@ function closeImportPlaylistModal() {
 
 async function selectImportPlaylist(name) {
     try {
-        const { res, data } = await ipodPlaylistsImport({ source_name: name, tracks: [] });
+        const gate = await _ipodWriteGate();
+        if (!gate) return;
+        const { res, data } = await ipodPlaylistsImport({ source_name: name, tracks: [], consent_ack: gate.consentAck });
         if (!res.ok) { alert(_ipodErr(data)); return; }
-        ipodState.playlists.push({ title: name, count: 0, is_master: false });
+        ipodState.playlists.push({ title: name, count: 0, is_master: false, tracks: [] });
         updateIpodCategoryCounts();
         renderIpodPlaylists();
         closeImportPlaylistModal();
+        selectIpodPlaylist(ipodState.playlists.length - 1);
         alert(`Playlist '${name}' importada.`);
     } catch (e) {
         alert(t("error_prefix") + e.message);

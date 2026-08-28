@@ -45,7 +45,18 @@ function togglePlayPause() {
 }
 
 function setPlayPauseIcon(playing) {
-    document.getElementById("playerPlayPauseIcon").textContent = playing ? "pause" : "play_arrow";
+    let icon = document.getElementById("playerPlayPauseIcon");
+    if (icon) icon.textContent = playing ? "pause" : "play_arrow";
+    let mini = document.getElementById("player-mini-indicator");
+    if (mini) {
+        if (playing) {
+            mini.classList.add("animate-pulse", "text-accent");
+            mini.classList.remove("opacity-40");
+        } else {
+            mini.classList.remove("animate-pulse");
+            mini.classList.add("opacity-40");
+        }
+    }
 }
 
 let isShuffle = false;
