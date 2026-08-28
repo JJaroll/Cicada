@@ -396,4 +396,84 @@ details.library-group[open] > summary::before {
     pointer-events: none !important;
 }
 
+/* --- Botón con Borde Animado Dinámico estilo Gemini --- */
+@keyframes gemini-gradient-flow {
+    0% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0% 50%;
+    }
+}
+
+.gemini-border-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px;
+    border-radius: 9999px;
+    background: linear-gradient(135deg, #4285F4, #9B51E0, #FF5E7E, #FFA726, #00E5FF, #4285F4, #9B51E0);
+    background-size: 300% 300%;
+    animation: gemini-gradient-flow 3.5s ease infinite;
+    box-shadow: 0 0 16px rgba(66, 133, 244, 0.35), 0 0 28px rgba(155, 81, 224, 0.25);
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease;
+    cursor: pointer;
+    border: none;
+    outline: none;
+    text-decoration: none;
+}
+
+.gemini-border-btn:hover {
+    transform: translateY(-1px) scale(1.03);
+    box-shadow: 0 0 22px rgba(66, 133, 244, 0.55), 0 0 36px rgba(255, 94, 126, 0.4);
+}
+
+.gemini-border-btn:active {
+    transform: translateY(0) scale(0.97);
+}
+
+.gemini-border-btn-inner {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    border-radius: 9999px;
+    background: #1c1d21;
+    color: #ffffff;
+    font-family: inherit;
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    transition: background-color 0.2s ease;
+    width: 100%;
+    height: 100%;
+}
+
+[data-theme="aluminio"] .gemini-border-btn-inner {
+    background: #f8fafc;
+    color: #0f172a;
+}
+
+.gemini-border-btn:hover .gemini-border-btn-inner {
+    background: #25262c;
+}
+
+[data-theme="aluminio"] .gemini-border-btn:hover .gemini-border-btn-inner {
+    background: #ffffff;
+}
+
+.gemini-border-btn:disabled,
+.gemini-border-btn[disabled] {
+    opacity: 0.45 !important;
+    cursor: not-allowed !important;
+    pointer-events: none !important;
+    box-shadow: none !important;
+    animation: none !important;
+    filter: grayscale(0.5);
+}
+
 

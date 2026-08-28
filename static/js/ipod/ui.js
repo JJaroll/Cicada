@@ -493,15 +493,19 @@ async function resolveAllIpodConflicts(resolution) {
 // Envía el carrito al iPod vía el pipeline real (/media/sync), con gate de consentimiento.
 async function syncBasketToIpod() {
     const basket = ipodState.syncBasket;
-    if (!basket.length) return;
+    const playlists = ipodState.syncBasketPlaylists;
+    if (!basket.length && !playlists.length) return;
     const btn = document.getElementById("ipod-sync-now-btn");
+    const inner = document.getElementById("ipod-sync-now-inner");
+
     try {
         const { data: st } = await ipodFetchStatus();
         const dev = (st.devices || [])[0];
         if (!dev) { alert(t("ipod_write_no_device")); return; }
         if (!dev.guid_is_write_safe) { alert(t("ipod_write_unsafe")); return; }
 
-        if (!confirm(t("ipod_sync_review").replace("{n}", basket.length))) return;
+        const totalItems = basket.length + playlists.length;
+        if (!confirm(t("ipod_sync_review").replace("{n}", totalItems))) return;
 
         let consentAck = false;
         if (!dev.music_app_consent_granted) {
@@ -509,7 +513,17 @@ async function syncBasketToIpod() {
             if (!consentAck) return;
         }
 
-        if (btn) btn.disabled = true;
+        if (btn) {
+            btn.disabled = true;
+            btn.classList.add("pointer-events-none", "opacity-80");
+        }
+        if (inner) {
+            inner.innerHTML = `
+                <span class="material-symbols-outlined text-[16px] text-accent animate-spin">progress_activity</span>
+                <span id="ipod-sync-now-label">Sincronizando con el iPod...</span>
+            `;
+        }
+
         const tracks = basket.map(it => ({
             source_path: it.source_path,
             title: it.title || "",
@@ -529,8 +543,8 @@ async function syncBasketToIpod() {
             podcast_enclosure_url: it.podcast_enclosure_url || null,
             podcast_rss_url: it.podcast_rss_url || null,
         }));
-        const playlists = ipodState.syncBasketPlaylists.map(p => ({ name: p.name, source_paths: p.source_paths }));
-        const { res, data } = await ipodMediaSync({ tracks, consent_ack: consentAck, playlists });
+        const playlistsPayload = playlists.map(p => ({ name: p.name, source_paths: p.source_paths }));
+        const { res, data } = await ipodMediaSync({ tracks, consent_ack: consentAck, playlists: playlistsPayload });
         if (!res.ok) throw new Error(_ipodErr(data));
         if (data.success) {
             alert(t("ipod_write_ok").replace("{n}", data.tracks_written));
@@ -543,9 +557,6 @@ async function syncBasketToIpod() {
                         body: JSON.stringify({ guids: syncedPodcastGuids })
                     });
                 } catch (e) {
-                    // No bloquea el flujo de sync — el audio ya está en el iPod;
-                    // si esto falla, el episodio queda visible como "downloaded"
-                    // en vez de "on_ipod", lo cual es inexacto pero no destructivo.
                     console.error("Error marcando episodios de podcast como sincronizados:", e);
                 }
             }
@@ -562,7 +573,17 @@ async function syncBasketToIpod() {
     } catch (e) {
         alert(t("error_prefix") + e.message);
     } finally {
-        if (btn) btn.disabled = ipodState.syncBasket.length === 0;
+        if (btn) {
+            btn.disabled = (ipodState.syncBasket.length === 0 && ipodState.syncBasketPlaylists.length === 0);
+            btn.classList.remove("pointer-events-none", "opacity-80");
+        }
+        if (inner) {
+            inner.innerHTML = `
+                <span class="material-symbols-outlined text-[16px] text-accent">sync</span>
+                <span id="ipod-sync-now-label">${t("ipod_sync_now")}</span>
+            `;
+        }
+        renderIpodSyncBasket();
     }
 }
 
@@ -612,7 +633,7 @@ function renderIpodSongs() {
     }
 }
 
-// --- Menú contextual de una canción del iPod: Agregar a Playlist / Eliminar del iPod ---
+// --- Menú contextual de elementos del iPod (Canciones, Podcasts, Audiolibros) ---
 let ipodContextTrack = null;
 
 function showIpodSongContextMenu(event, dbTrackId, title, artist) {
@@ -624,6 +645,116 @@ function showIpodSongContextMenu(event, dbTrackId, title, artist) {
     hideIpodRatingSubmenu();
     const menu = document.getElementById("ipod-context-menu");
     if (!menu) return;
+    const plItem = menu.querySelector(".has-submenu:nth-child(1)");
+    const rateItem = menu.querySelector(".has-submenu:nth-child(2)");
+    if (plItem) plItem.style.display = "flex";
+    if (rateItem) rateItem.style.display = "flex";
+    menu.style.display = "flex";
+    let x = event.clientX, y = event.clientY;
+    if (x + 220 > window.innerWidth) x -= 220;
+    if (y + menu.offsetHeight > window.innerHeight) y -= menu.offsetHeight;
+    menu.style.left = x + "px";
+    menu.style.top = y + "px";
+}
+
+function showIpodPodcastContextMenu(event, podIdx) {
+    event.preventDefault();
+    event.stopPropagation();
+    const pod = ipodState.podcasts[podIdx];
+    if (!pod) return;
+    const trackIds = (pod.episodes || []).map(e => e.id).filter(Boolean);
+    ipodContextTrack = {
+        type: 'podcast',
+        title: pod.name,
+        track_ids: trackIds,
+        is_batch: true
+    };
+    hideIpodPlaylistSubmenu();
+    hideIpodRatingSubmenu();
+    const menu = document.getElementById("ipod-context-menu");
+    if (!menu) return;
+    const plItem = menu.querySelector(".has-submenu:nth-child(1)");
+    const rateItem = menu.querySelector(".has-submenu:nth-child(2)");
+    if (plItem) plItem.style.display = "none";
+    if (rateItem) rateItem.style.display = "none";
+    menu.style.display = "flex";
+    let x = event.clientX, y = event.clientY;
+    if (x + 220 > window.innerWidth) x -= 220;
+    if (y + menu.offsetHeight > window.innerHeight) y -= menu.offsetHeight;
+    menu.style.left = x + "px";
+    menu.style.top = y + "px";
+}
+
+function showIpodEpisodeContextMenu(event, trackId, title, podName) {
+    event.preventDefault();
+    event.stopPropagation();
+    ipodContextTrack = {
+        type: 'podcast_episode',
+        db_track_id: trackId,
+        title: title,
+        artist: podName
+    };
+    hideIpodPlaylistSubmenu();
+    hideIpodRatingSubmenu();
+    const menu = document.getElementById("ipod-context-menu");
+    if (!menu) return;
+    const plItem = menu.querySelector(".has-submenu:nth-child(1)");
+    const rateItem = menu.querySelector(".has-submenu:nth-child(2)");
+    if (plItem) plItem.style.display = "none";
+    if (rateItem) rateItem.style.display = "none";
+    menu.style.display = "flex";
+    let x = event.clientX, y = event.clientY;
+    if (x + 220 > window.innerWidth) x -= 220;
+    if (y + menu.offsetHeight > window.innerHeight) y -= menu.offsetHeight;
+    menu.style.left = x + "px";
+    menu.style.top = y + "px";
+}
+
+function showIpodAudiobookContextMenu(event, abIdx) {
+    event.preventDefault();
+    event.stopPropagation();
+    const ab = ipodState.audiobooks[abIdx];
+    if (!ab) return;
+    const trackIds = ab.db_track_ids || (ab.chapters || []).map(c => c.id).filter(Boolean);
+    ipodContextTrack = {
+        type: 'audiobook',
+        title: ab.title,
+        track_ids: trackIds,
+        is_batch: true
+    };
+    hideIpodPlaylistSubmenu();
+    hideIpodRatingSubmenu();
+    const menu = document.getElementById("ipod-context-menu");
+    if (!menu) return;
+    const plItem = menu.querySelector(".has-submenu:nth-child(1)");
+    const rateItem = menu.querySelector(".has-submenu:nth-child(2)");
+    if (plItem) plItem.style.display = "none";
+    if (rateItem) rateItem.style.display = "none";
+    menu.style.display = "flex";
+    let x = event.clientX, y = event.clientY;
+    if (x + 220 > window.innerWidth) x -= 220;
+    if (y + menu.offsetHeight > window.innerHeight) y -= menu.offsetHeight;
+    menu.style.left = x + "px";
+    menu.style.top = y + "px";
+}
+
+function showIpodChapterContextMenu(event, trackId, title, abTitle) {
+    event.preventDefault();
+    event.stopPropagation();
+    ipodContextTrack = {
+        type: 'audiobook_chapter',
+        db_track_id: trackId,
+        title: title,
+        artist: abTitle
+    };
+    hideIpodPlaylistSubmenu();
+    hideIpodRatingSubmenu();
+    const menu = document.getElementById("ipod-context-menu");
+    if (!menu) return;
+    const plItem = menu.querySelector(".has-submenu:nth-child(1)");
+    const rateItem = menu.querySelector(".has-submenu:nth-child(2)");
+    if (plItem) plItem.style.display = "none";
+    if (rateItem) rateItem.style.display = "none";
     menu.style.display = "flex";
     let x = event.clientX, y = event.clientY;
     if (x + 220 > window.innerWidth) x -= 220;
@@ -753,19 +884,27 @@ async function contextRemoveFromIpod() {
     const menu = document.getElementById("ipod-context-menu");
     if (menu) menu.style.display = "none";
     if (!ipodContextTrack) return;
-    if (!confirm(t("ctx_ipod_remove_confirm").replace("{title}", ipodContextTrack.title || ""))) return;
+    const itemLabel = ipodContextTrack.title || "este elemento";
+    if (!confirm(t("ctx_ipod_remove_confirm").replace("{title}", itemLabel))) return;
     try {
         const gate = await _ipodWriteGate();
         if (!gate) return;
-        const { res, data } = await ipodTrackRemove({
-            db_track_id: ipodContextTrack.db_track_id, consent_ack: gate.consentAck,
-        });
-        if (!res.ok || !data.success) {
-            alert(t("ipod_write_failed") + (data.error || _ipodErr(data)));
+        if (ipodContextTrack.is_batch && ipodContextTrack.track_ids && ipodContextTrack.track_ids.length) {
+            for (const tid of ipodContextTrack.track_ids) {
+                await ipodTrackRemove({ db_track_id: tid, consent_ack: gate.consentAck });
+            }
+        } else if (ipodContextTrack.db_track_id) {
+            const { res, data } = await ipodTrackRemove({
+                db_track_id: ipodContextTrack.db_track_id, consent_ack: gate.consentAck,
+            });
+            if (!res.ok || !data.success) {
+                alert(t("ipod_write_failed") + (data.error || _ipodErr(data)));
+            }
         }
         await loadIpodLibrary();
-        renderIpodSongs();
+        renderCurrentIpodCategory();
         renderIpodPlaylists();
+        await scanIpod();
     } catch (e) {
         alert(t("error_prefix") + e.message);
     }
@@ -904,16 +1043,25 @@ function handleIpodTrackDrop(e) {
 async function saveIpodPlaylistOrder() {
     const pl = ipodState.playlists[ipodState.selectedPlaylistIndex];
     if (!pl || pl.is_master || !pl.tracks) return;
+    const btn = document.getElementById("ipod-playlist-save-order-btn");
+    const inner = document.getElementById("ipod-playlist-save-order-inner");
+
+    // Bloquear botón y mostrar animación de trabajo
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add("pointer-events-none", "opacity-80");
+    }
+    if (inner) {
+        inner.innerHTML = `
+            <span class="material-symbols-outlined text-[14px] text-accent animate-spin">progress_activity</span>
+            <span>Guardando en el iPod...</span>
+        `;
+    }
+
     try {
-        const { data: st } = await ipodFetchStatus();
-        const dev = (st.devices || [])[0];
-        if (!dev) { alert(t("ipod_write_no_device")); return; }
-        if (!dev.guid_is_write_safe) { alert(t("ipod_write_unsafe")); return; }
-        let consentAck = false;
-        if (!dev.music_app_consent_granted) {
-            consentAck = confirm(t("ipod_write_consent"));
-            if (!consentAck) return;
-        }
+        const gate = await _ipodWriteGate();
+        if (!gate) return;
+
         const items = pl.tracks.map(tr => {
             if (tr.source_path) {
                 return {
@@ -925,7 +1073,7 @@ async function saveIpodPlaylistOrder() {
             return { db_track_id: tr.db_track_id };
         }).filter(it => it.source_path || it.db_track_id != null);
         const { res, data } = await ipodPlaylistSet({
-            playlist_name: pl.title, items: items, consent_ack: consentAck,
+            playlist_name: pl.title, items: items, consent_ack: gate.consentAck,
         });
         if (!res.ok || !data.success) {
             alert(t("ipod_write_failed") + (data.error || _ipodErr(data)));
@@ -938,6 +1086,17 @@ async function saveIpodPlaylistOrder() {
         renderIpodPlaylists();
     } catch (e) {
         alert(t("error_prefix") + e.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.classList.remove("pointer-events-none", "opacity-80");
+        }
+        if (inner) {
+            inner.innerHTML = `
+                <span class="material-symbols-outlined text-[14px] text-accent">save</span>
+                <span data-i18n="ipod_playlist_save_order">Guardar cambios</span>
+            `;
+        }
     }
 }
 
@@ -948,11 +1107,14 @@ function selectIpodPlaylist(idx) {
 }
 
 // --- Agregar canciones de la biblioteca local a una playlist del iPod ---
+let ipodPlaylistNewlyAddedPaths = new Set();
+
 function openIpodPlaylistAddPicker() {
     const pl = ipodState.playlists[ipodState.selectedPlaylistIndex];
     if (!pl || pl.is_master) return;
     const modal = document.getElementById("ipod-playlist-add-modal");
     if (!modal) return;
+    ipodPlaylistNewlyAddedPaths.clear();
     modal.classList.remove("hidden");
     modal.classList.add("flex");
     const search = document.getElementById("ipod-playlist-add-search");
@@ -971,7 +1133,7 @@ function renderIpodAddPickerList(query) {
     const list = document.getElementById("ipod-playlist-add-list");
     if (!list) return;
     if (typeof libraryTracks === "undefined" || !libraryTracks || !libraryTracks.length) {
-        list.innerHTML = `<p class="font-data-sm text-[12px] text-muted/40 p-2">${t("ipod_playlist_add_empty")}</p>`;
+        list.innerHTML = `<p class="font-data-sm text-[12px] text-muted/40 p-3">${t("ipod_playlist_add_empty")}</p>`;
         return;
     }
     const q = _normTxt(query || "");
@@ -979,34 +1141,59 @@ function renderIpodAddPickerList(query) {
         ? libraryTracks.filter(l => _normTxt((l.title || "") + " " + (l.artist || "") + " " + (l.album || "")).includes(q))
         : libraryTracks).slice(0, 200);
     if (!matches.length) {
-        list.innerHTML = `<p class="font-data-sm text-[12px] text-muted/40 p-2">${t("ipod_playlist_add_noresults")}</p>`;
+        list.innerHTML = `<p class="font-data-sm text-[12px] text-muted/40 p-3">${t("ipod_playlist_add_noresults")}</p>`;
         return;
     }
     list.innerHTML = matches.map(l => ipodLibraryPickerRowHtml(l)).join("");
 }
 
-function addLibrarySongToIpodPlaylist(path) {
+function toggleLibrarySongInIpodPlaylist(path) {
     const pl = ipodState.playlists[ipodState.selectedPlaylistIndex];
     if (!pl || pl.is_master) return;
+    if (!pl.tracks) pl.tracks = [];
     const l = libraryTracks.find(x => x.path === path);
     if (!l) return;
-    if (!pl.tracks) pl.tracks = [];
-    pl.tracks.push({
-        source_path: l.path, title: l.title || "", artist: l.artist || "",
-        album: l.album || "", length_ms: null, db_track_id: null,
-        filetype: (String(l.path).split(".").pop() || "").toLowerCase(),
-    });
+
+    const normTitle = _normTxt(l.title || "");
+    const normArtist = _normTxt(l.artist || "");
+    const existingIndex = pl.tracks.findIndex(tr =>
+        (tr.source_path && tr.source_path === path) ||
+        (normTitle && _normTxt(tr.title || "") === normTitle && _normTxt(tr.artist || "") === normArtist)
+    );
+
+    if (existingIndex >= 0) {
+        // Deseleccionar / quitar de la playlist
+        pl.tracks.splice(existingIndex, 1);
+        ipodPlaylistNewlyAddedPaths.delete(path);
+    } else {
+        // Agregar / seleccionar en la playlist
+        pl.tracks.push({
+            source_path: l.path, title: l.title || "", artist: l.artist || "",
+            album: l.album || "", length_ms: null, db_track_id: null,
+            filetype: (String(l.path).split(".").pop() || "").toLowerCase(),
+        });
+        ipodPlaylistNewlyAddedPaths.add(path);
+    }
     ipodPlaylistDirty = true;
     renderIpodPlaylists();
+
+    const search = document.getElementById("ipod-playlist-add-search");
+    renderIpodAddPickerList(search ? search.value : "");
 }
 
 // --- VISTA 4: VIDEOS ---
 function renderIpodVideos() {
     const grid = document.getElementById("ipod-videos-grid");
     const empty = document.getElementById("ipod-videos-empty");
+    const countEl = document.getElementById("ipod-videos-count");
     if (!grid) return;
 
-    if (ipodState.videos.length === 0) {
+    const count = ipodState.videos.length;
+    if (countEl) {
+        countEl.textContent = count === 1 ? "1 video" : `${count} videos`;
+    }
+
+    if (count === 0) {
         grid.innerHTML = "";
         if (empty) empty.classList.remove("hidden");
         return;
@@ -1040,7 +1227,7 @@ function renderIpodPodcasts() {
         const episodes = currentPod.episodes || [];
         if (countEl) countEl.textContent = episodes.length + " episodios";
 
-        epList.innerHTML = episodes.map((ep, i) => ipodEpisodeRowHtml(ep, i)).join("");
+        epList.innerHTML = episodes.map((ep, i) => ipodEpisodeRowHtml(ep, i, currentPod.name)).join("");
     }
 }
 
@@ -1073,7 +1260,7 @@ function renderIpodAudiobooks() {
         const chapters = currentAb.chapters || [];
         if (countEl) countEl.textContent = chapters.length + " pistas";
 
-        chList.innerHTML = chapters.map((ch, i) => ipodChapterRowHtml(ch, i, currentAb.author)).join("");
+        chList.innerHTML = chapters.map((ch, i) => ipodChapterRowHtml(ch, i, currentAb.author, currentAb.title)).join("");
     }
 }
 
@@ -1142,29 +1329,54 @@ function handleIpodAddAction() {
             addVideoToIpod();
             break;
         case "podcasts":
-            focusIpodAddField("podcast_feed_url");
+            openSubscribePodcastModal();
             break;
         case "audiobooks":
-            focusIpodAddField("audiobook_browse_dir");
+            openAddAudiobookModal();
             break;
     }
 }
 
-// El botón "+" de Podcasts/Audiolibros no dispara la acción directo —
-// en ese momento el campo todavía está vacío (sin URL, sin carpeta
-// elegida), así que no habría nada que ejecutar. Hace foco (y scroll si
-// el bloque de "agregar más" quedó fuera del viewport) para que el
-// usuario complete el dato antes de continuar.
-function focusIpodAddField(fieldId) {
-    const field = document.getElementById(fieldId);
-    if (!field) return;
-    field.scrollIntoView({ behavior: "smooth", block: "center" });
-    field.focus();
+// Modal Suscribir Podcast
+function openSubscribePodcastModal() {
+    const modal = document.getElementById("ipod-subscribe-podcast-modal");
+    if (modal) {
+        modal.classList.remove("hidden");
+        modal.classList.add("flex");
+        if (typeof loadPodcastFeeds === "function") {
+            loadPodcastFeeds();
+        }
+    }
+}
+
+function closeSubscribePodcastModal() {
+    const modal = document.getElementById("ipod-subscribe-podcast-modal");
+    if (modal) {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+    }
+}
+
+// Modal Agregar Audiolibros
+function openAddAudiobookModal() {
+    const modal = document.getElementById("ipod-add-audiobook-modal");
+    if (modal) {
+        modal.classList.remove("hidden");
+        modal.classList.add("flex");
+    }
+}
+
+function closeAddAudiobookModal() {
+    const modal = document.getElementById("ipod-add-audiobook-modal");
+    if (modal) {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+    }
 }
 
 async function addVideoToIpod() {
     try {
-        const resFile = await fetch("/api/select_file");
+        const resFile = await fetch("/api/select_file?types=mp4,m4v,mov");
         const dataFile = await resFile.json();
         if (!dataFile || !dataFile.path) return;
         const filePath = dataFile.path;
@@ -1204,13 +1416,25 @@ async function addVideoToIpod() {
     }
 }
 
-async function deleteIpodItem(type, idx) {
+async function deleteIpodItem(type, idOrIdx) {
     if (!confirm(t("ipod_delete_confirm"))) return;
     if (type === "video") {
-        const vid = ipodState.videos[idx];
+        let vid = null;
+        let idx = -1;
+        if (typeof idOrIdx === "number" || (!isNaN(idOrIdx) && !isNaN(parseFloat(idOrIdx)) && String(parseInt(idOrIdx, 10)) === String(idOrIdx))) {
+            const num = parseInt(idOrIdx, 10);
+            if (num < ipodState.videos.length) {
+                vid = ipodState.videos[num];
+                idx = num;
+            }
+        }
+        if (!vid) {
+            idx = ipodState.videos.findIndex(v => v.id === idOrIdx || String(v.id) === String(idOrIdx));
+            if (idx >= 0) vid = ipodState.videos[idx];
+        }
         if (!vid) return;
         if (!vid.id) {
-            ipodState.videos.splice(idx, 1);
+            if (idx >= 0) ipodState.videos.splice(idx, 1);
             updateIpodCategoryCounts();
             renderIpodVideos();
             return;
@@ -1220,7 +1444,7 @@ async function deleteIpodItem(type, idx) {
             if (!gate) return;
             const { res, data } = await ipodVideoDelete(vid.id, gate.consentAck);
             if (!res.ok) { alert(_ipodErr(data)); return; }
-            ipodState.videos.splice(idx, 1);
+            if (idx >= 0) ipodState.videos.splice(idx, 1);
             updateIpodCategoryCounts();
             renderIpodVideos();
             await scanIpod();
@@ -1257,6 +1481,21 @@ async function submitCreatePlaylist() {
         return;
     }
 
+    const btn = document.getElementById("ipod-create-playlist-submit-btn");
+    const inner = document.getElementById("ipod-create-playlist-submit-inner");
+
+    // Bloquear botón y mostrar animación de trabajo
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add("pointer-events-none", "opacity-80");
+    }
+    if (inner) {
+        inner.innerHTML = `
+            <span class="material-symbols-outlined text-[16px] text-accent animate-spin">progress_activity</span>
+            <span>Creando en el iPod...</span>
+        `;
+    }
+
     try {
         const gate = await _ipodWriteGate();
         if (!gate) return;
@@ -1269,6 +1508,17 @@ async function submitCreatePlaylist() {
         selectIpodPlaylist(ipodState.playlists.length - 1);
     } catch (e) {
         alert(t("error_prefix") + e.message);
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.classList.remove("pointer-events-none", "opacity-80");
+        }
+        if (inner) {
+            inner.innerHTML = `
+                <span class="material-symbols-outlined text-[16px] text-accent">add</span>
+                <span data-i18n="common_save">Crear</span>
+            `;
+        }
     }
 }
 

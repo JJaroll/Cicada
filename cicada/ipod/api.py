@@ -151,6 +151,7 @@ class TracksResponse(BaseModel):
 
 
 class PodcastEpisodeSchema(BaseModel):
+    id: Optional[str] = None
     title: str
     date_added: Optional[int] = None
     duration_ms: Optional[int] = None
@@ -169,6 +170,7 @@ class PodcastsResponse(BaseModel):
 
 
 class AudiobookChapterSchema(BaseModel):
+    id: Optional[str] = None
     title: str
     duration_ms: Optional[int] = None
 
@@ -178,6 +180,7 @@ class AudiobookSchema(BaseModel):
     title: str
     author: Optional[str] = None
     chapters: List[AudiobookChapterSchema] = []
+    db_track_ids: List[str] = []
 
 
 class AudiobooksResponse(BaseModel):
@@ -826,6 +829,7 @@ def _real_device_name(mount: Path | str | None) -> Optional[str]:
 def _ipod_to_ui(info: DeviceInfo) -> Dict[str, Any]:
     storage_data = _calculate_ipod_storage(info.mount) if info.mount else None
     generic_name = f"{info.family or 'iPod'} {info.generation or ''}".strip()
+    has_consent = has_music_app_consent(info.firewire_guid) if info.firewire_guid else False
     return {
         "mount": str(info.mount),
         "ipod_name": _real_device_name(info.mount) or generic_name,
@@ -835,6 +839,9 @@ def _ipod_to_ui(info: DeviceInfo) -> Dict[str, Any]:
         "capacity": info.capacity,
         "filesystem_type": None,
         "firewire_guid": info.firewire_guid,
+        "guid_provenance": info.guid_provenance,
+        "guid_is_write_safe": info.guid_is_write_safe,
+        "music_app_consent_granted": has_consent,
         "checksum": info.checksum.name if info.checksum else None,
         "serial": info.serial,
         "partial": info.partial,
@@ -1150,6 +1157,7 @@ def get_podcasts() -> PodcastsResponse:
             name=name,
             episodes=[
                 PodcastEpisodeSchema(
+                    id=str(t.get("db_track_id") or ""),
                     title=t.get("Title") or "",
                     date_added=t.get("date_added") or None,
                     duration_ms=t.get("length") or None,
@@ -1196,10 +1204,15 @@ def get_audiobooks() -> AudiobooksResponse:
     audiobooks = []
     for name, tracks in sorted(groups.items()):
         author = tracks[0].get("Artist") or None
+        db_track_ids = [str(t.get("db_track_id")) for t in tracks if t.get("db_track_id") is not None]
         if len(tracks) > 1:
             ordered = sorted(tracks, key=lambda t: t.get("track_number") or 0)
             chapters = [
-                AudiobookChapterSchema(title=t.get("Title") or "", duration_ms=t.get("length") or None)
+                AudiobookChapterSchema(
+                    id=str(t.get("db_track_id") or ""),
+                    title=t.get("Title") or "",
+                    duration_ms=t.get("length") or None,
+                )
                 for t in ordered
             ]
         else:
@@ -1208,14 +1221,26 @@ def get_audiobooks() -> AudiobooksResponse:
             if raw_chapters:
                 durations = _chapter_durations_ms(raw_chapters, track.get("length") or 0)
                 chapters = [
-                    AudiobookChapterSchema(title=ch.get("title") or "", duration_ms=dur)
+                    AudiobookChapterSchema(
+                        id=str(track.get("db_track_id") or ""),
+                        title=ch.get("title") or "",
+                        duration_ms=dur,
+                    )
                     for ch, dur in zip(raw_chapters, durations)
                 ]
             else:
                 chapters = [AudiobookChapterSchema(
-                    title=track.get("Title") or "", duration_ms=track.get("length") or None,
+                    id=str(track.get("db_track_id") or ""),
+                    title=track.get("Title") or "",
+                    duration_ms=track.get("length") or None,
                 )]
-        audiobooks.append(AudiobookSchema(id=_slugify(name), title=name, author=author, chapters=chapters))
+        audiobooks.append(AudiobookSchema(
+            id=_slugify(name),
+            title=name,
+            author=author,
+            chapters=chapters,
+            db_track_ids=db_track_ids,
+        ))
 
     return AudiobooksResponse(audiobooks=audiobooks, count=len(audiobooks))
 

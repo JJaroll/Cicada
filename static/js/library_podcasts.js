@@ -1,12 +1,9 @@
 // Gestión de podcasts: suscribirse por RSS, descargar episodios a un
-// caché local, y agregar los ya descargados al carrito de sync del
-// iPod (kind="podcast"). Selección múltiple calcada del flujo de
-// audiolibros (library_audiobooks.js), pero limitada a episodios con
-// status "downloaded" — no tiene sentido sincronizar algo que no está
-// en disco todavía.
+// caché local, y selección interactiva directa de episodios descargados
+// para sincronizarlos en el iPod (kind="podcast").
 let podcastFeeds = [];
 let podcastSelectedFeedUrl = null;
-let podcastSelectMode = false;
+let podcastSelectMode = true;
 let podcastSelected = new Set(); // guids
 
 async function subscribePodcastFeed() {
@@ -27,7 +24,7 @@ async function subscribePodcastFeed() {
         await loadPodcastFeeds();
     } catch (e) {
         if (listEl) listEl.insertAdjacentHTML('afterbegin',
-            '<p class="font-data-sm text-[13px] text-[#f43f5e]">' + t("error_prefix") + e.message + '</p>');
+            '<p class="font-data-sm text-[13px] text-[#f43f5e] p-2">' + t("error_prefix") + e.message + '</p>');
     }
 }
 
@@ -41,6 +38,8 @@ async function loadPodcastFeeds() {
         }
         renderPodcastFeeds();
         renderPodcastEpisodes();
+        updatePodcastIpodButton();
+        updatePodcastSelectUI();
     } catch (e) {
         console.error("Error cargando podcasts:", e);
     }
@@ -50,27 +49,32 @@ function renderPodcastFeeds() {
     let listEl = document.getElementById("podcast-feeds-list");
     if (!listEl) return;
     if (podcastFeeds.length === 0) {
-        listEl.innerHTML = '<p class="font-data-sm text-[13px] text-muted/40 p-2">' + t("podcasts_no_subscriptions") + '</p>';
+        listEl.innerHTML = '<p class="font-data-sm text-[13px] text-muted/40 p-3">' + t("podcasts_no_subscriptions") + '</p>';
         return;
     }
     listEl.innerHTML = podcastFeeds.map(f => {
         let active = f.feed_url === podcastSelectedFeedUrl;
-        return '<div class="flex items-center gap-2 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ' +
-            (active ? 'bg-secondary/15 text-secondary' : 'hover:bg-btn-hover') +
-            '" onclick="selectPodcastFeed(' + JSON.stringify(f.feed_url).replace(/"/g, "&quot;") + ')">' +
-            '<span class="material-symbols-outlined text-[18px]">podcasts</span>' +
-            '<div class="overflow-hidden flex-1">' +
-            '<p class="font-data-sm text-[13px] truncate">' + escapeHtml(f.title) + '</p>' +
-            '<p class="font-label-caps text-[10px] text-muted/40 truncate">' + f.episode_count + ' episodios</p>' +
-            '</div></div>';
+        return `
+            <div class="flex items-center gap-2.5 p-2.5 rounded-xl cursor-pointer transition-all ${
+                active ? 'ring-2 ring-accent bg-accent/15 text-main font-semibold shadow-sm' : 'bg-black/10 dark:bg-white/5 hover:bg-black/20 dark:hover:bg-white/10 text-main'
+            }" onclick="selectPodcastFeed(${JSON.stringify(f.feed_url).replace(/"/g, '&quot;')})">
+                <span class="material-symbols-outlined text-[20px] text-accent flex-shrink-0">podcasts</span>
+                <div class="overflow-hidden flex-1 min-w-0">
+                    <p class="font-data-sm text-[13px] truncate font-medium">${escapeHtml(f.title)}</p>
+                    <p class="font-label-caps text-[10px] text-muted/60 truncate">${f.episode_count} episodios</p>
+                </div>
+            </div>
+        `;
     }).join("");
 }
 
 function selectPodcastFeed(feedUrl) {
     podcastSelectedFeedUrl = feedUrl;
-    exitPodcastSelectMode();
+    podcastSelected.clear();
     renderPodcastFeeds();
     renderPodcastEpisodes();
+    updatePodcastIpodButton();
+    updatePodcastSelectUI();
 }
 
 function _currentPodcastFeed() {
@@ -84,43 +88,57 @@ function formatPodcastDuration(durationSeconds) {
 
 function podcastEpisodeRowHtml(ep) {
     let subtitleParts = [formatPodcastDuration(ep.duration_seconds)];
-    let statusLabel = "";
-    if (ep.status === "on_ipod") statusLabel = t("podcasts_status_on_ipod");
-    else if (ep.status === "downloaded") statusLabel = t("podcasts_status_downloaded");
-    else if (ep.status === "downloading") statusLabel = t("podcasts_status_downloading");
-    else if (ep.last_error) statusLabel = t("podcasts_status_failed");
-    if (statusLabel) subtitleParts.push(statusLabel);
-    let subtitle = subtitleParts.filter(Boolean).join(" &middot; ");
-
-    let canSelect = podcastSelectMode && ep.status === "downloaded";
-    if (canSelect) {
-        let sel = podcastSelected.has(ep.guid);
-        return '<div class="flex items-center gap-3 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ' +
-            (sel ? 'ring-1 ring-secondary bg-secondary/10' : 'hover:bg-btn-hover') + '" data-guid="' + escapeHtml(ep.guid) +
-            '" onclick="togglePodcastSelect(this)">' +
-            '<span class="material-symbols-outlined text-[18px] text-secondary">' + (sel ? 'check_circle' : 'radio_button_unchecked') + '</span>' +
-            '<div class="overflow-hidden flex-1">' +
-            '<p class="font-data-sm text-[14px] truncate">' + escapeHtml(ep.title) + '</p>' +
-            '<p class="font-label-caps text-[11px] text-muted/40 truncate">' + subtitle + '</p>' +
-            '</div></div>';
-    }
-
-    let actionHtml = '';
-    if (ep.status === "not_downloaded") {
-        actionHtml = '<button type="button" onclick="event.stopPropagation();downloadPodcastEpisode(' +
-            JSON.stringify(ep.guid).replace(/"/g, "&quot;") + ')" class="px-2 py-1 rounded-full bg-btn hover:bg-btn-hover font-label-caps text-[10px]">' +
-            t("podcasts_download_btn") + '</button>';
+    let statusBadge = "";
+    if (ep.status === "on_ipod") {
+        statusBadge = `<span class="px-2 py-0.5 rounded-md bg-secondary/15 text-secondary text-[10px] font-label-caps flex items-center gap-1"><span class="material-symbols-outlined text-[13px]">check</span> En iPod</span>`;
+    } else if (ep.status === "downloaded") {
+        statusBadge = `<span class="px-2 py-0.5 rounded-md bg-accent/15 text-accent text-[10px] font-label-caps">Descargado</span>`;
     } else if (ep.status === "downloading") {
-        actionHtml = '<span class="font-label-caps text-[10px] text-muted/50">' + t("podcasts_status_downloading") + '</span>';
+        statusBadge = `<span class="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-400 text-[10px] font-label-caps animate-pulse">Descargando...</span>`;
+    } else if (ep.last_error) {
+        statusBadge = `<span class="px-2 py-0.5 rounded-md bg-red-500/15 text-red-400 text-[10px] font-label-caps truncate max-w-[120px]" title="${escapeHtml(ep.last_error)}">Error</span>`;
+    }
+    
+    let subtitle = subtitleParts.filter(Boolean).join(" &middot; ");
+    let isDownloaded = ep.status === "downloaded";
+    let sel = podcastSelected.has(ep.guid);
+
+    let actionOrCheck = '';
+    if (isDownloaded) {
+        actionOrCheck = `
+            <span class="material-symbols-outlined text-[22px] text-accent flex-shrink-0 transition-transform ${sel ? 'scale-110' : 'opacity-60'}">
+                ${sel ? 'check_circle' : 'radio_button_unchecked'}
+            </span>
+        `;
+    } else if (ep.status === "not_downloaded") {
+        actionOrCheck = `
+            <button type="button" onclick="event.stopPropagation();downloadPodcastEpisode(${JSON.stringify(ep.guid).replace(/"/g, '&quot;')})" 
+                class="px-3 py-1 rounded-lg bg-btn hover:bg-btn-hover text-main font-label-caps text-[11px] transition-all flex items-center gap-1 hover:brightness-110 flex-shrink-0">
+                <span class="material-symbols-outlined text-[14px]">download</span>
+                <span>Descargar</span>
+            </button>
+        `;
+    } else {
+        actionOrCheck = statusBadge;
     }
 
-    return '<div class="flex items-center gap-3 px-2 py-1.5 rounded-lg' + (podcastSelectMode ? ' opacity-40' : '') + '" data-guid="' + escapeHtml(ep.guid) + '">' +
-        '<span class="material-symbols-outlined text-[18px] text-muted/40">mic</span>' +
-        '<div class="overflow-hidden flex-1">' +
-        '<p class="font-data-sm text-[14px] truncate">' + escapeHtml(ep.title) + '</p>' +
-        '<p class="font-label-caps text-[11px] text-muted/40 truncate">' + subtitle + '</p>' +
-        (ep.last_error ? '<p class="font-label-caps text-[10px] text-[#f43f5e] truncate" title="' + escapeHtml(ep.last_error) + '">' + escapeHtml(ep.last_error) + '</p>' : '') +
-        '</div>' + actionHtml + '</div>';
+    return `
+        <div class="flex items-center gap-3 p-2.5 rounded-xl transition-all ${
+            isDownloaded ? 'cursor-pointer' : ''
+        } ${
+            sel ? 'ring-2 ring-accent bg-accent/15 shadow-sm' : 'bg-black/10 dark:bg-white/5 hover:bg-black/20 dark:hover:bg-white/10'
+        }" data-guid="${escapeHtml(ep.guid)}" ${isDownloaded ? 'onclick="togglePodcastSelect(this)"' : ''}>
+            ${isDownloaded ? actionOrCheck : '<span class="material-symbols-outlined text-[20px] text-muted/40 flex-shrink-0">mic</span>'}
+            <div class="overflow-hidden flex-1 min-w-0">
+                <p class="font-data-sm text-[13px] font-semibold text-main truncate">${escapeHtml(ep.title)}</p>
+                <div class="flex items-center gap-2 mt-0.5">
+                    <span class="font-label-caps text-[11px] text-muted/70 truncate">${subtitle}</span>
+                    ${!isDownloaded ? statusBadge : ''}
+                </div>
+            </div>
+            ${!isDownloaded ? actionOrCheck : ''}
+        </div>
+    `;
 }
 
 function renderPodcastEpisodes() {
@@ -129,13 +147,13 @@ function renderPodcastEpisodes() {
     if (!listEl) return;
     let feed = _currentPodcastFeed();
     if (!feed) {
-        listEl.innerHTML = '<p class="font-data-sm text-[13px] text-muted/40 p-2">' + t("podcasts_pick_feed_hint") + '</p>';
+        listEl.innerHTML = '<p class="font-data-sm text-[13px] text-muted/40 p-3">' + t("podcasts_pick_feed_hint") + '</p>';
         if (titleEl) titleEl.textContent = "";
         return;
     }
     if (titleEl) titleEl.textContent = feed.title;
     if (feed.episodes.length === 0) {
-        listEl.innerHTML = '<p class="font-data-sm text-[13px] text-muted/40 p-2">' + t("podcasts_no_episodes") + '</p>';
+        listEl.innerHTML = '<p class="font-data-sm text-[13px] text-muted/40 p-3">' + t("podcasts_no_episodes") + '</p>';
         return;
     }
     listEl.innerHTML = feed.episodes.map(podcastEpisodeRowHtml).join("");
@@ -170,31 +188,40 @@ async function pollPodcastDownload(feedUrl, guid) {
     await loadPodcastFeeds();
 }
 
-// --- Selección múltiple → carrito de sync (episodios ya downloaded) ---
-
 function updatePodcastIpodButton() {
     const btn = document.getElementById("podcast-add-ipod-btn");
     if (!btn) return;
-    const uiEnabled = (typeof ipodUiEnabled === "undefined") || ipodUiEnabled;
-    const connected = uiEnabled && (typeof ipodState !== "undefined") && ipodState.connected;
-    if (!connected && podcastSelectMode) exitPodcastSelectMode();
-    btn.classList.toggle("hidden", !connected);
-    btn.classList.toggle("inline-flex", !!connected);
+    const connected = (typeof ipodState !== "undefined") && ipodState.connected;
+    let feed = _currentPodcastFeed();
+    const hasEpisodes = feed && feed.episodes && feed.episodes.length > 0;
+    btn.classList.toggle("hidden", !(connected && hasEpisodes));
+    btn.classList.toggle("inline-flex", (connected && hasEpisodes));
 }
 
 function onPodcastIpodButton() {
-    if (!podcastSelectMode) {
-        podcastSelectMode = true;
-        podcastSelected.clear();
-        renderPodcastEpisodes();
-        updatePodcastSelectUI();
-    } else {
-        commitPodcastSelectionToIpod();
+    let feed = _currentPodcastFeed();
+    if (!feed) return;
+    
+    const downloadedEpisodes = (feed.episodes || []).filter(ep => ep.status === "downloaded");
+    if (downloadedEpisodes.length === 0) {
+        alert("Primero descarga algún episodio para poder transferirlo al iPod.");
+        return;
     }
+    
+    if (podcastSelected.size === 0) {
+        if (downloadedEpisodes.length === 1) {
+            podcastSelected.add(downloadedEpisodes[0].guid);
+            renderPodcastEpisodes();
+            updatePodcastSelectUI();
+        } else {
+            alert("Por favor selecciona al menos un episodio descargado.");
+            return;
+        }
+    }
+    commitPodcastSelectionToIpod();
 }
 
 function exitPodcastSelectMode() {
-    podcastSelectMode = false;
     podcastSelected.clear();
     renderPodcastEpisodes();
     updatePodcastSelectUI();
@@ -202,35 +229,38 @@ function exitPodcastSelectMode() {
 
 function togglePodcastSelect(el) {
     const guid = el.dataset.guid;
+    if (!guid) return;
     const now = !podcastSelected.has(guid);
     if (now) podcastSelected.add(guid); else podcastSelected.delete(guid);
-    el.classList.toggle("ring-1", now);
-    el.classList.toggle("ring-secondary", now);
-    el.classList.toggle("bg-secondary/10", now);
-    el.classList.toggle("hover:bg-btn-hover", !now);
+    el.classList.toggle("ring-2", now);
+    el.classList.toggle("ring-accent", now);
+    el.classList.toggle("bg-accent/15", now);
+    el.classList.toggle("shadow-sm", now);
     const icon = el.querySelector(".material-symbols-outlined");
-    if (icon) icon.textContent = now ? "check_circle" : "radio_button_unchecked";
+    if (icon) {
+        icon.textContent = now ? "check_circle" : "radio_button_unchecked";
+        icon.classList.toggle("scale-110", now);
+        icon.classList.toggle("opacity-60", !now);
+    }
     updatePodcastSelectUI();
 }
 
 function updatePodcastSelectUI() {
     const label = document.getElementById("podcast-add-ipod-label");
-    const cancel = document.getElementById("podcast-select-cancel-btn");
-    const btn = document.getElementById("podcast-add-ipod-btn");
-    if (cancel) {
-        cancel.classList.toggle("hidden", !podcastSelectMode);
-        cancel.classList.toggle("inline-flex", podcastSelectMode);
-    }
+    const selectedCount = podcastSelected.size;
+
     if (label) {
-        label.textContent = podcastSelectMode
-            ? t("library_add_selected").replace("{n}", podcastSelected.size)
-            : t("library_add_to_ipod");
+        label.textContent = selectedCount > 0
+            ? `Agregar a iPod (${selectedCount})`
+            : `Agregar a iPod`;
     }
-    if (btn) btn.classList.toggle("bg-secondary/25", podcastSelectMode);
 }
 
 function commitPodcastSelectionToIpod() {
-    if (podcastSelected.size === 0) { alert(t("library_select_none")); return; }
+    if (podcastSelected.size === 0) {
+        alert(t("library_select_none"));
+        return;
+    }
     let feed = _currentPodcastFeed();
     if (!feed) return;
     const items = feed.episodes
@@ -250,6 +280,18 @@ function commitPodcastSelectionToIpod() {
             guid: ep.guid, // no viaja a /media/sync — se usa localmente para mark_synced
         }));
     const added = (typeof addToSyncBasket === "function") ? addToSyncBasket(items) : 0;
+    
+    // Cerrar modal de podcast
+    if (typeof closeSubscribePodcastModal === "function") {
+        closeSubscribePodcastModal();
+    }
+    
     exitPodcastSelectMode();
     alert(t("library_added_to_ipod").replace("{n}", added));
+    
+    // Cambiar a vista de sync
+    if (typeof selectIpodCategory === "function") {
+        selectIpodCategory("sync");
+    }
 }
+

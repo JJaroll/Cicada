@@ -40,15 +40,32 @@ def select_folder():
 
 
 @router.get("/api/select_file")
-def select_file():
+def select_file(types: str = ""):
     try:
         if sys.platform == "darwin":
-            script = 'tell application "System Events" to activate\n tell application "System Events" to return POSIX path of (choose file)'
+            if types:
+                # Mapear extensiones comunes a UTIs y formatos válidos para AppleScript
+                exts = [t.strip().lstrip(".") for t in types.split(",") if t.strip()]
+                type_list = []
+                for ext in exts:
+                    type_list.append(f'"{ext}"')
+                    if ext in ("mp4", "m4v", "mov"):
+                        type_list.extend(['"public.mpeg-4"', '"com.apple.quicktime-movie"', '"public.movie"'])
+                    elif ext in ("mp3", "m4a", "m4b", "aac", "flac"):
+                        type_list.extend(['"public.audio"', '"public.mp3"'])
+                type_clause = f' of type {{{", ".join(dict.fromkeys(type_list))}}}'
+            else:
+                type_clause = ""
+            script = f'tell application "System Events" to activate\n tell application "System Events" to return POSIX path of (choose file{type_clause})'
             result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
             path = result.stdout.strip()
             return {"path": path} if path else {"error": "Cancelado"}
         elif sys.platform == "win32":
-            script = "Add-Type -AssemblyName System.windows.forms; $f = New-Object System.Windows.Forms.OpenFileDialog; if ($f.ShowDialog() -eq 'OK') { Write-Output $f.FileName }"
+            filter_str = ""
+            if types:
+                exts = [f"*.{t.strip().lstrip('.')}" for t in types.split(",") if t.strip()]
+                filter_str = f"$f.Filter = 'Archivos compatibles ({';'.join(exts)})|{';'.join(exts)}|Todos los archivos (*.*)|*.*';"
+            script = f"Add-Type -AssemblyName System.windows.forms; $f = New-Object System.Windows.Forms.OpenFileDialog; {filter_str} if ($f.ShowDialog() -eq 'OK') {{ Write-Output $f.FileName }}"
             kwargs = {'creationflags': 0x08000000}
             result = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, **kwargs)
             path = result.stdout.strip()

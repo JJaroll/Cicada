@@ -141,31 +141,80 @@ function ipodSyncBasketTrackRowHtml(it) {
 // --- Picker: agregar canción de la biblioteca local a una playlist del iPod ---
 function ipodLibraryPickerRowHtml(l) {
     const p = _escapeHtmlIpod(l.path);
+    const pl = (typeof ipodState !== "undefined" && ipodState.playlists) 
+        ? ipodState.playlists[ipodState.selectedPlaylistIndex] 
+        : null;
+
+    let inPlaylist = false;
+    let isNewlyAdded = false;
+
+    if (pl && pl.tracks) {
+        const normTitle = _normTxt(l.title || "");
+        const normArtist = _normTxt(l.artist || "");
+        inPlaylist = pl.tracks.some(tr => 
+            (tr.source_path && tr.source_path === l.path) ||
+            (normTitle && _normTxt(tr.title || "") === normTitle && _normTxt(tr.artist || "") === normArtist)
+        );
+        if (typeof ipodPlaylistNewlyAddedPaths !== "undefined" && ipodPlaylistNewlyAddedPaths.has(l.path)) {
+            isNewlyAdded = true;
+        }
+    }
+
+    let statusBadge = "";
+    let icon = "add";
+    let iconClass = "text-muted/50";
+    let cardClass = "bg-black/5 dark:bg-white/5 hover:bg-black/10 dark:hover:bg-white/10";
+
+    if (inPlaylist) {
+        if (isNewlyAdded) {
+            statusBadge = `<span class="px-2 py-0.5 rounded-md bg-accent/20 text-accent text-[10px] font-label-caps font-semibold">Seleccionada</span>`;
+            icon = "check_circle";
+            iconClass = "text-accent scale-110";
+            cardClass = "ring-2 ring-accent bg-accent/15 shadow-sm";
+        } else {
+            statusBadge = `<span class="px-2 py-0.5 rounded-md bg-secondary/20 text-secondary text-[10px] font-label-caps font-semibold flex items-center gap-1"><span class="material-symbols-outlined text-[12px]">done_all</span> En playlist</span>`;
+            icon = "check_circle";
+            iconClass = "text-secondary";
+            cardClass = "bg-secondary/10 border border-secondary/20";
+        }
+    }
+
     return `
-        <button type="button" onclick="addLibrarySongToIpodPlaylist('${p.replace(/'/g, "\\'")}')"
-            class="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-btn-hover transition-colors text-left w-full">
-            <span class="material-symbols-outlined text-[16px] text-accent flex-shrink-0">add</span>
+        <div onclick="toggleLibrarySongInIpodPlaylist('${p.replace(/'/g, "\\'")}')"
+            class="flex items-center gap-3 p-2.5 rounded-xl cursor-pointer transition-all ${cardClass}">
+            <span class="material-symbols-outlined text-[20px] ${iconClass} flex-shrink-0 transition-transform">${icon}</span>
             <div class="flex-1 min-w-0">
-                <div class="font-data-sm text-[13px] text-main truncate font-medium">${_escapeHtmlIpod(l.title || t("track_untitled"))}</div>
-                <div class="font-data-sm text-[11px] text-muted/60 truncate">${_escapeHtmlIpod(l.artist || "")}${l.album ? ' — ' + _escapeHtmlIpod(l.album) : ''}</div>
+                <div class="flex items-center gap-2">
+                    <span class="font-data-sm text-[13px] text-main truncate font-medium">${_escapeHtmlIpod(l.title || t("track_untitled"))}</span>
+                    ${statusBadge}
+                </div>
+                <div class="font-data-sm text-[11px] text-muted/60 truncate mt-0.5">${_escapeHtmlIpod(l.artist || "")}${l.album ? ' — ' + _escapeHtmlIpod(l.album) : ''}</div>
             </div>
-        </button>`;
+        </div>`;
 }
 
 // --- Videos ---
 function ipodVideoCardHtml(vid, idx) {
+    const dur = vid.duration_ms ? _formatMs(vid.duration_ms) : "";
+    const sz = vid.size_bytes ? _formatBytes(vid.size_bytes) : "";
+    const subtitle = [vid.kind, sz].filter(Boolean).join(" • ");
+    const videoId = vid.id || String(idx);
     return `
-        <div class="ipod-media-card relative group">
-            <button type="button" class="hover-delete-btn" onclick="deleteIpodItem('video', ${idx})" title="${t("ipod_delete_item")}">
-                <span class="material-symbols-outlined text-[16px]">remove</span>
+        <div class="ipod-media-card relative group flex flex-col justify-between overflow-hidden bg-black/20 dark:bg-white/5 border border-theme rounded-xl p-2.5 transition-all hover:border-accent/50 hover:shadow-md">
+            <button type="button" class="hover-delete-btn" onclick="deleteIpodItem('video', '${_escapeHtmlIpod(videoId)}')" title="${t("ipod_delete_item")}">
+                <span class="material-symbols-outlined text-[15px]">close</span>
             </button>
-            <div class="aspect-video w-full rounded-lg bg-black/10 dark:bg-white/5 flex items-center justify-center overflow-hidden relative">
-                ${vid.thumb ? `<img src="${vid.thumb}" class="w-full h-full object-cover"/>` : '<span class="material-symbols-outlined text-[36px] text-muted/30">movie</span>'}
-                <span class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white font-data-sm text-[10px]">${_formatMs(vid.duration_ms)}</span>
+            <div class="aspect-video w-full rounded-lg bg-gradient-to-br from-neutral-800 to-neutral-950 flex items-center justify-center overflow-hidden relative border border-white/5 shadow-inner group-hover:scale-[1.01] transition-transform">
+                ${vid.thumb ? `<img src="${vid.thumb}" class="w-full h-full object-cover"/>` : `
+                    <div class="flex flex-col items-center justify-center gap-1 text-muted/30 group-hover:text-accent transition-colors">
+                        <span class="material-symbols-outlined text-[36px]">movie</span>
+                    </div>
+                `}
+                ${dur ? `<span class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/80 text-white/90 font-data-sm text-[10px] backdrop-blur-sm">${dur}</span>` : ""}
             </div>
-            <div class="flex flex-col gap-0.5">
-                <span class="font-data-sm text-[12px] text-main truncate font-medium">${_escapeHtmlIpod(vid.title || `Video #${idx + 1}`)}</span>
-                <span class="font-data-sm text-[10px] text-muted/60">${vid.resolution || _formatBytes(vid.size_bytes)}</span>
+            <div class="flex flex-col gap-0.5 mt-2 min-w-0">
+                <span class="font-data-sm text-[12px] text-main truncate font-medium" title="${_escapeHtmlIpod(vid.title || `Video #${idx + 1}`)}">${_escapeHtmlIpod(vid.title || `Video #${idx + 1}`)}</span>
+                <span class="font-data-sm text-[10px] text-muted/60 truncate">${subtitle || vid.show_name || "Video"}</span>
             </div>
         </div>
     `;
@@ -174,7 +223,7 @@ function ipodVideoCardHtml(vid, idx) {
 // --- Podcasts / Episodios ---
 function ipodPodcastSidebarItemHtml(pod, idx, isSelected) {
     return `
-            <div onclick="selectIpodPodcast(${idx})" class="flex items-center justify-between px-2.5 py-2 rounded-lg cursor-pointer transition-colors ${isSelected ? 'bg-accent-light text-accent font-semibold' : 'bg-btn hover:bg-btn-hover text-main'}">
+            <div onclick="selectIpodPodcast(${idx})" oncontextmenu="showIpodPodcastContextMenu(event, ${idx})" class="flex items-center justify-between px-2.5 py-2 rounded-lg cursor-pointer transition-colors ${isSelected ? 'bg-accent-light text-accent font-semibold' : 'bg-btn hover:bg-btn-hover text-main'}">
                 <div class="flex items-center gap-2 min-w-0">
                     <span class="material-symbols-outlined text-[16px]">podcasts</span>
                     <span class="font-data-sm text-[13px] truncate">${_escapeHtmlIpod(pod.name || "Podcast")}</span>
@@ -184,9 +233,11 @@ function ipodPodcastSidebarItemHtml(pod, idx, isSelected) {
         `;
 }
 
-function ipodEpisodeRowHtml(ep, i) {
+function ipodEpisodeRowHtml(ep, i, podName) {
+    const epId = ep.id || "";
+    const pName = podName || "";
     return `
-            <div class="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-btn-hover transition-colors">
+            <div oncontextmenu="showIpodEpisodeContextMenu(event, '${epId}', '${_escapeHtmlIpod(ep.title).replace(/'/g, "\\'")}', '${_escapeHtmlIpod(pName).replace(/'/g, "\\'")}')" class="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-btn-hover transition-colors cursor-pointer">
                 <span class="font-data-sm text-[12px] text-muted/40 w-6 text-right">${i + 1}</span>
                 <div class="flex-1 min-w-0">
                     <div class="font-data-sm text-[13px] text-main truncate font-medium">${_escapeHtmlIpod(ep.title)}</div>
@@ -200,7 +251,7 @@ function ipodEpisodeRowHtml(ep, i) {
 // --- Audiolibros / Capítulos ---
 function ipodAudiobookSidebarItemHtml(ab, idx, isSelected) {
     return `
-            <div onclick="selectIpodAudiobook(${idx})" class="flex items-center justify-between px-2.5 py-2 rounded-lg cursor-pointer transition-colors ${isSelected ? 'bg-accent-light text-accent font-semibold' : 'bg-btn hover:bg-btn-hover text-main'}">
+            <div onclick="selectIpodAudiobook(${idx})" oncontextmenu="showIpodAudiobookContextMenu(event, ${idx})" class="flex items-center justify-between px-2.5 py-2 rounded-lg cursor-pointer transition-colors ${isSelected ? 'bg-accent-light text-accent font-semibold' : 'bg-btn hover:bg-btn-hover text-main'}">
                 <div class="flex items-center gap-2 min-w-0">
                     <span class="material-symbols-outlined text-[16px]">menu_book</span>
                     <span class="font-data-sm text-[13px] truncate">${_escapeHtmlIpod(ab.title || "Audiolibro")}</span>
@@ -210,9 +261,10 @@ function ipodAudiobookSidebarItemHtml(ab, idx, isSelected) {
         `;
 }
 
-function ipodChapterRowHtml(ch, i, author) {
+function ipodChapterRowHtml(ch, i, author, abTitle) {
+    const chId = ch.id || "";
     return `
-            <div class="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-btn-hover transition-colors">
+            <div oncontextmenu="showIpodChapterContextMenu(event, '${chId}', '${_escapeHtmlIpod(ch.title).replace(/'/g, "\\'")}', '${_escapeHtmlIpod(abTitle || author || "").replace(/'/g, "\\'")}')" class="flex items-center gap-3 px-3 py-1.5 rounded-lg hover:bg-btn-hover transition-colors cursor-pointer">
                 <span class="font-data-sm text-[12px] text-muted/40 w-6 text-right">${i + 1}</span>
                 <div class="flex-1 min-w-0">
                     <div class="font-data-sm text-[13px] text-main truncate font-medium">${_escapeHtmlIpod(ch.title)}</div>

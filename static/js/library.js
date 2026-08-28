@@ -366,24 +366,51 @@ function updateLibrarySelectUI() {
             ? t("library_add_selected").replace("{n}", librarySelected.size)
             : t("library_add_to_ipod");
     }
-    if (btn) btn.classList.toggle("bg-secondary/25", librarySelectMode);
 }
 
-function commitLibrarySelectionToIpod() {
+async function commitLibrarySelectionToIpod() {
     if (librarySelected.size === 0) { alert(t("library_select_none")); return; }
-    const items = libraryTracks
-        .filter(tr => librarySelected.has(tr.path))
-        .map(tr => ({
-            source_path: tr.path,
-            title: tr.title || "",
-            artist: tr.artist || null,
-            album: tr.album || null,
-            length_ms: tr.duration_ms || tr.length_ms || null,
-            filetype: (String(tr.path).split(".").pop() || "").toLowerCase(),
-        }));
-    const added = (typeof addToSyncBasket === "function") ? addToSyncBasket(items) : 0;
-    exitLibrarySelectMode();
-    alert(t("library_added_to_ipod").replace("{n}", added));
+    const btn = document.getElementById("library-add-ipod-btn");
+    const inner = document.getElementById("library-add-ipod-inner");
+
+    if (btn) {
+        btn.disabled = true;
+        btn.classList.add("pointer-events-none", "opacity-80");
+    }
+    if (inner) {
+        inner.innerHTML = `
+            <span class="material-symbols-outlined text-[15px] text-accent animate-spin">progress_activity</span>
+            <span>Agregando al carrito...</span>
+        `;
+    }
+
+    try {
+        const items = libraryTracks
+            .filter(tr => librarySelected.has(tr.path))
+            .map(tr => ({
+                source_path: tr.path,
+                title: tr.title || "",
+                artist: tr.artist || null,
+                album: tr.album || null,
+                length_ms: tr.duration_ms || tr.length_ms || null,
+                filetype: (String(tr.path).split(".").pop() || "").toLowerCase(),
+            }));
+        const added = (typeof addToSyncBasket === "function") ? addToSyncBasket(items) : 0;
+        exitLibrarySelectMode();
+        alert(t("library_added_to_ipod").replace("{n}", added));
+    } finally {
+        if (btn) {
+            btn.disabled = false;
+            btn.classList.remove("pointer-events-none", "opacity-80");
+        }
+        if (inner) {
+            inner.innerHTML = `
+                <span class="material-symbols-outlined text-[15px] text-accent">add_to_queue</span>
+                <span id="library-add-ipod-label" data-i18n="library_add_to_ipod">Agregar a iPod</span>
+            `;
+        }
+        updateLibrarySelectUI();
+    }
 }
 
 // --- Reproductor ---

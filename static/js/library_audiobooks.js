@@ -1,8 +1,7 @@
-// Exploración de carpeta para audiolibros — calcado del flujo de música en
-// library.js, pero sin tags de biblioteca organizada: metadata leída
-// directo del archivo (título/autor/narrador/duración/capítulos).
+// Exploración de carpeta para audiolibros — metadata leída directo del archivo
+// (título/autor/narrador/duración/capítulos) con selección directa e interactiva para el iPod.
 let audiobookResults = [];
-let audiobookSelectMode = false;
+let audiobookSelectMode = true;
 let audiobookSelected = new Set();
 
 async function scanAudiobookFolder() {
@@ -12,17 +11,26 @@ async function scanAudiobookFolder() {
         return;
     }
     let browserEl = document.getElementById("audiobook-browser");
-    browserEl.innerHTML = '<p class="font-data-sm text-[13px] text-muted/40">' + t("library_scanning") + '</p>';
+    browserEl.innerHTML = '<p class="font-data-sm text-[13px] text-muted/40 p-3">' + t("library_scanning") + '</p>';
     try {
         let res = await fetch('/api/library/browse_audiobooks?library_dir=' + encodeURIComponent(dir));
         let data = await res.json();
         if (!res.ok) throw new Error(data.detail || t("error_unknown"));
 
         audiobookResults = data.audiobooks || [];
-        document.getElementById("audiobook-count").textContent = audiobookResults.length + t("library_track_count_suffix");
+        audiobookSelected.clear();
+        audiobookSelectMode = true;
+
+        // Si solo hay 1 audiolibro, preseleccionarlo para comodidad del usuario
+        if (audiobookResults.length === 1) {
+            audiobookSelected.add(audiobookResults[0].path);
+        }
+
         renderAudiobookBrowser();
+        updateAudiobookIpodButton();
+        updateAudiobookSelectUI();
     } catch (e) {
-        browserEl.innerHTML = '<p class="font-data-sm text-[13px] text-[#f43f5e]">' + t("error_prefix") + e.message + '</p>';
+        browserEl.innerHTML = '<p class="font-data-sm text-[13px] text-[#f43f5e] p-3">' + t("error_prefix") + e.message + '</p>';
     }
 }
 
@@ -39,29 +47,24 @@ function audiobookRowHtml(ab) {
     if (ab.chapter_count) subtitleParts.push(ab.chapter_count + " " + t("ipod_tracks_count"));
     let subtitle = subtitleParts.join(" &middot; ");
 
-    if (audiobookSelectMode) {
-        let sel = audiobookSelected.has(ab.path);
-        return '<div class="flex items-center gap-3 px-2 py-1.5 rounded-lg cursor-pointer transition-colors ' +
-            (sel ? 'ring-1 ring-secondary bg-secondary/10' : 'hover:bg-btn-hover') + '" data-path="' + pathEscaped +
-            '" onclick="toggleAudiobookSelect(this)">' +
-            '<span class="material-symbols-outlined text-[18px] text-secondary">' + (sel ? 'check_circle' : 'radio_button_unchecked') + '</span>' +
-            '<div class="overflow-hidden flex-1">' +
-            '<p class="font-data-sm text-[14px] truncate">' + escapeHtml(ab.title) + '</p>' +
-            '<p class="font-label-caps text-[11px] text-muted/40 truncate">' + subtitle + '</p>' +
-            '</div></div>';
-    }
-    return '<div class="flex items-center gap-3 px-2 py-1.5 rounded-lg" data-path="' + pathEscaped + '">' +
-        '<span class="material-symbols-outlined text-[18px] text-muted/40">menu_book</span>' +
+    let sel = audiobookSelected.has(ab.path);
+    return '<div class="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all ' +
+        (sel ? 'ring-2 ring-accent bg-accent/15 border-transparent shadow-sm' : 'bg-black/10 dark:bg-white/5 hover:bg-black/20 dark:hover:bg-white/10 border border-transparent') +
+        '" data-path="' + pathEscaped + '" onclick="toggleAudiobookSelect(this)">' +
+        '<span class="material-symbols-outlined text-[22px] text-accent flex-shrink-0 transition-transform ' + (sel ? 'scale-110' : 'opacity-60') + '">' +
+        (sel ? 'check_circle' : 'radio_button_unchecked') +
+        '</span>' +
         '<div class="overflow-hidden flex-1">' +
-        '<p class="font-data-sm text-[14px] truncate">' + escapeHtml(ab.title) + '</p>' +
-        '<p class="font-label-caps text-[11px] text-muted/40 truncate">' + subtitle + '</p>' +
+        '<p class="font-data-sm text-[14px] font-semibold text-main truncate">' + escapeHtml(ab.title) + '</p>' +
+        '<p class="font-label-caps text-[11px] text-muted/70 truncate mt-0.5">' + subtitle + '</p>' +
         '</div></div>';
 }
 
 function renderAudiobookBrowser() {
     let browserEl = document.getElementById("audiobook-browser");
+    if (!browserEl) return;
     if (audiobookResults.length === 0) {
-        browserEl.innerHTML = '<p class="font-data-sm text-[13px] text-muted/40">' + t("library_no_songs_in_folder") + '</p>';
+        browserEl.innerHTML = '<p class="font-data-sm text-[13px] text-muted/40 p-3">' + t("library_no_songs_in_folder") + '</p>';
         return;
     }
     browserEl.innerHTML = audiobookResults.map(audiobookRowHtml).join("");
@@ -70,26 +73,31 @@ function renderAudiobookBrowser() {
 function updateAudiobookIpodButton() {
     const btn = document.getElementById("audiobook-add-ipod-btn");
     if (!btn) return;
-    const uiEnabled = (typeof ipodUiEnabled === "undefined") || ipodUiEnabled;
-    const connected = uiEnabled && (typeof ipodState !== "undefined") && ipodState.connected;
-    if (!connected && audiobookSelectMode) exitAudiobookSelectMode();
-    btn.classList.toggle("hidden", !connected);
-    btn.classList.toggle("inline-flex", !!connected);
+    const connected = (typeof ipodState !== "undefined") && ipodState.connected;
+    const hasResults = audiobookResults.length > 0;
+    btn.classList.toggle("hidden", !(connected && hasResults));
+    btn.classList.toggle("inline-flex", (connected && hasResults));
 }
 
 function onAudiobookIpodButton() {
-    if (!audiobookSelectMode) {
-        audiobookSelectMode = true;
-        audiobookSelected.clear();
-        renderAudiobookBrowser();
-        updateAudiobookSelectUI();
-    } else {
-        commitAudiobookSelectionToIpod();
+    if (audiobookResults.length === 0) {
+        alert("Primero busca y encuentra audiolibros en una carpeta.");
+        return;
     }
+    if (audiobookSelected.size === 0) {
+        if (audiobookResults.length === 1) {
+            audiobookSelected.add(audiobookResults[0].path);
+            renderAudiobookBrowser();
+            updateAudiobookSelectUI();
+        } else {
+            alert("Por favor selecciona al menos un audiolibro de la lista.");
+            return;
+        }
+    }
+    commitAudiobookSelectionToIpod();
 }
 
 function exitAudiobookSelectMode() {
-    audiobookSelectMode = false;
     audiobookSelected.clear();
     renderAudiobookBrowser();
     updateAudiobookSelectUI();
@@ -97,35 +105,50 @@ function exitAudiobookSelectMode() {
 
 function toggleAudiobookSelect(el) {
     const path = el.dataset.path;
+    if (!path) return;
     const now = !audiobookSelected.has(path);
     if (now) audiobookSelected.add(path); else audiobookSelected.delete(path);
-    el.classList.toggle("ring-1", now);
-    el.classList.toggle("ring-secondary", now);
-    el.classList.toggle("bg-secondary/10", now);
-    el.classList.toggle("hover:bg-btn-hover", !now);
+    el.classList.toggle("ring-2", now);
+    el.classList.toggle("ring-accent", now);
+    el.classList.toggle("bg-accent/15", now);
+    el.classList.toggle("shadow-sm", now);
     const icon = el.querySelector(".material-symbols-outlined");
-    if (icon) icon.textContent = now ? "check_circle" : "radio_button_unchecked";
+    if (icon) {
+        icon.textContent = now ? "check_circle" : "radio_button_unchecked";
+        icon.classList.toggle("scale-110", now);
+        icon.classList.toggle("opacity-60", !now);
+    }
     updateAudiobookSelectUI();
 }
 
 function updateAudiobookSelectUI() {
     const label = document.getElementById("audiobook-add-ipod-label");
-    const cancel = document.getElementById("audiobook-select-cancel-btn");
-    const btn = document.getElementById("audiobook-add-ipod-btn");
-    if (cancel) {
-        cancel.classList.toggle("hidden", !audiobookSelectMode);
-        cancel.classList.toggle("inline-flex", audiobookSelectMode);
+    const countEl = document.getElementById("audiobook-count");
+    const selectedCount = audiobookSelected.size;
+    const totalCount = audiobookResults.length;
+
+    if (countEl) {
+        if (totalCount === 0) {
+            countEl.textContent = "";
+        } else if (selectedCount > 0) {
+            countEl.textContent = `${selectedCount} de ${totalCount} seleccionados`;
+        } else {
+            countEl.textContent = `${totalCount} ${totalCount === 1 ? 'audiolibro' : 'audiolibros'}`;
+        }
     }
+
     if (label) {
-        label.textContent = audiobookSelectMode
-            ? t("library_add_selected").replace("{n}", audiobookSelected.size)
-            : t("library_add_to_ipod");
+        label.textContent = selectedCount > 0
+            ? `Agregar a iPod (${selectedCount})`
+            : `Agregar a iPod`;
     }
-    if (btn) btn.classList.toggle("bg-secondary/25", audiobookSelectMode);
 }
 
 function commitAudiobookSelectionToIpod() {
-    if (audiobookSelected.size === 0) { alert(t("library_select_none")); return; }
+    if (audiobookSelected.size === 0) {
+        alert(t("library_select_none"));
+        return;
+    }
     const items = audiobookResults
         .filter(ab => audiobookSelected.has(ab.path))
         .map(ab => ({
@@ -138,6 +161,18 @@ function commitAudiobookSelectionToIpod() {
             kind: "audiobook",
         }));
     const added = (typeof addToSyncBasket === "function") ? addToSyncBasket(items) : 0;
+    
+    // Cerrar modal de audiolibros y notificar
+    if (typeof closeAddAudiobookModal === "function") {
+        closeAddAudiobookModal();
+    }
+    
     exitAudiobookSelectMode();
     alert(t("library_added_to_ipod").replace("{n}", added));
+    
+    // Si la función selectIpodCategory existe, mostrar la pestaña de sync
+    if (typeof selectIpodCategory === "function") {
+        selectIpodCategory("sync");
+    }
 }
+
