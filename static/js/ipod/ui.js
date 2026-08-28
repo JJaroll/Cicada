@@ -24,6 +24,11 @@ let ipodState = {
     selectedPlaylistIndex: 0,
     selectedPodcastIndex: 0,
     selectedAudiobookIndex: 0,
+    photos: [],
+    selectedPhotos: new Set(),
+    photosSelectMode: false,
+    lightboxIndex: -1,
+    photosSearchQuery: '',
     syncBasket: [],           // pistas locales pendientes de enviar al iPod (por source_path)
     syncBasketPlaylists: [],  // playlists pendientes de crear: {name, source_paths}
     conflicts: []             // conflictos de rating pendientes (GET /api/ipod/conflicts)
@@ -208,12 +213,13 @@ function _isMusicTrack(t) {
 // --- CARGA DE CONTENIDO ---
 async function loadIpodLibrary() {
     try {
-        const [tRes, pRes, vRes, podRes, abRes] = await Promise.allSettled([
+        const [tRes, pRes, vRes, podRes, abRes, phRes] = await Promise.allSettled([
             ipodFetchTracks(),
             ipodFetchPlaylists(),
             ipodFetchVideos(),
             ipodFetchPodcasts(),
-            ipodFetchAudiobooks()
+            ipodFetchAudiobooks(),
+            ipodFetchPhotos()
         ]);
 
         ipodState.tracks = (tRes.status === "fulfilled" && tRes.value.res.ok) ? (tRes.value.data.tracks || []) : [];
@@ -222,6 +228,7 @@ async function loadIpodLibrary() {
         ipodState.videos = (vRes.status === "fulfilled" && vRes.value.res.ok) ? (vRes.value.data.videos || []) : [];
         ipodState.podcasts = (podRes.status === "fulfilled" && podRes.value.res.ok) ? (podRes.value.data.podcasts || []) : [];
         ipodState.audiobooks = (abRes.status === "fulfilled" && abRes.value.res.ok) ? (abRes.value.data.audiobooks || []) : [];
+        ipodState.photos = (phRes.status === "fulfilled" && phRes.value.res.ok) ? (phRes.value.data.photos || []) : [];
 
         // Actualizar contadores
         updateIpodCategoryCounts();
@@ -242,6 +249,7 @@ function updateIpodCategoryCounts() {
     const cVideos = document.getElementById("ipod-count-videos");
     const cPods = document.getElementById("ipod-count-podcasts");
     const cAbs = document.getElementById("ipod-count-audiobooks");
+    const cPhotos = document.getElementById("ipod-count-photos");
 
     const songs = ipodState.songs || ipodState.tracks.filter(_isMusicTrack);
     if (cSongs) cSongs.textContent = songs.length;
@@ -249,6 +257,7 @@ function updateIpodCategoryCounts() {
     if (cVideos) cVideos.textContent = ipodState.videos.length;
     if (cPods) cPods.textContent = ipodState.podcasts.length;
     if (cAbs) cAbs.textContent = ipodState.audiobooks.length;
+    if (cPhotos) cPhotos.textContent = (ipodState.photos || []).length;
 }
 
 // --- POBLAR DROPDOWNS DE FILTRO ---
@@ -1368,12 +1377,112 @@ function selectIpodAudiobook(idx) {
     renderIpodAudiobooks();
 }
 
-// --- VISTA: FOTOS (solo indicador — sin listado, sin escritura; ver docs/VENDORED.md) ---
+// --- VISTA: FOTOS (Galería y Visor Lightbox solo lectura) ---
+function onIpodPhotosSearch(val) {
+    ipodState.photosSearchQuery = (val || "").trim().toLowerCase();
+    renderIpodPhotos();
+}
+
 function renderIpodPhotos() {
-    const summaryEl = document.getElementById("ipod-photos-summary");
-    if (!summaryEl) return;
-    const bytes = ipodState.photosBytes || 0;
-    summaryEl.textContent = t("ipod_photos_summary_bytes").replace("{size}", _formatBytes(bytes));
+    const grid = document.getElementById("ipod-photos-grid");
+    const countEl = document.getElementById("ipod-photos-count");
+
+    const allPhotos = ipodState.photos || [];
+    let photos = allPhotos;
+
+    if (ipodState.photosSearchQuery) {
+        const q = ipodState.photosSearchQuery;
+        photos = photos.filter(p => (p.filename || "").toLowerCase().includes(q) || (p.rel_path || "").toLowerCase().includes(q));
+    }
+
+    const totalBytes = photos.reduce((acc, p) => acc + (p.size_bytes || 0), 0);
+    if (countEl) {
+        countEl.textContent = `${photos.length} ${photos.length === 1 ? 'foto' : 'fotos'} (${_formatBytes(totalBytes)})`;
+    }
+
+    if (!grid) return;
+
+    if (photos.length === 0) {
+        grid.innerHTML = `
+            <div class="col-span-full flex flex-col items-center justify-center py-20 text-center gap-3">
+                <span class="material-symbols-outlined text-[48px] text-muted/30">photo_library</span>
+                <p class="font-data-sm text-[14px] text-main font-medium">${ipodState.photosSearchQuery ? 'No se encontraron fotos que coincidan con la búsqueda' : 'No hay fotos en el iPod'}</p>
+                <p class="font-data-sm text-[12px] text-muted/50 max-w-sm">Las fotos sincronizadas con tu iPod aparecerán en esta cuadrícula para visualizarlas en alta resolución.</p>
+            </div>
+        `;
+        return;
+    }
+
+    grid.innerHTML = photos.map((p, i) => {
+        const origIdx = allPhotos.indexOf(p);
+        const effectiveIdx = origIdx >= 0 ? origIdx : i;
+        return ipodPhotoCardHtml(p, effectiveIdx);
+    }).join("");
+}
+
+// --- VISOR LIGHTBOX DE FOTOS EN PANTALLA COMPLETA ---
+function openPhotoLightbox(idx) {
+    const photos = ipodState.photos || [];
+    if (idx < 0 || idx >= photos.length) return;
+
+    ipodState.lightboxIndex = idx;
+    const photo = photos[idx];
+    const modal = document.getElementById("ipod-photo-lightbox-modal");
+    const img = document.getElementById("lightbox-image");
+    const fnEl = document.getElementById("lightbox-filename");
+    const counterEl = document.getElementById("lightbox-counter");
+    const resEl = document.getElementById("lightbox-resolution");
+    const sizeEl = document.getElementById("lightbox-size");
+    const dateEl = document.getElementById("lightbox-date");
+    const dlLink = document.getElementById("lightbox-download-link");
+
+    if (modal && img) {
+        img.src = photo.preview_url || `/api/ipod/photos/preview?path=${encodeURIComponent(photo.rel_path)}`;
+        if (fnEl) fnEl.textContent = photo.filename || "Foto";
+        if (counterEl) counterEl.textContent = `${idx + 1} / ${photos.length}`;
+        if (resEl) resEl.textContent = (photo.width && photo.height) ? `${photo.width} × ${photo.height}` : 'Resolución original';
+        if (sizeEl) sizeEl.textContent = _formatBytes(photo.size_bytes);
+        if (dateEl) dateEl.textContent = photo.date_modified || "";
+        if (dlLink) {
+            dlLink.href = photo.raw_url || `/api/ipod/photos/raw?path=${encodeURIComponent(photo.rel_path)}`;
+            dlLink.download = photo.filename || "foto.jpg";
+        }
+
+        modal.classList.remove("hidden");
+        modal.classList.add("flex");
+    }
+}
+
+function closePhotoLightbox() {
+    const modal = document.getElementById("ipod-photo-lightbox-modal");
+    if (modal) {
+        modal.classList.add("hidden");
+        modal.classList.remove("flex");
+    }
+    ipodState.lightboxIndex = -1;
+}
+
+function navigateLightbox(dir) {
+    const photos = ipodState.photos || [];
+    if (photos.length === 0) return;
+    let nextIdx = (ipodState.lightboxIndex + dir + photos.length) % photos.length;
+    openPhotoLightbox(nextIdx);
+}
+
+if (!window._ipodLightboxKeyHandlerRegistered) {
+    window._ipodLightboxKeyHandlerRegistered = true;
+    window.addEventListener("keydown", (e) => {
+        const modal = document.getElementById("ipod-photo-lightbox-modal");
+        if (!modal || modal.classList.contains("hidden")) return;
+
+        if (e.key === "Escape") {
+            closePhotoLightbox();
+        } else if (e.key === "ArrowLeft") {
+            navigateLightbox(-1);
+        } else if (e.key === "ArrowRight") {
+            navigateLightbox(1);
+        }
+    });
 }
 
 // --- BÚSQUEDA Y FILTROS ---

@@ -43,6 +43,7 @@ async function ipodFetchPlaylists() { return _ipodGet("/api/ipod/playlists"); }
 async function ipodFetchVideos() { return _ipodGet("/api/ipod/videos"); }
 async function ipodFetchPodcasts() { return _ipodGet("/api/ipod/podcasts"); }
 async function ipodFetchAudiobooks() { return _ipodGet("/api/ipod/audiobooks"); }
+async function ipodFetchPhotos() { return _ipodGet("/api/ipod/photos"); }
 async function ipodFetchConflicts() { return _ipodGet("/api/ipod/conflicts"); }
 
 async function ipodMediaSync(payload) { return _ipodPost("/api/ipod/media/sync", payload); }
@@ -50,6 +51,7 @@ async function ipodPlaylistSet(payload) { return _ipodPost("/api/ipod/playlist/s
 async function ipodTrackRemove(payload) { return _ipodPost("/api/ipod/track/remove", payload); }
 async function ipodPlaylistsCreate(payload) { return _ipodPost("/api/ipod/playlists/create", payload); }
 async function ipodPlaylistsImport(payload) { return _ipodPost("/api/ipod/playlists/import", payload); }
+async function ipodPlaylistsDelete(payload) { return _ipodPost("/api/ipod/playlists/delete", payload); }
 async function ipodEject(payload) { return _ipodPost("/api/ipod/eject", payload); }
 async function ipodPlanCreate(payload) { return _ipodPost("/api/ipod/plan", payload); }
 async function ipodApplyPlan(payload) { return _ipodPost("/api/ipod/apply", payload); }

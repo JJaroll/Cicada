@@ -40,11 +40,10 @@ def select_folder():
 
 
 @router.get("/api/select_file")
-def select_file(types: str = ""):
+def select_file(types: str = "", multiple: bool = False):
     try:
         if sys.platform == "darwin":
             if types:
-                # Mapear extensiones comunes a UTIs y formatos válidos para AppleScript
                 exts = [t.strip().lstrip(".") for t in types.split(",") if t.strip()]
                 type_list = []
                 for ext in exts:
@@ -53,23 +52,47 @@ def select_file(types: str = ""):
                         type_list.extend(['"public.mpeg-4"', '"com.apple.quicktime-movie"', '"public.movie"'])
                     elif ext in ("mp3", "m4a", "m4b", "aac", "flac"):
                         type_list.extend(['"public.audio"', '"public.mp3"'])
+                    elif ext in ("jpg", "jpeg", "png", "webp", "heic", "bmp"):
+                        type_list.extend(['"public.image"', '"public.jpeg"', '"public.png"'])
                 type_clause = f' of type {{{", ".join(dict.fromkeys(type_list))}}}'
             else:
                 type_clause = ""
-            script = f'tell application "System Events" to activate\n tell application "System Events" to return POSIX path of (choose file{type_clause})'
+            
+            multi_clause = " with multiple selections allowed" if multiple else ""
+            if multiple:
+                script = f'''tell application "System Events" to activate
+tell application "System Events"
+    set theFiles to (choose file{type_clause}{multi_clause})
+    set outPaths to ""
+    repeat with f in theFiles
+        set outPaths to outPaths & (POSIX path of f) & linefeed
+    end repeat
+    return outPaths
+end tell'''
+            else:
+                script = f'tell application "System Events" to activate\n tell application "System Events" to return POSIX path of (choose file{type_clause})'
+
             result = subprocess.run(['osascript', '-e', script], capture_output=True, text=True)
-            path = result.stdout.strip()
-            return {"path": path} if path else {"error": "Cancelado"}
+            output = result.stdout.strip()
+            if not output:
+                return {"error": "Cancelado"}
+            paths = [p.strip() for p in output.splitlines() if p.strip()]
+            return {"path": paths[0] if paths else "", "paths": paths}
         elif sys.platform == "win32":
             filter_str = ""
             if types:
                 exts = [f"*.{t.strip().lstrip('.')}" for t in types.split(",") if t.strip()]
                 filter_str = f"$f.Filter = 'Archivos compatibles ({';'.join(exts)})|{';'.join(exts)}|Todos los archivos (*.*)|*.*';"
-            script = f"Add-Type -AssemblyName System.windows.forms; $f = New-Object System.Windows.Forms.OpenFileDialog; {filter_str} if ($f.ShowDialog() -eq 'OK') {{ Write-Output $f.FileName }}"
+            multi_cmd = "$f.Multiselect = $true;" if multiple else ""
+            out_cmd = "Write-Output ($f.FileNames -join '`n')" if multiple else "Write-Output $f.FileName"
+            script = f"Add-Type -AssemblyName System.windows.forms; $f = New-Object System.Windows.Forms.OpenFileDialog; {filter_str} {multi_cmd} if ($f.ShowDialog() -eq 'OK') {{ {out_cmd} }}"
             kwargs = {'creationflags': 0x08000000}
             result = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, **kwargs)
-            path = result.stdout.strip()
-            return {"path": path} if path else {"error": "Cancelado"}
+            output = result.stdout.strip()
+            if not output:
+                return {"error": "Cancelado"}
+            paths = [p.strip() for p in output.splitlines() if p.strip()]
+            return {"path": paths[0] if paths else "", "paths": paths}
         else:
             return {"error": "Selección nativa no soportada. Copia y pega la ruta."}
     except Exception as e:

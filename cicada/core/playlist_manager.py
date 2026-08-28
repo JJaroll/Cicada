@@ -84,6 +84,14 @@ class PlaylistManager:
         if not base.is_dir():
             return playlists
 
+        # Indexar archivos existentes en la biblioteca para resolver rutas que hayan cambiado de subcarpeta
+        existing_files: Dict[str, Path] = {}
+        existing_stems: Dict[str, Path] = {}
+        for f in base.rglob("*"):
+            if f.is_file() and f.suffix.lower() in self.SUPPORTED_EXTENSIONS:
+                existing_files[f.name.lower()] = f
+                existing_stems[f.stem.lower()] = f
+
         for m3u8_file in sorted(base.glob("*.m3u8")):
             try:
                 lines = m3u8_file.read_text(encoding="utf-8").splitlines()
@@ -98,6 +106,18 @@ class PlaylistManager:
                 candidate = Path(line)
                 if not candidate.is_absolute():
                     candidate = (m3u8_file.parent / candidate).resolve()
+                if not candidate.is_file():
+                    fname_key = candidate.name.lower()
+                    fstem_key = candidate.stem.lower()
+                    if fname_key in existing_files:
+                        candidate = existing_files[fname_key]
+                    elif fstem_key in existing_stems:
+                        candidate = existing_stems[fstem_key]
+                    else:
+                        for k, fpath in existing_stems.items():
+                            if fstem_key in k or k in fstem_key:
+                                candidate = fpath
+                                break
                 paths.append(str(candidate))
 
             playlists.append({"name": m3u8_file.stem, "paths": paths})

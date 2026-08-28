@@ -956,10 +956,10 @@ async def get():
                                 <span class="flex-1 truncate" data-i18n="ipod_cat_audiobooks">Audiolibros</span>
                                 <span id="ipod-count-audiobooks" class="font-data-sm text-[11px] text-muted/60">0</span>
                             </button>
-                            <!-- Solo visible si el dispositivo ya tiene fotos (photos_bytes > 0). Solo lectura: sin escritura, ver docs/VENDORED.md. -->
-                            <button type="button" id="ipod-cat-photos-btn" class="ipod-cat-btn hidden" data-cat="photos" onclick="switchIpodCategory('photos')">
+                            <button type="button" id="ipod-cat-photos-btn" class="ipod-cat-btn" data-cat="photos" onclick="switchIpodCategory('photos')">
                                 <span class="material-symbols-outlined text-[18px]">photo_library</span>
                                 <span class="flex-1 truncate" data-i18n="ipod_cat_photos">Fotos</span>
+                                <span id="ipod-count-photos" class="font-data-sm text-[11px] text-muted/60">0</span>
                             </button>
                             <!-- Separador + carrito de sincronización (pendientes de inyectar) -->
                             <div class="border-t border-theme my-2"></div>
@@ -1163,11 +1163,32 @@ async def get():
                                 </div>
                             </div>
 
-                            <!-- VISTA: FOTOS (solo indicador, sin listado — ver docs/VENDORED.md sobre por qué no hay escritura ni lectura detallada) -->
-                            <div id="ipod-view-photos" class="hidden flex-1 flex flex-col items-center justify-center gap-3 text-center px-8">
-                                <span class="material-symbols-outlined text-[40px] text-muted/40">photo_library</span>
-                                <p class="font-data-sm text-[14px] text-main" id="ipod-photos-summary" data-i18n="ipod_photos_summary">El iPod tiene fotos.</p>
-                                <p class="font-data-sm text-[12px] text-muted/50 max-w-sm" data-i18n="ipod_photos_readonly_hint">Cicada no gestiona fotos del iPod — esto es solo informativo.</p>
+                            <!-- VISTA: FOTOS (Galería interactiva: Ver, Agregar, Eliminar) -->
+                            <div id="ipod-view-photos" class="hidden flex-1 h-full min-h-0 flex flex-col gap-3 overflow-hidden">
+                                <!-- Toolbar -->
+                                <div class="flex items-center justify-between pb-2 border-b border-theme gap-3 flex-wrap flex-shrink-0">
+                                    <div class="flex items-center gap-3 min-w-0">
+                                        <div class="flex flex-col min-w-0">
+                                            <h4 class="font-label-caps text-[13px] text-main font-semibold" data-i18n="ipod_photos_title">Fotos del iPod</h4>
+                                            <span id="ipod-photos-count" class="font-data-sm text-[12px] text-muted/60">0 fotos</span>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center gap-2.5">
+                                        <!-- Buscador -->
+                                        <div class="relative w-48">
+                                            <span class="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-[16px] text-muted/40 pointer-events-none">search</span>
+                                            <input type="text" id="ipod-photos-search" oninput="onIpodPhotosSearch(this.value)" placeholder="Buscar foto..." class="w-full pl-8 pr-2.5 py-1.5 rounded-lg bg-btn text-[12px] text-main border border-transparent focus:border-accent focus:outline-none placeholder:text-muted/40 font-data-sm"/>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Grilla de Fotos -->
+                                <div id="ipod-photos-grid" class="flex-1 overflow-y-auto custom-scrollbar grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 p-1 content-start auto-rows-max">
+                                    <div class="col-span-full flex flex-col items-center justify-center py-16 text-muted/40 gap-2">
+                                        <span class="material-symbols-outlined text-[36px] animate-spin">progress_activity</span>
+                                        <span class="font-data-sm text-[13px]">Cargando fotos del iPod...</span>
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- VISTA 7: SINCRONIZAR CON CICADA (elementos pendientes de inyectar) -->
@@ -1347,6 +1368,50 @@ async def get():
                         </div>
                     </div>
                 </div>
+
+                <!-- Modal Visor de Fotos Lightbox (Pantalla Completa) -->
+                <div id="ipod-photo-lightbox-modal" class="hidden fixed inset-0 z-[110] items-center justify-center bg-black/90 backdrop-blur-md select-none" onclick="if(event.target === this) closePhotoLightbox()">
+                    <!-- Barra de herramientas superior del visor -->
+                    <div class="absolute top-4 inset-x-4 flex items-center justify-between z-10 px-2 pointer-events-auto">
+                        <div class="flex items-center gap-3 bg-black/60 backdrop-blur-md px-3.5 py-1.5 rounded-full border border-white/10 text-white">
+                            <span class="material-symbols-outlined text-[18px] text-accent">image</span>
+                            <span id="lightbox-filename" class="font-data-sm text-[13px] max-w-xs truncate font-medium">Foto</span>
+                            <span id="lightbox-counter" class="font-data-sm text-[11px] text-white/50">1 / 1</span>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <a id="lightbox-download-link" href="#" target="_blank" download class="p-2 rounded-full bg-black/60 hover:bg-white/20 text-white/80 hover:text-white border border-white/10 transition-colors" title="Ver tamaño completo / Descargar">
+                                <span class="material-symbols-outlined text-[18px]">open_in_new</span>
+                            </a>
+                            <button type="button" onclick="closePhotoLightbox()" class="p-2 rounded-full bg-black/60 hover:bg-white/20 text-white/80 hover:text-white border border-white/10 transition-colors" title="Cerrar (Esc)">
+                                <span class="material-symbols-outlined text-[20px]">close</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Botón Anterior -->
+                    <button type="button" onclick="navigateLightbox(-1)" class="absolute left-4 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-black/60 hover:bg-black/90 text-white/80 hover:text-white border border-white/10 transition-all hover:scale-110" title="Foto anterior (←)">
+                        <span class="material-symbols-outlined text-[28px]">chevron_left</span>
+                    </button>
+
+                    <!-- Imagen Central -->
+                    <div class="max-w-[90vw] max-h-[85vh] flex items-center justify-center p-2 relative">
+                        <img id="lightbox-image" src="" alt="Foto" class="max-w-full max-h-[82vh] object-contain rounded-lg shadow-2xl transition-all duration-200 select-none"/>
+                    </div>
+
+                    <!-- Botón Siguiente -->
+                    <button type="button" onclick="navigateLightbox(1)" class="absolute right-4 top-1/2 -translate-y-1/2 z-10 p-3 rounded-full bg-black/60 hover:bg-black/90 text-white/80 hover:text-white border border-white/10 transition-all hover:scale-110" title="Foto siguiente (→)">
+                        <span class="material-symbols-outlined text-[28px]">chevron_right</span>
+                    </button>
+
+                    <!-- Footer con detalles -->
+                    <div class="absolute bottom-4 inset-x-4 flex items-center justify-center pointer-events-none">
+                        <div class="bg-black/60 backdrop-blur-md px-4 py-1.5 rounded-full border border-white/10 text-white/70 font-data-sm text-[11px] flex items-center gap-4">
+                            <span id="lightbox-resolution">-- x --</span>
+                            <span id="lightbox-size">-- MB</span>
+                            <span id="lightbox-date">--</span>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Módulo derecho: Progreso (Metadatos/Descarga) o Reproductor (Biblioteca). Oculto en Playlist. -->
@@ -1446,7 +1511,7 @@ async def get():
         <audio id="library-audio" preload="none"></audio>
 
         <script>window.CICADA_VERSION = "__CICADA_VERSION__";</script>
-        <script src="/static/js/i18n.js?v=2.2.8"></script>
+        <script src="/static/js/i18n.js?v=2.2.9"></script>
         <script src="/static/js/common.js?v=2.2.10"></script>
         <script src="/static/js/metadata.js?v=2.2.0"></script>
         <script src="/static/js/download.js?v=2.2.0"></script>
@@ -1455,9 +1520,9 @@ async def get():
         <script src="/static/js/library_audiobooks.js?v=1.0.1"></script>
         <script src="/static/js/library_podcasts.js?v=1.0.1"></script>
         <script src="/static/js/player.js?v=2.2.1"></script>
-        <script src="/static/js/ipod/api.js?v=2.2.2"></script>
-        <script src="/static/js/ipod/render.js?v=2.2.8"></script>
-        <script src="/static/js/ipod/ui.js?v=2.3.6"></script>
+        <script src="/static/js/ipod/api.js?v=2.2.6"></script>
+        <script src="/static/js/ipod/render.js?v=2.3.3"></script>
+        <script src="/static/js/ipod/ui.js?v=2.4.1"></script>
         <script>
             // Inicialización de la UI
             applyLanguage(currentLang);

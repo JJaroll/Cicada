@@ -14,6 +14,7 @@ import logging
 import shutil
 import subprocess
 import time
+import urllib.parse
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional, Tuple
@@ -78,6 +79,12 @@ from cicada.ipod.device.write_guard import MountNotFoundError, WriteGuardError, 
 from cicada.ipod.sync.bidirectional import sync_playback_stats
 from cicada.ipod.sync.conflicts import resolve_conflicts, scan_for_conflicts
 from cicada.ipod.sync.state import DeviceRecord, LocalPlaybackStateRecord, SyncStateDB
+from cicada.ipod.photos import (
+    scan_ipod_photos,
+    get_photo_thumbnail_bytes,
+    get_photo_preview_bytes,
+    resolve_photo_raw_file,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -211,6 +218,25 @@ class VideoSchema(BaseModel):
 class VideosResponse(BaseModel):
     videos: List[VideoSchema] = []
     count: int
+
+
+class PhotoSchema(BaseModel):
+    id: str
+    filename: str
+    rel_path: str
+    size_bytes: int
+    width: int
+    height: int
+    date_modified: str
+    thumb_url: str
+    preview_url: str
+    raw_url: str
+
+
+class PhotosResponse(BaseModel):
+    photos: List[PhotoSchema] = []
+    count: int
+    total_size_bytes: int
 
 
 class PlanRequest(BaseModel):
@@ -1060,6 +1086,12 @@ def import_playlist(req: ImportPlaylistRequest) -> ApplyResponse:
     except MountNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND,
                             detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"}) from exc
+    except Exception as exc:
+        logger.error("Error importando playlist al iPod: %s", exc)
+        return ApplyResponse(
+            success=False,
+            error=str(exc),
+        )
 class DeletePlaylistRequest(BaseModel):
     playlist_name: str
     consent_ack: bool = False
@@ -1296,6 +1328,105 @@ def delete_video(video_id: str, consent_ack: bool = False) -> ApplyResponse:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"},
         ) from exc
+
+
+@router.get("/photos", response_model=PhotosResponse)
+def get_photos() -> PhotosResponse:
+    """Lista las fotos disponibles en Photos/Full Resolution/ del iPod."""
+    try:
+        mount = resolve_mount()
+        photos_info = scan_ipod_photos(mount)
+        photos_dir = mount / "Photos"
+        if photos_dir.is_dir():
+            total_size = sum(f.stat().st_size for f in photos_dir.rglob("*") if f.is_file() and not f.name.startswith("."))
+        else:
+            total_size = sum(p.size_bytes for p in photos_info)
+        schema_list = [
+            PhotoSchema(
+                id=p.photo_id,
+                filename=p.filename,
+                rel_path=p.rel_path,
+                size_bytes=p.size_bytes,
+                width=p.width,
+                height=p.height,
+                date_modified=p.date_modified,
+                thumb_url=f"/api/ipod/photos/thumbnail?path={urllib.parse.quote(p.rel_path)}",
+                preview_url=f"/api/ipod/photos/preview?path={urllib.parse.quote(p.rel_path)}",
+                raw_url=f"/api/ipod/photos/raw?path={urllib.parse.quote(p.rel_path)}",
+            )
+            for p in photos_info
+        ]
+        return PhotosResponse(photos=schema_list, count=len(schema_list), total_size_bytes=total_size)
+    except MountNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": str(exc), "code": "MOUNT_NOT_FOUND"},
+        ) from exc
+    except WriteGuardError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": str(exc), "code": "WRITE_GUARD_ERROR"},
+        ) from exc
+
+
+@router.get("/photos/thumbnail")
+def get_photo_thumbnail(path: str) -> Response:
+    """Genera y retorna la miniatura web optimizada de una foto del iPod."""
+    try:
+        mount = resolve_mount()
+        thumb_bytes = get_photo_thumbnail_bytes(mount, path)
+        if thumb_bytes is None:
+            raise HTTPException(status_code=404, detail="Miniatura no encontrada")
+        return Response(
+            content=thumb_bytes,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/photos/preview")
+def get_photo_preview(path: str) -> Response:
+    """Genera y retorna una versión HD web para el visor Lightbox."""
+    try:
+        mount = resolve_mount()
+        prev_bytes = get_photo_preview_bytes(mount, path)
+        if prev_bytes is None:
+            raise HTTPException(status_code=404, detail="Vista previa no encontrada")
+        return Response(
+            content=prev_bytes,
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.get("/photos/raw")
+def get_photo_raw(path: str):
+    """Retorna la imagen original en alta resolución para el visor Lightbox."""
+    try:
+        mount = resolve_mount()
+        raw_path = resolve_photo_raw_file(mount, path)
+        if not raw_path:
+            raise HTTPException(status_code=404, detail="Foto no encontrada")
+        from fastapi.responses import FileResponse
+        return FileResponse(raw_path, media_type="image/jpeg", filename=raw_path.name)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+
+    except Exception as exc:
+        logger.error("Error eliminando fotos del iPod: %s", exc)
+        return DeletePhotosResponse(success=False, count_deleted=0, error=str(exc))
 
 
 @router.get("/podcasts", response_model=PodcastsResponse)

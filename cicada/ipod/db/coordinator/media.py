@@ -369,18 +369,30 @@ def set_ipod_playlist(mount, playlist_name, items, *, device_info, consent_ack=F
     existing_dbids = {ti.db_track_id for ti in existing_tracks}
 
     new_by_src = {}
+    unique_new_tracks = []
     for it in items:
         sp = it.get("source_path")
         if sp and it.get("db_track_id") is None and str(sp) not in new_by_src:
-            sp = str(sp)
+            sp_path = Path(str(sp))
+            if not sp_path.is_file():
+                candidates = list(sp_path.parent.rglob(f"*{sp_path.name}")) if sp_path.parent.is_dir() else []
+                if candidates:
+                    sp_path = candidates[0]
+            if not sp_path.is_file():
+                logger.warning("Pista fuente '%s' no encontrada en disco; se omitirá de la sincronización.", sp)
+                continue
+
+            sp_str = str(sp_path)
             ti = TrackInfo(
-                title=it.get("title") or Path(sp).stem, location="",
+                title=it.get("title") or sp_path.stem, location="",
                 artist=it.get("artist"), album=it.get("album"),
-                filetype=(it.get("filetype") or Path(sp).suffix.lstrip(".")).lower(),
+                filetype=(it.get("filetype") or sp_path.suffix.lstrip(".")).lower(),
             )
-            ti.source_path = sp
-            new_by_src[sp] = ti
-    new_tracks = list(new_by_src.values())
+            ti.source_path = sp_str
+            new_by_src[sp_str] = ti
+            new_by_src[str(sp)] = ti
+            unique_new_tracks.append(ti)
+    new_tracks = unique_new_tracks
     assignments, src_to_dbid = _prepare_new_tracks(mount, new_tracks) if new_tracks else ([], {})
 
     ordered = []

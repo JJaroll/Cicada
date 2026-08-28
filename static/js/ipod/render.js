@@ -319,3 +319,32 @@ function ipodConflictRowHtml(c) {
         </div>
     `;
 }
+
+// --- Fotos (Galería / Cuadrícula solo lectura) ---
+function ipodPhotoCardHtml(p, idx) {
+    const sizeText = _formatBytes(p.size_bytes);
+    const thumbUrl = p.thumb_url || `/api/ipod/photos/thumbnail?path=${encodeURIComponent(p.rel_path)}`;
+    
+    return `
+        <div class="ipod-media-card group cursor-pointer relative" onclick="openPhotoLightbox(${idx})">
+            <!-- Contenedor Cuadrado de la Imagen con aspect-ratio garantizado -->
+            <div class="aspect-square w-full rounded-lg bg-black/20 dark:bg-white/5 flex items-center justify-center relative overflow-hidden border border-white/5 shadow-inner" style="aspect-ratio: 1 / 1; width: 100%;">
+                <span class="material-symbols-outlined text-[36px] text-muted/30 group-hover:text-accent transition-colors">photo</span>
+                <img src="${thumbUrl}" alt="${_escapeHtmlIpod(p.filename)}" loading="lazy" class="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 z-[1]"/>
+                
+                <!-- Overlay de apertura en pantalla completa en hover -->
+                <div class="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end justify-end p-2 z-[2]">
+                    <span class="p-1.5 rounded-full bg-black/60 text-white transition-transform hover:scale-110 flex items-center justify-center" title="Ver en pantalla completa">
+                        <span class="material-symbols-outlined text-[16px]">fullscreen</span>
+                    </span>
+                </div>
+            </div>
+
+            <!-- Metadata inferior -->
+            <div class="flex flex-col gap-0.5 min-w-0">
+                <h5 class="font-data-sm text-[12px] text-main font-medium truncate" title="${_escapeHtmlIpod(p.filename)}">${_escapeHtmlIpod(p.filename)}</h5>
+                <p class="font-data-sm text-[10px] text-muted/60 truncate">${sizeText}</p>
+            </div>
+        </div>
+    `;
+}
