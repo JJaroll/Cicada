@@ -526,6 +526,8 @@ async function syncBasketToIpod() {
             season_number: it.season_number || null,
             episode_number: it.episode_number || null,
             show_name: it.show_name || null,
+            podcast_enclosure_url: it.podcast_enclosure_url || null,
+            podcast_rss_url: it.podcast_rss_url || null,
         }));
         const playlists = ipodState.syncBasketPlaylists.map(p => ({ name: p.name, source_paths: p.source_paths }));
         const { res, data } = await ipodMediaSync({ tracks, consent_ack: consentAck, playlists });

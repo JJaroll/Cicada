@@ -1115,6 +1115,8 @@ class MediaTrackInput(BaseModel):
     season_number: Optional[int] = None
     episode_number: Optional[int] = None
     show_name: Optional[str] = None
+    podcast_enclosure_url: Optional[str] = None
+    podcast_rss_url: Optional[str] = None
 
 
 class MediaPlaylistInput(BaseModel):
@@ -1173,6 +1175,14 @@ def sync_media(req: MediaSyncRequest) -> ApplyResponse:
                 ti.podcast_flag = 1
                 ti.skip_when_shuffling = True
                 ti.remember_position = True
+                # Mismo criterio que iOpenPod (podcast_sync.py): un episodio
+                # sin artist/album no es "sin autor", es el programa en sí —
+                # el firmware de la app de Podcasts los usa para agrupar y
+                # mostrar el episodio, así que no deben quedar vacíos.
+                ti.artist = ti.artist or t.show_name
+                ti.album = ti.album or t.show_name
+                ti.podcast_enclosure_url = t.podcast_enclosure_url
+                ti.podcast_rss_url = t.podcast_rss_url
             elif t.kind == "audiobook":
                 ti.media_type = MEDIA_TYPE_AUDIOBOOK
                 ti.skip_when_shuffling = True

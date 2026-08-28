@@ -245,6 +245,8 @@ function commitPodcastSelectionToIpod() {
             length_ms: ep.duration_seconds ? ep.duration_seconds * 1000 : null,
             filetype: (ep.downloaded_path.split(".").pop() || "").toLowerCase(),
             kind: "podcast",
+            podcast_enclosure_url: ep.audio_url || null,
+            podcast_rss_url: feed.feed_url || null,
             guid: ep.guid, // no viaja a /media/sync — se usa localmente para mark_synced
         }));
     const added = (typeof addToSyncBasket === "function") ? addToSyncBasket(items) : 0;

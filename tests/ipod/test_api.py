@@ -777,6 +777,71 @@ async def test_api_media_sync_tv_show_escribe_season_episode_show_name(
 
 
 @pytest.mark.asyncio
+async def test_api_media_sync_podcast_escribe_enclosure_y_rss_url(
+    async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path,
+):
+    """Investigado tras reportarse que un episodio de podcast sincronizado
+    no aparecía en la app de Podcasts del dispositivo real, pese a estar
+    correctamente presente en la biblioteca (playlist maestra, media_type,
+    flags). iOpenPod (podcast_sync.py) puebla incondicionalmente
+    podcast_enclosure_url/podcast_rss_url (MHOD 15/16) y artist/album con
+    el nombre del programa — Cicada tenía el escritor vendorizado
+    (write_mhod_podcast_url, Fase 5a) pero nunca lo conectaba desde
+    sync_media(). Mismo rigor que toda la Fase 2: round-trip real
+    parseando el iTunesCDB escrito en disco."""
+    src = tmp_path / "episodio.mp3"
+    src.write_bytes(b"PODCAST-AUDIO-BYTES" * 50)
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [{
+            "source_path": str(src), "title": "Episodio con URLs", "kind": "podcast",
+            "show_name": "Mi Programa",
+            "podcast_enclosure_url": "https://example.com/feed/episodio.mp3",
+            "podcast_rss_url": "https://example.com/feed.xml",
+        }],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["success"] is True
+
+    lib = load_ipod_library(
+        str(mock_ipod / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mock_ipod),
+    )
+    track = next(t for t in lib["mhlt"] if t.get("Title") == "Episodio con URLs")
+    assert track.get("Podcast Enclosure URL") == "https://example.com/feed/episodio.mp3"
+    assert track.get("Podcast RSS URL") == "https://example.com/feed.xml"
+    # Fallback tipo iOpenPod: sin artist/album explícitos, se usa el
+    # nombre del programa — no debe quedar vacío para un episodio.
+    assert track.get("Artist") == "Mi Programa"
+    assert track.get("Album") == "Mi Programa"
+
+
+@pytest.mark.asyncio
+async def test_api_media_sync_podcast_respeta_artist_album_explicitos(
+    async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path,
+):
+    """El fallback a show_name no debe pisar un artist/album que el
+    caller sí haya mandado explícitamente."""
+    src = tmp_path / "episodio2.mp3"
+    src.write_bytes(b"PODCAST-AUDIO-BYTES" * 50)
+    resp = await async_client.post("/api/ipod/media/sync", json={
+        "tracks": [{
+            "source_path": str(src), "title": "Episodio con Artist Propio", "kind": "podcast",
+            "show_name": "Mi Programa", "artist": "Conductor Real", "album": "Temporada 2",
+        }],
+        "consent_ack": True,
+    })
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["success"] is True
+
+    lib = load_ipod_library(
+        str(mock_ipod / "iPod_Control" / "iTunes" / "iTunesCDB"), mount=str(mock_ipod),
+    )
+    track = next(t for t in lib["mhlt"] if t.get("Title") == "Episodio con Artist Propio")
+    assert track.get("Artist") == "Conductor Real"
+    assert track.get("Album") == "Temporada 2"
+
+
+@pytest.mark.asyncio
 async def test_api_media_sync_video_reusa_pipeline_de_artwork_existente(
     async_client: httpx.AsyncClient, mock_ipod: Path, tmp_path: Path,
 ):
