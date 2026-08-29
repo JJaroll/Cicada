@@ -1,13 +1,19 @@
 # Cicada — Proveedores de música más allá de Spotify
 
-**Estado (2026-08-29): backend completo para YouTube Music y Deezer
-(track/álbum/playlist público por ID, sin login) — interfaz
-`MusicProvider`, providers, endpoints `/api/youtube_music/*` y
-`/api/deezer/*`, verificados end-to-end contra la app real, incluyendo
-descarga real completa confirmada con mutagen para ambos. Falta solo la
-UI (fuera de este corte, backend primero). Tidal sigue como diseño
-diferido, sin implementar.** Diferido a una iteración posterior al release
-actual — no entra en 1.2.0.
+**Estado (2026-08-29): CORTE CERRADO.** Backend completo e implementado
+para YouTube Music y Deezer (track/álbum/playlist público por ID, sin
+login) — interfaz `MusicProvider`, providers, endpoints
+`/api/youtube_music/*` y `/api/deezer/*`, verificados end-to-end contra la
+app real, incluyendo descarga real completa confirmada con mutagen para
+ambos. Tidal queda **diseñado en detalle pero sin implementar**: exige
+credenciales de app propias incluso para el camino sin login de usuario
+(confirmado en vivo, ver §7), que este corte no gestionó a propósito.
+Falta la UI para YouTube Music/Deezer (fuera de este corte, backend
+primero). Con esto se cierra el proceso de desarrollo de proveedores de
+música de esta iteración — el próximo trabajo en este área es UI, o
+retomar Tidal el día que haya credenciales, no un nuevo proveedor sin
+priorizar. Diferido a una iteración posterior al release actual — no
+entra en 1.2.0.
 
 Contexto: Spotify hoy es la única fuente externa de metadata de playlists en
 Cicada. Se investigó generalizar ese patrón a otros servicios (YouTube Music,
@@ -80,9 +86,9 @@ motivo — no es un bug.
 
 | Servicio | Sin login (playlist pública) | Con login (mis playlists, estilo Spotify) | Riesgo de mantenimiento | Prioridad |
 |---|---|---|---|---|
-| **YouTube Music** | **Sí** — `ytmusicapi` sin credenciales (`YTMusic()`) lee playlists públicas por ID; usa yt-dlp como fallback si la respuesta no autenticada no parsea | Sí, vía cookies de sesión o el flujo OAuth "device code" propio de `ytmusicapi` — sin registro de app formal, pero más fricción de UX que el botón de Spotify | **Medio** — librería no oficial (ingeniería inversa de la web interna de YT Music), pero muy usada y activamente mantenida, con fallback a yt-dlp (dependencia que Cicada ya asume hoy) | **1** |
-| **Deezer** | **Sí** — API oficial pública gratuita, `/playlist/{id}` sin ninguna clave ni token | Sí, OAuth2 estándar — pero **el registro self-service de apps nuevas está cerrado actualmente** ("no es posible registrar una app nueva vía el portal ahora mismo") | **Bajo** en el camino sin login (API oficial estable); el camino con login está bloqueado hoy por causas ajenas al código, no técnicas | **2** |
-| **Tidal** | **Sí** — OAuth2 Client Credentials (sin usuario final) da acceso al catálogo público incluyendo playlists; registro de app self-service en developer.tidal.com | Sí, Authorization Code + PKCE con scopes granulares (`playlists.read`, etc.) — complejidad comparable al OAuth de Spotify ya implementado | **Bajo** — API oficial documentada, con SDKs propios | **3** |
+| **YouTube Music — IMPLEMENTADO** | **Sí** — `ytmusicapi` sin credenciales (`YTMusic()`) lee playlists públicas por ID; usa yt-dlp como fallback si la respuesta no autenticada no parsea | Sí, vía cookies de sesión o el flujo OAuth "device code" propio de `ytmusicapi` — sin registro de app formal, pero más fricción de UX que el botón de Spotify. Diferido (§4). | **Medio** — librería no oficial (ingeniería inversa de la web interna de YT Music), pero muy usada y activamente mantenida, con fallback a yt-dlp (dependencia que Cicada ya asume hoy) | **1 — hecho** |
+| **Deezer — IMPLEMENTADO** | **Sí** — API oficial pública gratuita, `/playlist/{id}` sin ninguna clave ni token | Sí, OAuth2 estándar — pero **el registro self-service de apps nuevas: fuentes contradictorias, sin confirmar** (§4.3). Diferido. | **Bajo** en el camino sin login (API oficial estable, ya implementado); el camino con login sigue sin confirmar | **2 — hecho** |
+| **Tidal** | Matizado — **confirmado en vivo en §7: exige token de app (Client Credentials) incluso para catálogo público, no hay acceso 100% anónimo como Deezer**; ese Client Credentials sí funciona sin usuario final, pero requiere Client ID/Secret propios registrados en developer.tidal.com | Sí, Authorization Code + PKCE con scopes granulares (`playlists.read`, etc.) — complejidad comparable al OAuth de Spotify ya implementado | **Bajo** técnicamente (API oficial documentada, con SDKs propios), pero bloqueado en la práctica sin credenciales de app | Diseñado, no implementado (§7) — bloqueado por credenciales, no por prioridad |
 | **Apple Music** — **DESCARTADO** | No — el catálogo (incluidas playlists públicas) exige Developer Token firmado igual, sin endpoint anónimo real | Sí, MusicKit/Apple Music API — requiere **Apple Developer Program de pago (99 USD/año, confirmado)**, JWT firmado con clave privada P8 como Developer Token, más User Token real para biblioteca del usuario | Bajo técnicamente (API oficial estable), pero costo de entrada no técnico | — |
 | **SoundCloud** — **DESCARTADO** | Técnicamente posible pero frágil: la API real (`api-v2.soundcloud.com`) funciona con solo un `client_id`, pero **el registro oficial está cerrado desde 2017** — el client_id hay que extraerlo inspeccionando el tráfico de red de la web, puede rotar sin aviso | El registro self-service oficial reabrió en 2026, pero **exige una suscripción paga SoundCloud Artist-Pro** — no es gratis ni abierto | **Alto** en el camino sin login (client_id no oficial); costo económico en el camino con login | — |
 | **Bandcamp** — **DESCARTADO** | No — Bandcamp cerró su API pública y no planea reabrirla; todo acceso es scraping de HTML (`bandcamp-scraper`, sin actualizaciones en ~4 años) | No aplica | **Muy alto** (scraping puro sobre un dominio que cerró su API deliberadamente) | — |
@@ -329,25 +335,126 @@ correctamente inyectados).
 
 ---
 
-## 5. Orden de prioridad confirmado
+## 5. Orden de prioridad — confirmado en la práctica, con un ajuste real
 
-**YouTube Music (implementado) → Deezer (implementado) → Tidal (pendiente) → (Apple Music, SoundCloud, Bandcamp: descartados, no en el orden)**
+**YouTube Music (implementado) → Deezer (implementado) → Tidal (diseñado, no implementado, bloqueado por credenciales)**
 
-YouTube Music primero no es "el más sólido en aislamiento" — Deezer y Tidal
-tienen API oficial documentada y YouTube Music no. Es el más barato porque
-Cicada **ya depende de yt-dlp** para el audio: agregar `ytmusicapi` no
-introduce una categoría de riesgo nueva, es una segunda instancia de un
-riesgo ya aceptado por el proyecto. Deezer sería "más fácil" en aislamiento
-si no fuera porque el registro de apps nuevas está cerrado ahora mismo
-(bloquea de facto el camino "con login", aunque el camino sin login público
-funciona igual).
+El orden original ("YouTube Music primero por reusar el riesgo de yt-dlp
+ya aceptado; Deezer segundo por API oficial") se confirmó correcto en la
+práctica: ambos se implementaron sin sorpresas bloqueantes, cada uno con
+un hallazgo real pero menor (formato de ID de YouTube Music, asimetría
+álbum/playlist de Deezer). **Tidal es el que reveló una sorpresa real al
+verificar en vivo** (§7): la investigación original decía "Client
+Credentials da acceso al catálogo sin usuario", lo cual es cierto pero
+incompleto — no aclaraba que ese Client Credentials exige credenciales de
+**app** (Client ID/Secret propios), no solo "sin login de usuario final".
+Deezer no tiene ese requisito en absoluto; Tidal sí, igual que Spotify.
+Lección para la próxima vez que se evalúe un proveedor nuevo: "sin login
+de usuario" y "sin ninguna credencial" no son lo mismo, hay que probarlo
+en vivo contra un recurso real, no inferirlo de la documentación.
 
 ---
 
 ## 6. Tamaño estimado (cuando se retome)
 
-Estimación dada en la investigación original, sin cambios: **2-3 días de
-trabajo** para YouTube Music solo (interfaz + refactor de Spotify + provider
-nuevo + UI generalizada + tests) — más que una tarde, menos que una fase
-completa tipo iPod/Podcasts. Deezer y Tidal, una vez la interfaz exista,
-deberían ser más baratos cada uno (API oficial, sin heurística de búsqueda).
+Estimación dada en la investigación original: **2-3 días de trabajo** por
+proveedor con interfaz nueva (YouTube Music, que incluyó el refactor de
+Spotify) — confirmado en la práctica, contando diseño + implementación +
+verificación real de este corte. Deezer, con la interfaz ya lista, tomó
+una fracción de eso (medio día) — confirmado: API oficial sin librería
+sí es más barato que una librería no oficial. Tidal, si se retoma con
+credenciales reales, debería ser comparable a Deezer en esfuerzo de
+implementación (la interfaz ya soporta su forma de datos, ver §7) — el
+costo real no es de código, es conseguir y validar las credenciales.
+
+---
+
+## 7. Tidal — diseñado, no implementado (bloqueado por credenciales de app)
+
+**No es diseño diferido por decisión de prioridad, como Deezer/Tidal lo
+fueron para "mis playlists" — acá el bloqueo es no tener credenciales de
+app disponibles en esta sesión, y no se acordó gestionar un registro
+nuevo para conseguirlas (mismo criterio que con Deezer: no cambia el
+alcance de este corte).** El diseño de abajo está verificado en vivo
+contra los endpoints reales de Tidal, no es especulación de
+documentación — está listo para implementarse en cuanto haya credenciales.
+
+### 7.1 Hallazgo real: Tidal no tiene ningún camino sin credenciales
+
+Confirmado con `curl` real, no solo lectura de documentación:
+
+```
+GET https://openapi.tidal.com/v2/playlists/{uuid real}   → 401 UNAUTHORIZED, sin ningún header
+GET https://api.tidal.com/v1/playlists/{uuid real}       → 401 "Missing auth parameter"
+```
+
+A diferencia de Deezer (`GET /playlist/{id}` responde `200` con datos
+completos, cero configuración), **Tidal exige un access token válido
+incluso para leer una playlist pública real** — se probó contra un UUID
+real (`74e2ae5a-e88a-4ac3-8368-ad0235e4bf17`, tomado de un ejemplo de
+documentación pública), no un ID inventado, para descartar que el `401`
+fuera en realidad un `404` disfrazado.
+
+Se probaron además dos vías alternativas sin auth (mismo patrón que
+existe en otros servicios): oEmbed (`tidal.com/oembed`) — bloqueado por
+un WAF anti-bot (Datadome, `403`) — y el embed widget
+(`embed.tidal.com/playlists/{id}`) — devolvió una página de error, no
+datos. Ninguna vía sin credenciales de app funciona hoy.
+
+### 7.2 El flujo de auth sí está confirmado y documentado con precisión
+
+El endpoint de token es real y responde con errores específicos (no
+genéricos), lo cual permite documentar el formato exacto sin necesidad de
+credenciales válidas:
+
+```
+POST https://auth.tidal.com/v1/oauth2/token
+Content-Type: application/x-www-form-urlencoded
+Body: grant_type=client_credentials&client_id={id}&client_secret={secret}
+```
+
+- Sin `client_id`: `{"error":"invalid_request","error_description":"invalid_request, Missing parameters: client_id", "status":400}`
+- Con un `client_id` inválido pero presente:
+  `{"error":"invalid_grant","error_description":"Client with token {id} not found","status":400}`
+  — mensaje específico, confirma que el flujo `client_credentials` es real
+  y que el servidor sí intenta resolver el `client_id` contra su registro.
+
+Las llamadas de catálogo usan `Authorization: Bearer {token}` — mismo
+patrón exacto que ya implementa `DownloadManager` para Spotify
+(`_basic_auth_header`/`get_user_token`), confirmado con un Bearer token
+inventado: `{"errors":[{"code":"UNAUTHORIZED","detail":"Invalid token structure", ...}]}`
+(rechaza la estructura del token, no el endpoint).
+
+### 7.3 Diseño de `TidalProvider` (listo para implementar con credenciales)
+
+Encaja en la interfaz `MusicProvider` sin cambios — mismo patrón que
+`DownloadManager` (Spotify), que ya resuelve OAuth de app:
+
+```python
+class TidalProvider(MusicProvider):
+    name = "tidal"
+    supports_public_playlist_by_id = True   # vía Client Credentials, no anónimo
+    requires_auth_for_own_library = True    # Authorization Code + PKCE, no investigado a fondo
+    supported_resource_types = ("track", "album", "playlist")  # confirmar forma exacta del payload con credenciales reales
+
+    AUTH_URL = "https://auth.tidal.com/v1/oauth2/token"
+    CATALOG_BASE = "https://openapi.tidal.com/v2"
+    # TIDAL_CLIENT_ID / TIDAL_CLIENT_SECRET en .env, mismo patrón que
+    # SPOTIFY_CLIENT_ID/SECRET — necesita cachear el token de app igual que
+    # DownloadManager cachea el token de usuario (expiry, refresh).
+```
+
+Diferencia real de implementación respecto a Spotify: el token de Tidal
+es de **app** (`client_credentials`), no de **usuario** — no hace falta
+un flujo de redirect/callback para el camino sin login, solo cachear y
+renovar un token de servidor-a-servidor, más simple que el
+`process_auth_code`/`_refresh_user_token` que Spotify necesita hoy.
+
+**No verificado, pendiente de credenciales reales:** la forma exacta del
+payload de `GET /v2/playlists/{id}` y `GET /v2/albums/{id}` (Tidal usa
+JSON:API con `data`/`relationships`/`included`, distinto de la forma
+plana de Deezer y Spotify — se ve en la documentación pero no se pudo
+confirmar contra un payload real sin auth), y si el registro de app en
+`developer.tidal.com` es self-service inmediato o requiere aprobación.
+Ambos puntos son el primer paso real si se retoma este proveedor, antes
+de escribir ningún código nuevo.
