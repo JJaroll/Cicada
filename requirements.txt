@@ -20,3 +20,5 @@ wasmtime
 numpy==1.26.4
 # Módulo Podcasts: parsing de feeds RSS/Atom
 feedparser==6.0.11
+# Proveedor YouTube Music: playlists públicas sin login (docs/MUSIC_PROVIDERS.md)
+ytmusicapi==1.12.2
