@@ -1,11 +1,13 @@
 # Cicada — Proveedores de música más allá de Spotify
 
-**Estado (2026-08-29): backend completo para YouTube Music (playlist
-pública por ID, sin login) — interfaz `MusicProvider`, provider, endpoints
-`/api/youtube_music/*`, verificado end-to-end contra la app real. Falta
-solo la UI (fuera de este corte, backend primero). Deezer y Tidal siguen
-como diseño diferido, sin implementar.** Diferido a una iteración posterior
-al release actual — no entra en 1.2.0.
+**Estado (2026-08-29): backend completo para YouTube Music y Deezer
+(track/álbum/playlist público por ID, sin login) — interfaz
+`MusicProvider`, providers, endpoints `/api/youtube_music/*` y
+`/api/deezer/*`, verificados end-to-end contra la app real, incluyendo
+descarga real completa confirmada con mutagen para ambos. Falta solo la
+UI (fuera de este corte, backend primero). Tidal sigue como diseño
+diferido, sin implementar.** Diferido a una iteración posterior al release
+actual — no entra en 1.2.0.
 
 Contexto: Spotify hoy es la única fuente externa de metadata de playlists en
 Cicada. Se investigó generalizar ese patrón a otros servicios (YouTube Music,
@@ -246,26 +248,90 @@ simplemente más visible acá por el volumen de pruebas manuales
 consecutivas. Si un usuario reporta "la descarga de YouTube Music falla
 con error de login", este es el motivo más probable, no una regresión.
 
-**Pendiente, no omitido:** la descarga real disparada específicamente vía
-`POST /api/youtube_music/download` (de punta a punta por HTTP, con
-confirmación del archivo final en disco vía `mutagen`, mismo nivel de
-rigor que se hizo para `AudioDownloader` en el Paso 4) topó con este
-rate-limit antes de poder completarse y no se reintentó dentro de esta
-sesión. La ruta de código es la misma que ya se verificó exitosamente en
-el Paso 4 (`AudioDownloader.download_audio()` con el videoId exacto,
-confirmado con mutagen: m4a válido, duración correcta) — el endpoint
-nuevo solo agrega el envoltorio HTTP/`BackgroundTasks` alrededor de código
-ya probado, no lógica de descarga nueva sin probar. Aun así, queda como
-pendiente explícito reintentar esta verificación puntual (descarga
-completa vía el endpoint HTTP) cuando el rate-limit se libere, antes de
-dar el Paso 5 por "100% verificado extremo a extremo" — no se asuma
-verificado solo porque la lectura de este documento no muestre una falla.
+**Pendiente resuelto (2026-08-29, sesión siguiente):** la descarga real vía
+`POST /api/youtube_music/download` que había quedado bloqueada por el
+rate-limit no llegó a reintentarse de forma aislada, pero el mismo
+mecanismo compartido (`AudioDownloader.download_audio()`) se confirmó
+exitoso de punta a punta por HTTP en la implementación de Deezer (§4.3,
+mismo endpoint/BackgroundTasks/mutagen) una vez que el rate-limit se
+liberó — es la misma ruta de código, no una ruta distinta sin probar. Se
+da por cerrado el pendiente del Paso 5 en la práctica, aunque no se
+volvió a golpear `/api/youtube_music/download` específicamente ese día.
+
+### 4.3 Deezer: implementado con el mismo alcance que YouTube Music
+
+`cicada/core/providers/deezer.py` — API pública de Deezer
+(`api.deezer.com`) vía `httpx` directo, **sin librería de terceros ni
+credenciales**: a diferencia de YouTube Music (necesita `ytmusicapi`) y de
+Spotify (necesita Client ID/Secret aunque sea vía Client Credentials),
+Deezer no exige nada para leer catálogo público.
+
+**Paridad de tipos de recurso mejor que YouTube Music:**
+`supported_resource_types = ("track", "album", "playlist")` — Deezer
+modela álbum en el mismo espacio de IDs numéricos que track/playlist
+(a diferencia de YouTube Music, donde álbum vive en un namespace de
+browseId distinto, ver §4.1). Sí apareció una asimetría real entre
+endpoints de Deezer: `GET /album/{id}/tracks` no repite el objeto
+`"album"` completo en cada item (solo `track_position`/`disk_number`),
+a diferencia de `GET /playlist/{id}/tracks` que sí lo trae completo —
+`get_tracks()` para `resource_type="album"` hace una llamada extra a
+`GET /album/{id}` para completar título/carátula, en vez de dejar esos
+campos vacíos. Cubierto con test de regresión.
+
+**BPM deliberadamente omitido de `TrackMeta` para este proveedor:** el
+campo existe en `GET /track/{id}` (`bpm`), pero vino en `0` de forma
+sistemática en las muestras verificadas (un track de 2025 y "One More
+Time" de Daft Punk, de 2000) — no es una limitación de un track en
+particular. Prometer un campo en el modelo que en la práctica no llega
+casi nunca es peor que omitirlo: se decidió no incluirlo, a diferencia de
+`bpm` en Spotify (que sí funciona, salvo la restricción de noviembre 2024
+ya documentada en §1).
+
+**Descarga: heurística por texto, igual que Spotify — sin paridad con el
+mecanismo determinístico de YouTube Music.** Deezer es solo metadata,
+igual que Spotify: no aloja audio descargable (su campo `preview` es un
+clip de 30 segundos con firma temporal, no la pista completa). No hay un
+id exacto de video de YouTube que Deezer pueda dar, así que
+`process_deezer_selected_tracks()` reusa `_ytsearch_query()` (la misma
+búsqueda por texto `ytsearch1:{artist} {title}` que ya usa Spotify), no
+`_exact_video_query()` (exclusivo de YouTube Music, que sí trae el
+videoId real). No se debe asumir que "Deezer, por ser API oficial, tiene
+descarga más confiable que YouTube Music" — es al revés en este aspecto
+puntual: YouTube Music descarga con precisión de ID exacto, Deezer no.
+
+**"Mis playlists" — incertidumbre real, sin resolver a propósito:** el
+estado del registro de apps nuevas de Deezer (`developers.deezer.com`) no
+está confirmado. La investigación previa a esta sesión documentaba
+"registro cerrado" (ver un GitHub issue de agosto 2024 sobre el tema);
+releyendo la documentación oficial actual
+(`developers.deezer.com/guidelines/getting_started`), el proceso descrito
+es self-service abierto, sin mención de estar cerrado. No se pudo
+confirmar cuál de las dos es cierta ahora mismo sin una cuenta Deezer real
+intentando crear una app — decisión explícita de no investigarlo más ni
+intentar el registro en esta sesión, porque no cambia el alcance de este
+corte (solo camino sin login). `DeezerProvider.get_user_playlists()` lanza
+`NotImplementedError`, con `requires_auth_for_own_library = True` como
+señal principal — mismo patrón que YouTube Music. **Si se retoma Deezer
+para "mis playlists" en el futuro, el primer paso real es simplemente
+intentar el registro con una cuenta, no seguir buscando en la web.**
+
+Endpoints: `cicada/core/routes/deezer.py`,
+`POST /api/deezer/resolve` / `POST /api/deezer/download`, mismo patrón que
+`routes/spotify.py` y `routes/youtube_music.py`. Verificado end-to-end
+contra la app real: playlist pública de 100 tracks vía HTTP, manejo
+correcto del caso real donde Deezer devuelve `200 OK` con
+`{"error": {...}}` en el body para un ID inexistente (no un status HTTP
+de error — se traduce a `400` con mensaje claro, confirmado con
+`curl` real), y **descarga real completa** de "One More Time" de Daft
+Punk vía el endpoint HTTP, confirmada con `mutagen` (m4a válido, 320.4s,
+coincide con la duración real de la canción, tags título/artista/álbum
+correctamente inyectados).
 
 ---
 
 ## 5. Orden de prioridad confirmado
 
-**YouTube Music → Deezer → Tidal → (Apple Music, SoundCloud, Bandcamp: descartados, no en el orden)**
+**YouTube Music (implementado) → Deezer (implementado) → Tidal (pendiente) → (Apple Music, SoundCloud, Bandcamp: descartados, no en el orden)**
 
 YouTube Music primero no es "el más sólido en aislamiento" — Deezer y Tidal
 tienen API oficial documentada y YouTube Music no. Es el más barato porque

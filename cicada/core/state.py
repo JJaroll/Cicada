@@ -15,6 +15,7 @@ from cicada.core.audio_processor import AudioProcessor
 from cicada.core.download_manager import DownloadManager
 from cicada.core.metadata_manager import MetadataManager
 from cicada.core.playlist_manager import PlaylistManager
+from cicada.core.providers.deezer import DeezerProvider
 from cicada.core.providers.youtube_music import YouTubeMusicProvider
 
 APP_DATA_DIR = get_app_data_dir()
@@ -41,6 +42,7 @@ audio_processor = AudioProcessor()
 download_manager = DownloadManager()
 playlist_manager = PlaylistManager()
 youtube_music_provider = YouTubeMusicProvider()
+deezer_provider = DeezerProvider()
 
 
 class ConnectionManager:
