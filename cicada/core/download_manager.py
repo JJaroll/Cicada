@@ -41,6 +41,7 @@ class DownloadManager(MusicProvider):
     name = "spotify"
     supports_public_playlist_by_id = True   # Client Credentials — ver docs/MUSIC_PROVIDERS.md §1
     requires_auth_for_own_library = True
+    supported_resource_types = ("track", "album", "playlist", "collection")
 
     AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
     TOKEN_URL = "https://accounts.spotify.com/api/token"

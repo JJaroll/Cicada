@@ -20,6 +20,7 @@ def test_flags_declared_correctly():
     assert p.name == "youtube_music"
     assert p.supports_public_playlist_by_id is True
     assert p.requires_auth_for_own_library is True
+    assert p.supported_resource_types == ("playlist",)
     assert p.is_authenticated() is False
 
 

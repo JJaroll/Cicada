@@ -34,6 +34,7 @@ class YouTubeMusicProvider(MusicProvider):
     name = "youtube_music"
     supports_public_playlist_by_id = True
     requires_auth_for_own_library = True
+    supported_resource_types = ("playlist",)
 
     def __init__(self) -> None:
         self._yt = YTMusic()
@@ -61,9 +62,11 @@ class YouTubeMusicProvider(MusicProvider):
         return playlist_id[2:] if playlist_id.startswith("VL") else playlist_id
 
     async def get_tracks(self, resource_type: str, resource_id: str) -> List[TrackMeta]:
-        if resource_type != "playlist":
+        if resource_type not in self.supported_resource_types:
             raise ValueError(
-                f"YouTube Music solo soporta 'playlist' en este alcance, no '{resource_type}'."
+                f"YouTube Music solo soporta {self.supported_resource_types} en este "
+                f"alcance, no '{resource_type}' — un álbum de YT Music vive en un "
+                f"espacio de IDs distinto (browseId 'MPREb_...'), no en el de playlists."
             )
 
         # ytmusicapi es síncrona (usa requests); no hay una versión async

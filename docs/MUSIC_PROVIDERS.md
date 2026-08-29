@@ -1,7 +1,9 @@
 # Cicada — Proveedores de música más allá de Spotify
 
-**Estado (2026-08-28): investigación y diseño completos, cero implementación.**
-Diferido a una iteración posterior al release actual — no entra en 1.2.0.
+**Estado (2026-08-29): interfaz `MusicProvider` implementada por Spotify y
+YouTube Music (playlist pública por ID, sin login). Deezer y Tidal siguen
+como diseño diferido, sin implementar.** Diferido a una iteración posterior
+al release actual — no entra en 1.2.0.
 
 Contexto: Spotify hoy es la única fuente externa de metadata de playlists en
 Cicada. Se investigó generalizar ese patrón a otros servicios (YouTube Music,
@@ -144,9 +146,10 @@ class PlaylistMeta(TypedDict, total=False):
     is_liked: bool
 
 class MusicProvider(ABC):
-    name: str                              # "spotify", "youtube_music", "deezer", "tidal"
-    supports_public_playlist_by_id: bool   # sin login del usuario final — ver criterio de prioridad
-    requires_auth_for_own_library: bool    # para "mis playlists" estilo Spotify
+    name: str                                    # "spotify", "youtube_music", "deezer", "tidal"
+    supports_public_playlist_by_id: bool         # sin login del usuario final — ver criterio de prioridad
+    requires_auth_for_own_library: bool          # para "mis playlists" estilo Spotify
+    supported_resource_types: tuple[str, ...]    # qué resource_type acepta get_tracks() — ver §4.1
 
     def parse_url(self, url: str) -> tuple[str, str]: ...       # (resource_type, resource_id)
     async def get_tracks(self, resource_type: str, resource_id: str) -> list[TrackMeta]: ...
@@ -169,12 +172,47 @@ hacer — formaliza lo que ya es cierto hoy para Spotify (que tampoco descarga
 - Nada específico de Apple Music/SoundCloud que compense sus barreras de
   costo — quedan fuera de la interfaz mientras estén descartados.
 
-`SpotifyProvider` sería un wrapper delgado sobre el `DownloadManager` actual,
-separando su lógica de auth+API (por proveedor) de su lógica de descarga
-yt-dlp (compartida, movida a un módulo aparte). `YouTubeMusicProvider` sería
-nuevo, usando `ytmusicapi` para `get_tracks`/`get_user_playlists` y
-reusando ese mismo módulo compartido de descarga — con el video ID exacto
-en vez de la heurística de búsqueda por texto que usa Spotify hoy.
+**Implementado (2026-08-29):** `DownloadManager` (Spotify) y
+`YouTubeMusicProvider` (nuevo, `cicada/core/providers/youtube_music.py`) ya
+implementan esta interfaz — ver §4.1 para un hallazgo real de la
+implementación que no estaba anticipado en el diseño original.
+
+`SpotifyProvider` como wrapper delgado sobre `DownloadManager`, separando
+auth+API de la descarga yt-dlp, no se hizo como refactor separado: en la
+práctica, `DownloadManager` mismo pasó a implementar `MusicProvider`
+directamente (agregando `parse_url`/`get_tracks`/`is_authenticated` como
+wrappers sobre su API pública ya existente), sin necesidad de una clase
+`SpotifyProvider` intermedia — la clase ya vivía aislada en su propio
+módulo, así que envolver-y-renombrar no agregaba nada. `AudioDownloader`
+(`cicada/core/audio_downloader.py`) sí se extrajo tal como estaba previsto:
+la descarga yt-dlp+retag ahora es un módulo compartido, usado por Spotify
+con búsqueda heurística (`ytsearch1:`) y por YouTube Music con el videoId
+exacto (`provider_track_id`).
+
+### 4.1 Hallazgo real: no todos los `resource_type` existen en todos los proveedores
+
+Descubierto al implementar `YouTubeMusicProvider`, no anticipado en el
+diseño original: Spotify modela `track`/`album`/`playlist`/`collection`
+("liked songs") como variantes de un mismo espacio de recursos que
+`get_tracks()` puede resolver indistintamente. **YouTube Music no comparte
+ese espacio** — un álbum de YT Music vive en un `browseId` de tipo
+`MPREb_...` (obtenido buscando por `filter="albums"`), mientras que una
+playlist vive en un ID de tipo `PL...`/`OLAK5uy_...` que es lo que
+`get_playlist()` espera. Son namespaces de ID distintos e incompatibles —
+pasarle un `browseId` de álbum a `get_playlist()` no funciona, no es solo
+"falta implementar el caso álbum", es un recurso con forma distinta.
+
+Se agregó `supported_resource_types: tuple[str, ...]` a la interfaz para
+que esto sea explícito y consultable por cualquier caller (UI, endpoint)
+**antes** de llamar a `get_tracks()`, en vez de depender de que el
+`ValueError` se propague en tiempo de ejecución — mismo criterio que ya se
+usó para `requires_auth_for_own_library` vs. el `NotImplementedError` de
+`get_user_playlists()`. Valores reales:
+- `DownloadManager.supported_resource_types = ("track", "album", "playlist", "collection")`
+- `YouTubeMusicProvider.supported_resource_types = ("playlist",)` — **no
+  paridad completa con Spotify**; soporte de álbum de YT Music queda fuera
+  de este alcance (requeriría un segundo parser de URL/ID y una segunda
+  llamada de API, `get_album()`, con su propio namespace de browseId).
 
 ---
 
