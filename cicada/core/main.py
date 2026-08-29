@@ -79,6 +79,7 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 @app.get("/")
 async def get():
+    # Renderiza la interfaz de usuario principal de Cicada.
     html_content = """
     <!DOCTYPE html>
     <html class="dark" lang="es" data-theme="grafito" data-color="azul">
@@ -1563,6 +1564,7 @@ async def get():
     )
 
 def print_signature():
+    # Imprime la firma ASCII de Cicada en consola.
     signature = """
     ╔══════════════════════════════════════════════════════════════════════╗
     ║                                                                      ║
@@ -1606,6 +1608,7 @@ if __name__ == "__main__":
 
     @app.post("/api/shutdown")
     async def shutdown_app():
+        # Apaga el servidor de Cicada ordenadamente.
         threading.Timer(0.5, lambda: os._exit(0)).start()
         return {"message": "Cicada apagada correctamente"}
 

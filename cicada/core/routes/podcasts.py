@@ -106,12 +106,7 @@ def _to_schema(feed: PodcastFeed) -> FeedSchema:
 
 @router.post("/subscribe", response_model=FeedSchema)
 async def subscribe(req: SubscribeRequest) -> FeedSchema:
-    """Trae un feed RSS y lo guarda como suscripción.
-
-    Idempotente: si el feed ya estaba suscripto, lo refresca (trae
-    episodios nuevos, preserva estado local de los ya conocidos) en
-    vez de duplicarlo.
-    """
+    # Suscribe un feed RSS de podcast y guarda episodios.
     feed_url = req.feed_url.strip()
     if not feed_url:
         raise HTTPException(status_code=400, detail="Falta la URL del feed.")
@@ -131,7 +126,7 @@ async def subscribe(req: SubscribeRequest) -> FeedSchema:
 
 @router.get("", response_model=PodcastsResponse)
 def list_podcasts() -> PodcastsResponse:
-    """Lista las suscripciones guardadas (no refresca contra la red)."""
+    # Lista todas las suscripciones a podcasts almacenadas.
     store = SubscriptionStore()
     feeds = store.get_feeds()
     return PodcastsResponse(feeds=[_to_schema(f) for f in feeds], count=len(feeds))
@@ -200,9 +195,7 @@ async def _run_download(feed_url: str, guid: str, audio_url: str, artwork_url: s
     status_code=202,
 )
 async def download_episode_endpoint(feed_url: str, guid: str) -> DownloadProgressSchema:
-    """Dispara la descarga de un episodio a un caché local. Idempotente:
-    si ya hay una descarga en curso para ese guid, no dispara otra —
-    devuelve el progreso de la que ya está corriendo."""
+    # Inicia la descarga en segundo plano del episodio.
     store, episode = _find_episode(feed_url, guid)
 
     if download_progress.is_active(guid):
@@ -220,7 +213,7 @@ async def download_episode_endpoint(feed_url: str, guid: str) -> DownloadProgres
 
 @router.get("/{feed_url:path}/episodes/{guid}/download", response_model=DownloadProgressSchema)
 def get_download_progress(feed_url: str, guid: str) -> DownloadProgressSchema:
-    """Consulta de progreso para polling desde la UI."""
+    # Consulta el estado de descarga del episodio.
     _store, episode = _find_episode(feed_url, guid)
     return _progress_schema(guid, episode.status)
 
@@ -236,18 +229,7 @@ class MarkSyncedResponse(BaseModel):
 
 @router.post("/episodes/mark_synced", response_model=MarkSyncedResponse)
 def mark_episodes_synced(req: MarkSyncedRequest) -> MarkSyncedResponse:
-    """Marca episodios como on_ipod tras un sync exitoso ya confirmado
-    por el caller (/api/ipod/media/sync devolvió success=true).
-
-    No hace rollback: /media/sync es genuinamente todo-o-nada (copy_media
-    + apply() con backup/rollback transaccional sobre la base completa —
-    ver cicada/ipod/db/coordinator/media.py:sync_media_to_ipod), así que
-    si el sync falló, este endpoint simplemente no se llama y los
-    episodios quedan en downloaded, su estado real. Episodios que ya no
-    están en downloaded (por ejemplo, ya on_ipod de un sync anterior, o
-    inexistentes) se ignoran en vez de fallar, para que un guid viejo o
-    duplicado en la lista no aborte el resto.
-    """
+    # Marca episodios como sincronizados en el iPod.
     store = SubscriptionStore()
     updated = []
     for guid in req.guids:

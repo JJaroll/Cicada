@@ -15,6 +15,7 @@ class PlaylistManager:
     VERSION_PENALTY = 25
 
     def index_local_library(self, output_dir: str) -> List[Dict[str, str]]:
+        # Indexa los archivos de audio de la biblioteca local.
         base = Path(output_dir)
         index: List[Dict[str, str]] = []
 
@@ -38,11 +39,7 @@ class PlaylistManager:
         return index
 
     def scan_local_playlists(self, output_dir: str) -> List[Dict[str, Any]]:
-        """
-        Lee los archivos .m3u8 ya generados (por `generate_m3u8`) en la raíz
-        de `output_dir`, para poder agrupar la biblioteca "por playlist" sin
-        volver a consultar Spotify.
-        """
+        # Escanea playlists .m3u8 generadas en la biblioteca local.
         playlists: List[Dict[str, Any]] = []
         base = Path(output_dir)
         if not base.is_dir():
@@ -133,23 +130,7 @@ class PlaylistManager:
         return f"{artist} - {title}".strip(" -")
 
     def match_track(self, spotify_track: Dict[str, str], local_index: List[Dict[str, str]]) -> Optional[str]:
-        """
-        Busca en el índice local la mejor coincidencia difusa para un track de Spotify.
-
-        Usa `fuzz.token_set_ratio` sobre "Artista - Título" (tolerante a orden
-        de palabras y texto extra) a través de `process.extractOne`, y
-        penaliza coincidencias locales marcadas como "Live"/"Remix"/etc.
-        cuando el track de Spotify no lo es, para no mezclar la versión
-        equivocada.
-
-        Args:
-            spotify_track: dict con al menos 'title' y 'artist'.
-            local_index: salida de `index_local_library`.
-
-        Returns:
-            Ruta absoluta del archivo local si la similitud supera
-            `MATCH_THRESHOLD` (85%), o None si no hay coincidencia suficiente.
-        """
+        # Busca coincidencias difusas para la pista en la biblioteca.
         if not local_index:
             return None
 
@@ -178,23 +159,7 @@ class PlaylistManager:
         return local_index[matched_index]["path"]
 
     def generate_m3u8(self, playlist_name: str, matched_file_paths: List[str], output_dir: str) -> str:
-        """
-        Compila una lista de rutas de archivos locales en una playlist .m3u8
-        estándar, guardada en la raíz de `output_dir`.
-
-        Las rutas dentro del .m3u8 se guardan relativas a la carpeta donde
-        vive el propio archivo .m3u8 (portable si se mueve toda la carpeta
-        de música); si el cálculo de ruta relativa no es posible (p. ej. en
-        Windows entre unidades distintas), cae de vuelta a la ruta absoluta.
-
-        Args:
-            playlist_name: nombre de la playlist (sin extensión).
-            matched_file_paths: rutas de los archivos a incluir, en orden.
-            output_dir: carpeta raíz donde se guarda el .m3u8 (y la biblioteca).
-
-        Returns:
-            Ruta absoluta del archivo .m3u8 generado.
-        """
+        # Genera una lista de reproducción .m3u8 con rutas relativas.
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         output_path = output_path.resolve()

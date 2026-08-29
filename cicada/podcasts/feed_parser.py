@@ -65,15 +65,7 @@ def _decode_feed_bytes(data: bytes, content_encoding: str) -> bytes:
 
 
 async def fetch_feed(url: str, existing: PodcastFeed | None = None) -> PodcastFeed:
-    """Trae y parsea un feed RSS/Atom de podcast.
-
-    Si se pasa `existing`, los episodios nuevos se fusionan preservando
-    estado local (descarga) de los episodios ya conocidos.
-
-    Raises:
-        httpx.HTTPError: en errores de red.
-        ValueError: si el feed no trae entradas o no se puede parsear.
-    """
+    # Descarga y parsea un feed RSS de podcast.
     parsed = feedparser.parse(await _fetch_feed_bytes(url))
 
     if parsed.bozo and not parsed.entries:

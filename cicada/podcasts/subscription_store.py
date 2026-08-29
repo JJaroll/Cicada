@@ -72,11 +72,13 @@ class SubscriptionStore:
             conn.commit()
 
     def get_feeds(self) -> list[PodcastFeed]:
+        # Devuelve la lista de feeds de podcasts suscritos.
         with self._connection() as conn:
             feed_rows = conn.execute("SELECT * FROM feeds ORDER BY title COLLATE NOCASE").fetchall()
             return [self._row_to_feed(conn, row) for row in feed_rows]
 
     def get_feed(self, feed_url: str) -> PodcastFeed | None:
+        # Obtiene un feed específico por su URL.
         with self._connection() as conn:
             row = conn.execute("SELECT * FROM feeds WHERE feed_url = ?", (feed_url,)).fetchone()
             if row is None:
@@ -124,7 +126,7 @@ class SubscriptionStore:
             return self._row_to_episode(row) if row is not None else None
 
     def add_feed(self, feed: PodcastFeed) -> None:
-        """Guarda (o reemplaza) un feed y sus episodios. Idempotente."""
+        # Guarda o actualiza un feed y sus episodios.
         with self._connection() as conn:
             conn.execute(
                 """
@@ -180,15 +182,7 @@ class SubscriptionStore:
         last_error: str | None = None,
         clear_last_error: bool = False,
     ) -> None:
-        """Actualiza el estado local de un episodio puntual (sin reescribir
-        el feed completo) — usado durante las transiciones de descarga.
-
-        `last_error` solo se escribe si se pasa explícitamente; para
-        limpiarlo (al arrancar una descarga nueva) hay que pasar
-        `clear_last_error=True` en vez de `last_error=None`, así una
-        actualización de solo `status`/`downloaded_path` no borra por
-        accidente el error de un intento anterior que no se está tocando.
-        """
+        # Actualiza el estado de descarga de un episodio.
         with self._connection() as conn:
             if downloaded_path is not None and last_error is not None:
                 conn.execute(
@@ -221,6 +215,7 @@ class SubscriptionStore:
             conn.commit()
 
     def remove_feed(self, feed_url: str) -> PodcastFeed | None:
+        # Elimina una suscripción de podcast y sus datos.
         removed = self.get_feed(feed_url)
         if removed is None:
             return None

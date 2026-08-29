@@ -59,6 +59,7 @@ class DownloadManager(MusicProvider):
         }
 
     def get_auth_url(self) -> str:
+        # Genera la URL de autorización OAuth.
         client_id, _ = self._get_client_credentials()
         params = {
             "response_type": "code",
@@ -91,6 +92,7 @@ class DownloadManager(MusicProvider):
         return payload
 
     async def process_auth_code(self, code: str) -> None:
+        # Intercambia el código de autorización por tokens.
         client_id, client_secret = self._get_client_credentials()
         data = {
             "grant_type": "authorization_code",
@@ -123,6 +125,7 @@ class DownloadManager(MusicProvider):
         return saved["access_token"]
 
     async def get_user_token(self) -> str:
+        # Obtiene un token de acceso de usuario válido.
         token_data = self._load_token_data()
         if not token_data.get("refresh_token"):
             raise ValueError(
@@ -352,6 +355,7 @@ class DownloadManager(MusicProvider):
         return tracks
 
     async def get_user_playlists(self) -> List[Dict[str, Any]]:
+        # Obtiene las listas de reproducción del usuario.
         token = await self.get_user_token()
         headers = {"Authorization": f"Bearer {token}"}
 
@@ -418,6 +422,7 @@ class DownloadManager(MusicProvider):
         return playlists
 
     async def get_spotify_tracks(self, spotify_url: str) -> List[Dict[str, Any]]:
+        # Resuelve pistas desde una URL de Spotify.
         resource_type, resource_id = self._parse_spotify_url(spotify_url)
         return await self._fetch_tracks_for_resource(resource_type, resource_id)
 
@@ -461,4 +466,5 @@ class DownloadManager(MusicProvider):
         return self.TOKEN_FILE.exists()
 
     async def download_audio(self, query: str, download_path: str) -> str:
+        # Descarga el audio usando la consulta de búsqueda.
         return await self._audio_downloader.download_audio(query, download_path)

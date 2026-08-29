@@ -150,7 +150,7 @@ def _decode_ithmb_image(ithmb_file: Path, offset: int, size: int, width: int = 4
 
 
 def scan_ipod_photos(mount: Path | str) -> List[IpodPhotoInfo]:
-    """Escanea el catálogo de fotos del iPod leyendo Photo Database y Full Resolution."""
+    # Escanea fotos almacenadas en el directorio del iPod.
     mount_path = Path(mount)
     full_res = _get_full_res_dir(mount_path)
     db_items = _parse_photo_database(mount_path)
@@ -243,7 +243,7 @@ def scan_ipod_photos(mount: Path | str) -> List[IpodPhotoInfo]:
 def get_photo_thumbnail_bytes(
     mount: Path | str, rel_path: str, max_size: Tuple[int, int] = (360, 360)
 ) -> Optional[bytes]:
-    """Genera o recupera de caché una miniatura JPEG optimizada."""
+    # Genera o recupera la miniatura de una foto.
     mount_path = Path(mount)
     clean_path = urllib.parse.unquote(rel_path).strip()
     cache_dir = _get_cache_dir()
@@ -329,7 +329,7 @@ def get_photo_thumbnail_bytes(
 def get_photo_preview_bytes(
     mount: Path | str, rel_path: str, max_size: Tuple[int, int] = (1920, 1920)
 ) -> Optional[bytes]:
-    """Genera o recupera de caché una versión preview en alta definición para el Lightbox."""
+    # Genera o recupera la vista previa fotográfica.
     mount_path = Path(mount)
     clean_path = urllib.parse.unquote(rel_path).strip()
     cache_dir = _get_cache_dir()
@@ -412,7 +412,7 @@ def get_photo_preview_bytes(
 
 
 def resolve_photo_raw_file(mount: Path | str, rel_path: str) -> Optional[Path]:
-    """Resuelve la ruta absoluta del archivo original de la foto si existe."""
+    # Resuelve la ruta al archivo original de foto.
     mount_path = Path(mount)
     clean_path = urllib.parse.unquote(rel_path).strip()
     if clean_path.startswith("db:"):

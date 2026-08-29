@@ -568,7 +568,7 @@ def _get_ipod_image_url(info: DeviceInfo) -> str:
 
 @router.get("/status", response_model=StatusResponse)
 def get_ipod_status() -> StatusResponse:
-    """Escanea y reporta el estado de dispositivos iPod conectados."""
+    # Devuelve el estado actual de los iPods conectados.
     scan = discover_ipods()
     device_schemas: List[DeviceInfoSchema] = []
 
@@ -844,7 +844,7 @@ def restore_manual_backup(req: RestoreRequest) -> ApplyResponse:
 
 @router.post("/eject", response_model=EjectResponse)
 def eject_device(force: bool = False) -> EjectResponse:
-    """Expulsa de forma segura el volumen del iPod."""
+    # Expulsa de forma segura el volumen del iPod.
     try:
         mount = resolve_mount()
         res = eject_ipod(mount, force=force)
@@ -920,7 +920,7 @@ def _revalidate_ipod_mount():
 
 @router.get("/scan")
 def scan_ipods() -> Dict[str, Any]:
-    """Escanea volúmenes en busca de iPods (contrato ligero de la UI). Solo lectura."""
+    # Escanea los volúmenes del sistema buscando dispositivos iPod.
     try:
         result = discover_ipods()
     except Exception as e:
@@ -934,8 +934,7 @@ def scan_ipods() -> Dict[str, Any]:
 
 @router.get("/playlists")
 def ipod_playlists() -> Dict[str, Any]:
-    """Lista las playlists del iPod con sus pistas reales (dbid + metadata),
-    resolviendo los items contra la lista de pistas. Solo lectura."""
+    # Lista las playlists del iPod con sus pistas.
     mount, _info = _revalidate_ipod_mount()
     cdb = mount / "iPod_Control" / "iTunes" / "iTunesCDB"
     data = load_ipod_library(str(cdb), mount=str(mount))
@@ -1573,10 +1572,7 @@ class MediaSyncRequest(BaseModel):
 
 @router.post("/media/sync", response_model=ApplyResponse)
 def sync_media(req: MediaSyncRequest) -> ApplyResponse:
-    """Copia los audios locales indicados al iPod (``iPod_Control/Music/``) y
-    reescribe la base (existentes + nuevos) de forma transaccional, con backup y
-    rollback. Es el 'enviar al iPod' real (a diferencia de plan/apply, que asume
-    los audios ya presentes)."""
+    # Sincroniza y transfiere pistas y playlists al iPod.
     if not req.tracks:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

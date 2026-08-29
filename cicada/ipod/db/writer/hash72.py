@@ -51,21 +51,7 @@ def _get_hash_info_path(ipod_path: str) -> str:
 
 
 def read_hash_info(ipod_path: str) -> HashInfo | None:
-    """
-    Read and parse HashInfo file from iPod.
-
-    HashInfo structure (54 bytes total):
-    - header[6]: "HASHv0"
-    - uuid[20]: Device UUID (should match FirewireGuid)
-    - rndpart[12]: Random bytes for signature
-    - iv[16]: AES initialization vector
-
-    Args:
-        ipod_path: Mount point of iPod
-
-    Returns:
-        HashInfo object or None if file doesn't exist
-    """
+    # Lee la información HashInfo del dispositivo iPod.
     try:
         from iopenpod.device import get_current_device_for_path
         dev = get_current_device_for_path(ipod_path)
@@ -104,18 +90,7 @@ def write_hash_info(
     reported_volume_format: str = "",
     expected_volume_identity_key: str = "",
 ) -> bool:
-    """
-    Write HashInfo file to iPod.
-
-    Args:
-        ipod_path: Mount point of iPod
-        uuid: 20-byte device UUID
-        iv: 16-byte AES IV
-        rndpart: 12-byte random bytes
-
-    Returns:
-        True if successful
-    """
+    # Escribe el archivo HashInfo en el iPod.
     if len(uuid) != 20 or len(iv) != 16 or len(rndpart) != 12:
         return False
 
@@ -267,19 +242,7 @@ def _hash_extract(signature: bytes, sha1: bytes) -> tuple | None:
 
 
 def extract_hash_info(ipod_path: str, valid_itdb_data: bytes) -> bool:
-    """
-    Extract HashInfo from a valid iTunes-generated iTunesDB.
-
-    Use this when you have an iTunesDB that was created by iTunes
-    but you don't have a HashInfo file.
-
-    Args:
-        ipod_path: Mount point of iPod
-        valid_itdb_data: Contents of valid iTunes-generated iTunesDB
-
-    Returns:
-        True if HashInfo was successfully extracted and saved
-    """
+    # Extrae y guarda HashInfo desde un iTunesDB.
     if len(valid_itdb_data) < 0xA0:
         return False
 
@@ -346,19 +309,7 @@ def extract_hash_info_to_dict(valid_itdb_data: bytes) -> dict | None:
 
 
 def compute_hash72(ipod_path: str, itdb_data: bytes) -> bytes:
-    """
-    Compute HASH72 signature for iTunesDB data.
-
-    Args:
-        ipod_path: Mount point of iPod (for reading HashInfo)
-        itdb_data: Complete iTunesDB file contents
-
-    Returns:
-        46-byte signature
-
-    Raises:
-        FileNotFoundError: If HashInfo file doesn't exist
-    """
+    # Calcula la firma HASH72 para iTunesDB.
     hash_info = read_hash_info(ipod_path)
     if hash_info is None:
         raise FileNotFoundError(
@@ -372,17 +323,7 @@ def compute_hash72(ipod_path: str, itdb_data: bytes) -> bytes:
 
 
 def write_hash72(itdb_data: bytearray, ipod_path: str) -> None:
-    """
-    Compute and write HASH72 checksum to iTunesDB data in-place.
-
-    Args:
-        itdb_data: Mutable bytearray of complete iTunesDB file
-        ipod_path: Mount point of iPod (for reading HashInfo)
-
-    Raises:
-        ValueError: If iTunesDB is too small
-        FileNotFoundError: If HashInfo file doesn't exist
-    """
+    # Escribe la firma HASH72 en la base de datos.
     if len(itdb_data) < 0x6C:
         raise ValueError(f"iTunesDB file too small ({len(itdb_data)} bytes)")
 

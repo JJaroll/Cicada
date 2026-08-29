@@ -35,6 +35,7 @@ class YouTubeMusicProvider(MusicProvider):
         self._yt = YTMusic()
 
     def parse_url(self, url: str) -> Tuple[str, str]:
+        # Parsea la URL o identificador de YouTube Music.
         cleaned = url.strip()
 
         match_track = _TRACK_URL_RE.search(cleaned)
@@ -67,6 +68,7 @@ class YouTubeMusicProvider(MusicProvider):
         return playlist_id[2:] if playlist_id.startswith("VL") else playlist_id
 
     async def get_tracks(self, resource_type: str, resource_id: str) -> List[TrackMeta]:
+        # Obtiene la lista de pistas del recurso indicado.
         if resource_type not in self.supported_resource_types:
             raise ValueError(
                 f"YouTube Music solo soporta {self.supported_resource_types} en este "

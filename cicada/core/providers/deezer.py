@@ -30,6 +30,7 @@ class DeezerProvider(MusicProvider):
         pass
 
     def parse_url(self, url: str) -> Tuple[str, str]:
+        # Parsea la URL o identificador de Deezer.
         cleaned = url.strip()
 
         match = _URL_RE.search(cleaned)
@@ -63,6 +64,7 @@ class DeezerProvider(MusicProvider):
         )
 
     async def get_tracks(self, resource_type: str, resource_id: str) -> List[TrackMeta]:
+        # Obtiene pistas del recurso Deezer consultando su API.
         if resource_type not in self.supported_resource_types:
             raise ValueError(
                 f"Deezer solo soporta {self.supported_resource_types} en este "

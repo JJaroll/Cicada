@@ -41,12 +41,7 @@ def _diskutil_info(mount: Path, *, timeout: float = 10.0) -> dict:
 
 
 def volume_fingerprint(mount: str | Path) -> Optional[VolumeFingerprint]:
-    """Huella del volumen en ``mount``, o ``None`` si no se puede derivar.
-
-    Prefiere la fuente **fuerte** (VolumeUUID de diskutil); si no está, cae a la
-    **débil** (DeviceNode + VolumeName). En plataformas no-macOS, por ahora solo
-    intenta la débil.
-    """
+    # Obtiene la huella digital del volumen montado.
     mount = Path(mount)
     if sys.platform == "darwin":
         info = _diskutil_info(mount)
@@ -79,8 +74,7 @@ def volume_fingerprint(mount: str | Path) -> Optional[VolumeFingerprint]:
 
 
 def get_volume_label(mount: str | Path | None) -> Optional[str]:
-    """Obtiene el nombre / etiqueta del volumen tal como se muestra en el sistema
-    operativo (Finder en macOS, Explorador de archivos en Windows / Linux)."""
+    # Obtiene la etiqueta del volumen en el sistema.
     if not mount:
         return None
     mount = Path(mount)

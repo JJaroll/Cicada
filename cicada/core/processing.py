@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 
 
 async def process_library(input_dir: str, output_dir: str):
+    # Procesa y etiqueta archivos de audio en lote.
     await manager.broadcast(json.dumps({"type": "info", "message": f"Iniciando escaneo en: {input_dir}"}))
 
     plan_c_enabled = bool(load_app_config().get("plan_c_enabled", False))
@@ -197,10 +198,7 @@ async def _download_and_tag_tracks(
     query_builder: Callable[[Dict[str, Any]], str] = _ytsearch_query,
     source_label: str = "Spotify",
 ):
-    """ Descarga (YouTube) e inyecta metadata a una lista ya resuelta de tracks
-    de un proveedor de música. query_builder decide cómo localizar el video en
-    YouTube: búsqueda heurística por texto (Spotify, sin id propio) o id exacto
-    (YouTube Music, que ya trae provider_track_id). """
+    # Descarga pistas e inyecta sus metadatos correspondientes.
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -240,6 +238,7 @@ async def _download_and_tag_tracks(
 
 
 async def process_spotify_download(url: str, output_dir: str):
+    # Resuelve y descarga pistas desde Spotify.
     await manager.broadcast(json.dumps({"type": "info", "message": f"Resolviendo enlace de Spotify: {url}"}))
 
     try:
@@ -253,16 +252,19 @@ async def process_spotify_download(url: str, output_dir: str):
 
 
 async def process_spotify_selected_tracks(tracks: List[Dict[str, Any]], output_dir: str):
+    # Procesa pistas seleccionadas de Spotify.
     await _download_and_tag_tracks(tracks, output_dir)
 
 
 async def process_youtube_music_selected_tracks(tracks: List[Dict[str, Any]], output_dir: str):
+    # Procesa pistas seleccionadas de YouTube Music.
     await _download_and_tag_tracks(
         tracks, output_dir, query_builder=_exact_video_query, source_label="YouTube Music"
     )
 
 
 async def process_deezer_selected_tracks(tracks: List[Dict[str, Any]], output_dir: str):
+    # Procesa pistas seleccionadas de Deezer.
     await _download_and_tag_tracks(
         tracks, output_dir, query_builder=_ytsearch_query, source_label="Deezer"
     )

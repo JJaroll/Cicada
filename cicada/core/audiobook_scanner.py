@@ -15,16 +15,7 @@ _MAX_DEPTH = 6
 
 
 def scan_audiobook_folder(root_dir: str) -> Dict[str, Any]:
-    """Escanea `root_dir` recursivamente buscando archivos de audiolibro.
-
-    No sigue symlinks. Corta el escaneo al llegar a `_MAX_DEPTH` niveles
-    de profundidad relativa o `_MAX_FILES` archivos candidatos, lo que
-    ocurra primero, para no colgar el proceso ante un árbol de carpetas
-    gigante o cíclico.
-
-    Returns:
-        {"audiobooks": [...], "count": int, "truncated": bool}
-    """
+    # Escanea la carpeta buscando audiolibros y sus metadatos.
     base = Path(root_dir)
     audiobooks: List[Dict[str, Any]] = []
     truncated = False
