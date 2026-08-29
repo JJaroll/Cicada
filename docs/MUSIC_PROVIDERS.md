@@ -246,6 +246,21 @@ simplemente más visible acá por el volumen de pruebas manuales
 consecutivas. Si un usuario reporta "la descarga de YouTube Music falla
 con error de login", este es el motivo más probable, no una regresión.
 
+**Pendiente, no omitido:** la descarga real disparada específicamente vía
+`POST /api/youtube_music/download` (de punta a punta por HTTP, con
+confirmación del archivo final en disco vía `mutagen`, mismo nivel de
+rigor que se hizo para `AudioDownloader` en el Paso 4) topó con este
+rate-limit antes de poder completarse y no se reintentó dentro de esta
+sesión. La ruta de código es la misma que ya se verificó exitosamente en
+el Paso 4 (`AudioDownloader.download_audio()` con el videoId exacto,
+confirmado con mutagen: m4a válido, duración correcta) — el endpoint
+nuevo solo agrega el envoltorio HTTP/`BackgroundTasks` alrededor de código
+ya probado, no lógica de descarga nueva sin probar. Aun así, queda como
+pendiente explícito reintentar esta verificación puntual (descarga
+completa vía el endpoint HTTP) cuando el rate-limit se libere, antes de
+dar el Paso 5 por "100% verificado extremo a extremo" — no se asuma
+verificado solo porque la lectura de este documento no muestre una falla.
+
 ---
 
 ## 5. Orden de prioridad confirmado
