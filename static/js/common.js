@@ -1,8 +1,7 @@
-// Extraído de cicada/core/main.py — sin cambios de comportamiento. Ver docs/IPOD_INTEGRATION.md
+// Funciones comunes de interfaz, internacionalización, temas y utilidades globales.
 let currentLang = localStorage.getItem("cicada_lang") || "es";
 let ipodUiEnabled = true;
 
-// Preferencia de visibilidad de UI (no toca disponibilidad real del módulo/backend)
 function applyIpodUiVisibility() {
     let navBtn = document.querySelector('.nav-item[data-view="ipod"]');
     if (navBtn) navBtn.classList.toggle("hidden", !ipodUiEnabled);
@@ -18,8 +17,6 @@ function applyIpodUiVisibility() {
     }
 }
 
-// Lee las CSS variables --status-* (definidas en app.css), formalizando los
-// colores de estado en vez de tenerlos hardcodeados en cada llamada.
 function statusColor(kind) {
     return getComputedStyle(document.documentElement).getPropertyValue("--status-" + kind).trim();
 }
@@ -56,7 +53,6 @@ function applyLanguage(lang) {
         btn.classList.toggle("active", btn.dataset.lang === currentLang);
     });
 
-    // Re-renderiza listas dinámicas ya pobladas para que también cambien de idioma
     if (typeof refreshSpotifyDownloadButton === "function") refreshSpotifyDownloadButton();
     if (typeof resolvedSpotifyTracks !== "undefined" && resolvedSpotifyTracks.length > 0) renderSpotifyTrackList();
     if (typeof userPlaylists !== "undefined" && userPlaylists.length > 0) loadSpotifyPlaylists();
@@ -71,8 +67,6 @@ function applyLanguage(lang) {
         refreshSpotifyAuthStatus();
     }
 
-    // Textos de estado que no usan data-i18n porque a veces muestran datos reales
-    // (nombre de archivo, título de pista) en vez de una frase traducible.
     if (typeof setWsStatus === "function") setWsStatus(currentWsStatusKey, currentWsColor);
     if (typeof setStatusPill === "function") setStatusPill(currentStatusPillKey, currentStatusPillColor);
     if (!hasStartedProcessing) {
@@ -113,7 +107,6 @@ let currentWsColor = "#9ca3af";
 let currentStatusPillKey = "player_waiting_status";
 let currentStatusPillColor = statusColor("success");
 
-// --- Navegación entre vistas ---
 let isPlayerCollapsed = false;
 try {
     isPlayerCollapsed = localStorage.getItem("cicada_player_collapsed") === "true";
@@ -173,8 +166,6 @@ function showView(name) {
             el.classList.add("nav-item-inactive");
         }
     });
-    // El módulo derecho no aporta nada en PLAYLISTS (se oculta); en LIBRARY y IPOD funciona
-    // como reproductor en vez de panel de progreso, permitiendo colapsarse con estilo Caelestia Shell.
     let processModule = document.getElementById("process-module");
     let progressPanel = document.getElementById("progress-panel");
     let playerPanel = document.getElementById("player-panel");
@@ -184,7 +175,6 @@ function showView(name) {
         if (processModule) processModule.style.display = "none";
         if (expandBtn) expandBtn.classList.add("hidden");
     } else if (name === "library" || name === "ipod") {
-        // En iPod y Biblioteca, el módulo derecho es el reproductor
         if (processModule) processModule.style.display = "flex";
         if (progressPanel) {
             progressPanel.classList.add("hidden");
@@ -411,7 +401,6 @@ function closeSettings() {
     modal.classList.remove("flex");
 }
 
-// --- Modal "Sobre" (About): se abre al hacer clic en el logo "C." de la barra lateral ---
 function openAbout() {
     let modal = document.getElementById("about-modal");
     modal.classList.remove("hidden");
@@ -424,7 +413,6 @@ function closeAbout() {
     modal.classList.remove("flex");
 }
 
-// --- Modal de Estado del Servidor ---
 function openServerStatusModal() {
     let modal = document.getElementById("server-status-modal");
     modal.classList.remove("hidden");
@@ -508,9 +496,8 @@ async function renderIpodStatusBlock() {
     }
 }
 
-// --- Modal de apoyo (Ko-fi): tras completar un lote grande de canciones ---
 const KOFI_SUPPORT_THRESHOLD = 250;
-const MANUAL_TAGGING_MINUTES_PER_SONG = 5; // estimación de tiempo de etiquetado manual por canción
+const MANUAL_TAGGING_MINUTES_PER_SONG = 5;
 
 function formatDurationWords(totalSeconds) {
     totalSeconds = Math.max(0, Math.round(totalSeconds));
@@ -545,7 +532,6 @@ function closeKofiSupport() {
     modal.classList.remove("flex");
 }
 
-// --- Aviso de actualización: comprueba el último release estable de GitHub ---
 function renderUpdateBanner(data) {
     if (localStorage.getItem("cicada_dismissed_update") === data.latest_version) return;
 
@@ -601,7 +587,6 @@ function selectThemeUI(theme) {
     document.documentElement.setAttribute('data-theme', theme);
 }
 
-// Accesibilidad: fuente para dislexia — 100% client-side (localStorage), no se persiste server-side
 function selectFontUI(font) {
     document.documentElement.setAttribute('data-font', font);
     localStorage.setItem('cicada_font', font);
@@ -609,7 +594,6 @@ function selectFontUI(font) {
     if (checkbox) checkbox.checked = font === 'dyslexic';
 }
 
-// Accesibilidad: modo daltónico — remapea las CSS variables --status-*, 100% client-side
 function selectColorblindModeUI(enabled) {
     document.documentElement.setAttribute('data-colorblind', enabled ? 'true' : 'false');
     localStorage.setItem('cicada_colorblind', enabled ? 'true' : 'false');
@@ -617,7 +601,6 @@ function selectColorblindModeUI(enabled) {
     if (checkbox) checkbox.checked = enabled;
 }
 
-// Nombre de archivo de logo (en inglés) para cada color de acento (en español)
 const LOGO_FILE_BY_COLOR = {
     azul: 'blue',
     verde: 'green',
@@ -692,7 +675,6 @@ async function saveSettings() {
         let data = await res.json();
         if (!res.ok) throw new Error(data.detail || t("error_unknown"));
 
-        // Reflejar los cambios en los campos ya visibles de otras pestañas, sin recargar la página
         let inputDirField = document.getElementById("input_dir");
         if (inputDirField) inputDirField.value = payload.process_input_dir;
         let outputDirField = document.getElementById("output_dir");
@@ -751,5 +733,3 @@ function handleSpotifyAuthRedirect() {
         }, 300);
     }
 }
-
-// --- IPOD SYNC LOGIC ---

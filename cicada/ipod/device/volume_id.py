@@ -1,19 +1,4 @@
-"""Huella del volumen montado — clave del caché GUID off-device sin USB.
-
-El caché de identidad (`~/.cicada`) está indexado por GUID, pero para
-consultarlo *sin* GUID (dispositivo restaurado por iTunes) necesitamos una clave
-derivable del disco. Esta huella cumple ese papel, con dos niveles de fuerza:
-
-- **strong**: `diskutil info -plist <mount>` → ``VolumeUUID``. En FAT32 macOS lo
-  deriva del *Volume Serial Number* del boot sector; `diskutil` hace la lectura
-  privilegiada, así que **Cicada no necesita root**. Estable hasta el próximo
-  *restore* (que es justo cuando el GUID en disco desaparece — misma granularidad).
-- **weak**: `sha256(DeviceNode + VolumeName)`. Último recurso: **no distingue dos
-  iPods con el mismo nombre** (dos restaurados por iTunes se llaman ambos "iPod").
-  Nunca debe autorizar una escritura de Fase 2 (ver device_info).
-
-Solo lectura. No escribe nada.
-"""
+"""Identificación y huella del volumen del dispositivo iPod."""
 from __future__ import annotations
 
 import hashlib
@@ -100,7 +85,6 @@ def get_volume_label(mount: str | Path | None) -> Optional[str]:
         return None
     mount = Path(mount)
 
-    # 1. Windows: consultar GetVolumeInformationW para obtener el Volume Label
     if sys.platform.startswith("win"):
         try:
             import ctypes
@@ -130,7 +114,6 @@ def get_volume_label(mount: str | Path | None) -> Optional[str]:
         except Exception:
             pass
 
-    # 2. macOS / Darwin: el nombre del volumen en /Volumes/<Name> o diskutil VolumeName
     if sys.platform == "darwin":
         try:
             mount_str = str(mount.resolve() if mount.exists() else mount)
@@ -143,7 +126,6 @@ def get_volume_label(mount: str | Path | None) -> Optional[str]:
         except Exception:
             pass
 
-    # 3. Linux: unidades extraíbles montadas bajo /media o /run/media
     if sys.platform.startswith("linux"):
         try:
             mount_str = str(mount)

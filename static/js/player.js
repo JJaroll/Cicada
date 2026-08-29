@@ -1,4 +1,4 @@
-// Extraído de cicada/core/main.py — sin cambios de comportamiento. Ver docs/IPOD_INTEGRATION.md
+// Reproductor de audio integrado y control de reproducción.
 let libraryAudio = document.getElementById("library-audio");
 
 let libraryQueues = {};
@@ -169,5 +169,3 @@ libraryAudio.addEventListener("ended", function() {
 });
 libraryAudio.addEventListener("pause", function() { setPlayPauseIcon(false); });
 libraryAudio.addEventListener("play", function() { setPlayPauseIcon(true); });
-
-// --- Ajustes (modal): credenciales de API, toggle del Plan C, carpetas predeterminadas ---

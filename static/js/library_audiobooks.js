@@ -1,5 +1,4 @@
-// Exploración de carpeta para audiolibros — metadata leída directo del archivo
-// (título/autor/narrador/duración/capítulos) con selección directa e interactiva para el iPod.
+// Exploración y selección interactiva de audiolibros locales para el iPod.
 let audiobookResults = [];
 let audiobookSelectMode = true;
 let audiobookSelected = new Set();
@@ -21,7 +20,6 @@ async function scanAudiobookFolder() {
         audiobookSelected.clear();
         audiobookSelectMode = true;
 
-        // Si solo hay 1 audiolibro, preseleccionarlo para comodidad del usuario
         if (audiobookResults.length === 1) {
             audiobookSelected.add(audiobookResults[0].path);
         }
@@ -162,7 +160,6 @@ function commitAudiobookSelectionToIpod() {
         }));
     const added = (typeof addToSyncBasket === "function") ? addToSyncBasket(items) : 0;
     
-    // Cerrar modal de audiolibros y notificar
     if (typeof closeAddAudiobookModal === "function") {
         closeAddAudiobookModal();
     }
@@ -170,7 +167,6 @@ function commitAudiobookSelectionToIpod() {
     exitAudiobookSelectMode();
     alert(t("library_added_to_ipod").replace("{n}", added));
     
-    // Si la función selectIpodCategory existe, mostrar la pestaña de sync
     if (typeof selectIpodCategory === "function") {
         selectIpodCategory("sync");
     }

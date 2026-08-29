@@ -1,3 +1,4 @@
+"""Gestor de descargas y resolución de playlists de Spotify."""
 import base64
 import json
 import logging
@@ -24,22 +25,8 @@ _SPOTIFY_URI_RE = re.compile(
 
 
 class DownloadManager(MusicProvider):
-    """
-    Gestor de descargas de Cicada.
-    Resuelve tracks/álbumes/playlists de Spotify vía el flujo OAuth2
-    "Authorization Code" (login del usuario, requerido por Spotify para leer
-    playlists privadas/colaborativas y canciones guardadas) contra la API oficial,
-    y descarga su audio correspondiente desde YouTube Music.
-
-    Implementa MusicProvider (docs/MUSIC_PROVIDERS.md §4) sobre su propia API
-    pública ya existente (get_spotify_tracks/get_user_playlists) — parse_url()
-    y get_tracks() son wrappers nuevos, _parse_spotify_url() y
-    get_spotify_tracks() no se tocan porque tests y callers ya los usan
-    directamente.
-    """
-
     name = "spotify"
-    supports_public_playlist_by_id = True   # Client Credentials — ver docs/MUSIC_PROVIDERS.md §1
+    supports_public_playlist_by_id = True
     requires_auth_for_own_library = True
     supported_resource_types = ("track", "album", "playlist", "collection")
 
@@ -230,11 +217,6 @@ class DownloadManager(MusicProvider):
         return full_by_id
 
     async def _fetch_bpm_map(self, client: httpx.AsyncClient, track_ids: List[str], headers: dict) -> Dict[str, float]:
-        # Spotify restringió /v1/audio-features a apps creadas antes del
-        # 27-nov-2024 (ver docs/MUSIC_PROVIDERS.md §1). Si el usuario configura
-        # credenciales de una app nueva, este endpoint da 403 para todo el
-        # mundo: no es un bug, el try/except de abajo lo tolera devolviendo
-        # el mapa vacío y el BPM simplemente no llega a los tracks.
         bpm_by_id: Dict[str, float] = {}
         ids = [tid for tid in track_ids if tid]
         if not ids:
@@ -374,7 +356,6 @@ class DownloadManager(MusicProvider):
         headers = {"Authorization": f"Bearer {token}"}
 
         async with httpx.AsyncClient(timeout=15.0) as client:
-            # 1. Obtener ID del usuario actual para filtrar solo playlists propias o colaborativas
             current_user_id = None
             try:
                 user_res = await client.get("https://api.spotify.com/v1/me", headers=headers)
@@ -383,7 +364,6 @@ class DownloadManager(MusicProvider):
             except Exception as e:
                 logger.warning(f"No se pudo obtener el ID del usuario actual de Spotify: {e}")
 
-            # 2. Consultar conteo de 'Canciones que te gustan' (Saved Tracks)
             liked_count = 0
             has_liked_songs = False
             try:
@@ -395,7 +375,6 @@ class DownloadManager(MusicProvider):
             except Exception as e:
                 logger.warning(f"No se pudo consultar 'Canciones que te gustan' (posible falta de scope user-library-read): {e}")
 
-            # 3. Consultar playlists del usuario
             response = await client.get(
                 "https://api.spotify.com/v1/me/playlists",
                 headers=headers,
@@ -408,7 +387,6 @@ class DownloadManager(MusicProvider):
 
         playlists = []
 
-        # Agregar entrada especial para "Canciones que te gustan" al inicio
         if has_liked_songs:
             playlists.append({
                 "id": "liked-songs",
@@ -426,7 +404,6 @@ class DownloadManager(MusicProvider):
             owner_id = (item.get("owner") or {}).get("id")
             is_collaborative = bool(item.get("collaborative"))
 
-            # Filtrar: solo playlists creadas por el propio usuario o donde es colaborador
             if current_user_id and owner_id and owner_id != current_user_id and not is_collaborative:
                 continue
 
@@ -473,10 +450,6 @@ class DownloadManager(MusicProvider):
                 return await self._fetch_playlist_tracks(client, resource_id, headers)
 
         raise ValueError(f"Tipo de recurso de Spotify no soportado: {resource_type}")
-
-    # --- Implementación de MusicProvider (docs/MUSIC_PROVIDERS.md §4) ---
-    # Wrappers sobre la API ya existente arriba; ningún método/nombre previo
-    # se renombra ni se elimina.
 
     def parse_url(self, url: str) -> Tuple[str, str]:
         return self._parse_spotify_url(url)

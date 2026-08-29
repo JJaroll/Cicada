@@ -1,13 +1,4 @@
-"""FastAPI Router para operaciones del iPod — endpoints /api/ipod.
-
-Expone el ciclo de vida completo del iPod:
-- Detección e identidad de dispositivo.
-- Lectura de biblioteca y listado de pistas.
-- Planificación dry-run en staging off-device.
-- Aplicación transaccional con rollback.
-- Gate de consentimiento de Music.app.
-- Backups y restauración.
-"""
+"""API REST para operaciones y gestión de dispositivos iPod."""
 from __future__ import annotations
 
 import logging
@@ -870,13 +861,11 @@ def _real_device_name(mount: Path | str | None) -> Optional[str]:
     if not mount:
         return None
 
-    # 1. Nombre de volumen en el SO (Finder / Explorador)
     from cicada.ipod.device.volume_id import get_volume_label
     vol_label = get_volume_label(mount)
     if vol_label:
         return vol_label
 
-    # 2. Fallback a Title de la playlist maestra en iTunesCDB
     cdb = Path(mount) / "iPod_Control" / "iTunes" / "iTunesCDB"
     if not cdb.is_file():
         return None
@@ -1269,10 +1258,8 @@ def get_ipod_track_artwork(
     if not track_file or not track_file.exists():
         raise HTTPException(status_code=404, detail="Archivo no encontrado en el iPod")
 
-    # 1. Carátula embebida en tags de audio o video
     img_bytes, mime = extract_embedded_artwork(track_file)
 
-    # 2. Si es video y no tiene cover embebido, fotograma de video vía ffmpeg
     if not img_bytes and track_file.suffix.lower() in (".mp4", ".m4v", ".mov"):
         img_bytes, mime = _extract_video_frame(track_file)
 
@@ -1628,10 +1615,6 @@ def sync_media(req: MediaSyncRequest) -> ApplyResponse:
                 ti.podcast_flag = 1
                 ti.skip_when_shuffling = True
                 ti.remember_position = True
-                # Mismo criterio que iOpenPod (podcast_sync.py): un episodio
-                # sin artist/album no es "sin autor", es el programa en sí —
-                # el firmware de la app de Podcasts los usa para agrupar y
-                # mostrar el episodio, así que no deben quedar vacíos.
                 ti.artist = ti.artist or t.show_name
                 ti.album = ti.album or t.show_name
                 ti.podcast_enclosure_url = t.podcast_enclosure_url

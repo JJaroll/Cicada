@@ -1,13 +1,4 @@
-"""Router de podcasts: suscripción a feeds RSS, listado, descarga y
-marcado de sincronización al iPod.
-
-Independiente del módulo iPod — la persistencia vive en
-~/.cicada/podcasts.db, no en el dispositivo. El sync real de audio
-reutiliza /api/ipod/media/sync (kind="podcast", ya soportado desde la
-Fase 5a) — este router solo arma el MediaTrackInput en frontend y, tras
-un sync exitoso confirmado por el caller, marca los episodios como
-on_ipod aquí.
-"""
+"""Router de gestión y descarga de podcasts."""
 from __future__ import annotations
 
 import asyncio
@@ -57,11 +48,11 @@ class EpisodeSchema(BaseModel):
 
 class DownloadProgressSchema(BaseModel):
     guid: str
-    state: str  # "downloading" | "done" | "error" | "idle"
+    state: str
     downloaded_bytes: int = 0
     total_bytes: int = 0
     error: Optional[str] = None
-    status: str  # status persistido actual del episodio (SQLite)
+    status: str
 
 
 class FeedSchema(BaseModel):
@@ -174,7 +165,7 @@ def _progress_schema(guid: str, persisted_status: str) -> DownloadProgressSchema
 async def _run_download(feed_url: str, guid: str, audio_url: str, artwork_url: str) -> None:
     store = SubscriptionStore()
     progress = download_progress.get(guid)
-    assert progress is not None  # start() ya se llamó en el endpoint antes de crear la tarea
+    assert progress is not None
 
     def on_progress(downloaded: int, total: int) -> None:
         progress.downloaded_bytes = downloaded
@@ -187,8 +178,6 @@ async def _run_download(feed_url: str, guid: str, audio_url: str, artwork_url: s
         try:
             await embed_artwork(dest_path, artwork_url)
         except Exception as exc:
-            # El audio ya está descargado y es válido — sin carátula sigue
-            # siendo un episodio usable, no debe fallar la descarga entera.
             log.debug("No se pudo embeber artwork para %s: %s", guid, exc)
         store.set_episode_status(
             guid, status=STATUS_DOWNLOADED, downloaded_path=dest_path, clear_last_error=True

@@ -1,6 +1,4 @@
-"""Pipeline de proceso en segundo plano (servicio, no router): procesado de
-biblioteca local y descargas de Spotify, con reporte de progreso vía WebSocket y
-soporte de cancelación. Compartido por los routers process y spotify."""
+"""Pipeline de procesamiento y descarga de pistas en segundo plano."""
 from __future__ import annotations
 
 import asyncio
@@ -265,10 +263,6 @@ async def process_youtube_music_selected_tracks(tracks: List[Dict[str, Any]], ou
 
 
 async def process_deezer_selected_tracks(tracks: List[Dict[str, Any]], output_dir: str):
-    # Deezer es solo metadata, igual que Spotify: no aloja audio descargable
-    # (su "preview" es un clip de 30s firmado, no la pista completa) — no hay
-    # id exacto de video que usar, así que la búsqueda es heurística por
-    # texto, igual que Spotify, no determinística como YouTube Music.
     await _download_and_tag_tracks(
         tracks, output_dir, query_builder=_ytsearch_query, source_label="Deezer"
     )

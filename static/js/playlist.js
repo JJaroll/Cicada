@@ -1,4 +1,4 @@
-// Extraído de cicada/core/main.py — sin cambios de comportamiento. Ver docs/IPOD_INTEGRATION.md
+// Gestión, resolución y replicación difusa de listas de reproducción.
 let userPlaylists = [];
 let currentPlaylistTracks = [];
 let currentPlaylistName = "";
@@ -59,7 +59,6 @@ async function selectPlaylist(index) {
     trackListEl.innerHTML = '<p class="font-data-sm text-[13px] text-muted/40">' + t("playlists_loading_songs") + '</p>';
     document.getElementById("replicate-controls").style.display = "none";
 
-    // Al cambiar de playlist, el preview de replicación anterior ya no aplica
     replicateMatches = [];
     document.getElementById("replicate-track-list").innerHTML = "";
     document.getElementById("replicate-match-summary").textContent = "";
@@ -129,9 +128,6 @@ async function replicatePlaylist() {
         let data = await res.json();
         if (!res.ok) throw new Error(data.detail || t("error_unknown"));
 
-        // Conservamos el track de Spotify completo (álbum, artwork, ISRC, etc.), no
-        // solo title/artist/path: hace falta para re-etiquetar si el usuario asocia
-        // manualmente un archivo que el fuzzy matching no encontró solo.
         replicateMatches = data.matches.map(function(m) {
             let entry = Object.assign({}, m);
             entry.included = !!m.path;
@@ -159,8 +155,6 @@ function renderReplicateTrackList() {
         let statusIcon = matched
             ? '<span class="material-symbols-outlined text-[16px] text-secondary" title="Encontrada">check_circle</span>'
             : '<span class="material-symbols-outlined text-[16px] text-muted/40" title="No encontrada">help</span>';
-        // Solo las pistas no encontradas automáticamente pueden asociarse a mano o descargarse;
-        // las que ya matchearon quedan intactas.
         let manualBtn = matched ? '' :
             '<button type="button" onclick="manualMatchTrack(' + i + ')" title="Asociar con un archivo de mi biblioteca" class="material-symbols-outlined text-[16px] text-accent/80 hover:text-accent">attach_file</button>' +
             '<button type="button" onclick="downloadMissingTrack(' + i + ')" title="Descargar e inyectar metadatos" class="material-symbols-outlined text-[16px] text-secondary hover:text-accent ml-1">download</button>';
@@ -179,7 +173,6 @@ function renderReplicateTrackList() {
     updateReplicateSummary();
 }
 
-// --- Drag and drop libre para reordenar el preview de la playlist ---
 let dragSourceIndex = null;
 let draggedNode = null;
 
@@ -242,7 +235,6 @@ function updateReplicateSummary() {
     updatePlaylistIpodButton();
 }
 
-// --- Enviar a iPod (playlist -> carrito de sincronización) ---
 function updatePlaylistIpodButton() {
     const btn = document.getElementById("send-playlist-ipod-btn");
     if (!btn) return;
@@ -290,7 +282,7 @@ async function manualMatchTrack(index) {
 
     let pickRes = await fetch('/api/select_file');
     let pickData = await pickRes.json();
-    if (!pickData.path) return; // el usuario cerró el diálogo sin elegir nada
+    if (!pickData.path) return;
 
     let confirmed = confirm(t("confirm_manual_match", {path: pickData.path, artist: entry.artist, title: entry.title}));
     if (!confirmed) return;
@@ -327,7 +319,6 @@ async function downloadMissingTrack(index) {
 
     let originalBtnHTML = null;
     let btn = null;
-    // Encontrar el botón visualmente para mostrar estado de carga
     let row = document.querySelector('.replicate-track-row[data-index="' + index + '"]');
     if (row) {
         btn = row.querySelector('button[title*="Descargar"]');
@@ -393,5 +384,3 @@ async function generatePlaylistM3u8() {
         btn.innerHTML = '<span class="material-symbols-outlined text-[18px]">save</span> ' + t("playlists_generate_btn");
     }
 }
-
-// --- Pestaña LIBRARY: carpeta persistente, navegador agrupable y reproductor ---

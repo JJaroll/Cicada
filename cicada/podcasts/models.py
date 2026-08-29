@@ -1,18 +1,4 @@
-"""Modelos de feed y episodio de podcast.
-
-Vendorizado (parcial) desde ``src/iopenpod/podcasts/models.py`` @
-``c66a4bdb`` — ver docs/VENDORED.md Paquete 8 y NOTICE. Se conservan los
-campos de identidad/metadata de RSS y los placeholders de estado local
-de descarga (``status``/``downloaded_path``) que la Etapa B (descarga)
-va a usar, para no tener que reescribir el schema de SQLite después.
-
-Se descartan a propósito, sin caso de uso todavía: los campos de gestión
-automática de ``PodcastFeed`` (``episode_slots``, ``fill_mode``,
-``clear_when_listened``, etc. — Etapa D, diferida) y el estado de
-reproducción del original (``ipod_db_track_id``, ``play_count``,
-``last_played`` — no confundir con ``status=on_ipod``, que solo dice si
-el episodio se sincronizó, no si se reprodujo).
-"""
+"""Modelos de datos para feeds y episodios de podcasts."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -61,7 +47,6 @@ class PodcastEpisode:
     episode_number: int | None = None
     season_number: int | None = None
 
-    # Estado local (no viene de RSS).
     status: str = STATUS_NOT_DOWNLOADED
     downloaded_path: str = ""
     last_error: str | None = None

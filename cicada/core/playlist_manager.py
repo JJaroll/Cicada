@@ -1,14 +1,4 @@
-"""
-Emparejador Difuso y Compilador de Playlists locales.
-
-Conecta las playlists/álbumes resueltos desde Spotify con la biblioteca ya organizada localmente por Cicada,
-sin necesidad de volver a descargar nada: si la canción ya existe en disco,
-se reutiliza.
-
-Módulo aislado a propósito (no depende de `main.py`, FastAPI ni websockets)
-para poder probarlo unitariamente sin levantar el resto de la aplicación.
-"""
-
+"""Emparejador difuso y compilador de listas de reproducción locales."""
 import os
 import re
 from pathlib import Path
@@ -19,34 +9,12 @@ from thefuzz import fuzz, process
 
 
 class PlaylistManager:
-    """
-    Empareja tracks de Spotify contra archivos ya organizados por Cicada
-    (`output_dir/Artist/Album/XX - Title.ext`) usando fuzzy matching, y
-    compila los resultados en playlists .m3u8 locales.
-    """
-
     SUPPORTED_EXTENSIONS = {".mp3", ".m4a", ".mp4", ".aac", ".flac", ".wav", ".aiff", ".aif", ".alac"}
     MATCH_THRESHOLD = 85
     VERSION_KEYWORDS = ("live", "en vivo", "remix", "acoustic", "acústico")
     VERSION_PENALTY = 25
 
     def index_local_library(self, output_dir: str) -> List[Dict[str, str]]:
-        """
-        Escanea recursivamente `output_dir` y construye un índice liviano de
-        la biblioteca local ya organizada por Cicada.
-
-        Intenta leer título/artista/álbum con `mutagen` (más preciso); si el
-        archivo no trae tags legibles, deduce los tres campos de la estructura
-        de carpetas `Artist/Album/XX - Title.ext` que produce
-        `audio_processor.apply_metadata_and_move`.
-
-        Args:
-            output_dir: carpeta raíz de la biblioteca ya organizada.
-
-        Returns:
-            Lista de dicts: {"title": str, "artist": str, "album": str, "path": str}
-            (`path` es siempre una ruta absoluta).
-        """
         base = Path(output_dir)
         index: List[Dict[str, str]] = []
 
@@ -74,17 +42,12 @@ class PlaylistManager:
         Lee los archivos .m3u8 ya generados (por `generate_m3u8`) en la raíz
         de `output_dir`, para poder agrupar la biblioteca "por playlist" sin
         volver a consultar Spotify.
-
-        Returns:
-            Lista de dicts: {"name": str, "paths": List[str]} (rutas absolutas).
         """
-        base = Path(output_dir)
         playlists: List[Dict[str, Any]] = []
-
+        base = Path(output_dir)
         if not base.is_dir():
             return playlists
 
-        # Indexar archivos existentes en la biblioteca para resolver rutas que hayan cambiado de subcarpeta
         existing_files: Dict[str, Path] = {}
         existing_stems: Dict[str, Path] = {}
         for f in base.rglob("*"):

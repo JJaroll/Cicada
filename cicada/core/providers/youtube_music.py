@@ -1,12 +1,4 @@
-"""Proveedor de YouTube Music (ver docs/MUSIC_PROVIDERS.md §4-5, prioridad 1).
-
-Solo cubre el camino "playlist pública por ID, sin login" — ytmusicapi sin
-credenciales. La auth de "mis playlists" (cookies de sesión / device code)
-queda diferida: requires_auth_for_own_library = True ya se lo comunica a
-cualquier caller, get_user_playlists() es la red de seguridad, no el
-mecanismo principal de control de flujo (ver confirmación del usuario en
-docs/MUSIC_PROVIDERS.md).
-"""
+"""Proveedor de YouTube Music: resolución de pistas, álbumes y playlists públicas."""
 from __future__ import annotations
 
 import logging
@@ -34,11 +26,6 @@ _BARE_VIDEO_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
 
 class YouTubeMusicProvider(MusicProvider):
-    """Metadata de tracks, álbumes y playlists públicas de YouTube Music, sin auth de usuario.
-    La descarga real de audio se hace aparte con AudioDownloader, usando el
-    videoId exacto (provider_track_id) en vez de una búsqueda por texto.
-    """
-
     name = "youtube_music"
     supports_public_playlist_by_id = True
     requires_auth_for_own_library = True
@@ -77,10 +64,6 @@ class YouTubeMusicProvider(MusicProvider):
 
     @staticmethod
     def _strip_browse_prefix(playlist_id: str) -> str:
-        # yt.search() devuelve browseId con prefijo "VL" (p.ej. resultados de
-        # búsqueda de playlists); get_playlist() espera el id sin ese
-        # prefijo, que es la forma en que aparece en la URL real que un
-        # usuario pegaría (music.youtube.com/playlist?list=PLxxxx).
         return playlist_id[2:] if playlist_id.startswith("VL") else playlist_id
 
     async def get_tracks(self, resource_type: str, resource_id: str) -> List[TrackMeta]:
@@ -151,9 +134,6 @@ class YouTubeMusicProvider(MusicProvider):
         return tracks
 
     def _get_playlist_tracks(self, resource_id: str) -> List[TrackMeta]:
-        # ytmusicapi es síncrona (usa requests); no hay una versión async
-        # oficial, y no vale la pena to_thread() acá porque esto se llama
-        # una sola vez por resolución de link, no en un loop caliente.
         playlist = self._yt.get_playlist(resource_id)
         playlist_artwork = self._best_thumbnail(playlist.get("thumbnails"))
 

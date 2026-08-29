@@ -1,10 +1,8 @@
-// Gestión de podcasts: suscribirse por RSS, descargar episodios a un
-// caché local, y selección interactiva directa de episodios descargados
-// para sincronizarlos en el iPod (kind="podcast").
+// Gestión de suscripción, descarga y selección de podcasts para el iPod.
 let podcastFeeds = [];
 let podcastSelectedFeedUrl = null;
 let podcastSelectMode = true;
-let podcastSelected = new Set(); // guids
+let podcastSelected = new Set();
 
 async function subscribePodcastFeed() {
     let url = document.getElementById("podcast_feed_url").value.trim();
@@ -184,7 +182,6 @@ async function pollPodcastDownload(feedUrl, guid) {
     } catch (e) {
         console.error("Error consultando progreso de descarga:", e);
     }
-    // Terminó (done/error) o falló la consulta: refresca desde el listado persistido.
     await loadPodcastFeeds();
 }
 
@@ -277,11 +274,10 @@ function commitPodcastSelectionToIpod() {
             kind: "podcast",
             podcast_enclosure_url: ep.audio_url || null,
             podcast_rss_url: feed.feed_url || null,
-            guid: ep.guid, // no viaja a /media/sync — se usa localmente para mark_synced
+            guid: ep.guid,
         }));
     const added = (typeof addToSyncBasket === "function") ? addToSyncBasket(items) : 0;
     
-    // Cerrar modal de podcast
     if (typeof closeSubscribePodcastModal === "function") {
         closeSubscribePodcastModal();
     }
@@ -289,7 +285,6 @@ function commitPodcastSelectionToIpod() {
     exitPodcastSelectMode();
     alert(t("library_added_to_ipod").replace("{n}", added));
     
-    // Cambiar a vista de sync
     if (typeof selectIpodCategory === "function") {
         selectIpodCategory("sync");
     }

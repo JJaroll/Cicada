@@ -1,17 +1,4 @@
-"""Proveedor de Deezer (ver docs/MUSIC_PROVIDERS.md §4-5, prioridad 2).
-
-Solo cubre el camino "playlist/álbum/track público por ID, sin login" — la
-API pública de Deezer no exige ninguna clave para esto. "Mis playlists"
-(requiere OAuth de usuario) queda diferido: el estado real del registro de
-apps nuevas de Deezer no está confirmado (fuentes contradictorias, ver
-docs/MUSIC_PROVIDERS.md) y no se investigó más a fondo porque no cambia el
-alcance de este corte.
-
-Deezer es solo metadata, igual que Spotify: no aloja audio descargable (el
-campo "preview" es un clip de 30s firmado, no la pista completa). La
-descarga real sigue siendo la búsqueda heurística en YouTube vía
-AudioDownloader — no hay un id exacto de video como con YouTube Music.
-"""
+"""Proveedor de Deezer: resolución de pistas, álbumes y playlists públicas."""
 from __future__ import annotations
 
 import logging
@@ -34,12 +21,6 @@ _BARE_ID_RE = re.compile(r"^\d+$")
 
 
 class DeezerProvider(MusicProvider):
-    """Metadata de tracks/álbumes/playlists públicos de Deezer, sin auth.
-    BPM deliberadamente no incluido en TrackMeta: el campo existe en la API
-    pero viene sistemáticamente en 0 en las muestras verificadas — prometerlo
-    en el modelo cuando en la práctica nunca llega es peor que omitirlo.
-    """
-
     name = "deezer"
     supports_public_playlist_by_id = True
     requires_auth_for_own_library = True
@@ -75,10 +56,6 @@ class DeezerProvider(MusicProvider):
                 logger.warning("Error resolviendo enlace corto de Deezer %s: %s", cleaned, e)
 
         if _BARE_ID_RE.match(cleaned):
-            # Un ID numérico suelto no indica su tipo por sí mismo; se asume
-            # playlist, el caso de uso principal (mismo criterio que YouTube
-            # Music con un ID de playlist suelto). Para track/álbum, el
-            # caller debe pasar la URL completa.
             return "playlist", cleaned
 
         raise ValueError(
@@ -101,10 +78,6 @@ class DeezerProvider(MusicProvider):
                     raise ValueError(f"Deezer no encontró el track {resource_id}: {data['error']}")
                 return [self._parse_track_item(data)]
 
-            # album y playlist comparten la misma forma de "tracklist paginado",
-            # pero /album/{id}/tracks, a diferencia de /playlist/{id}/tracks, no
-            # repite el objeto "album" completo en cada item — solo track_position/
-            # disk_number. Para álbum, se completa título/carátula por separado.
             album_meta: Optional[dict] = None
             if resource_type == "album":
                 album_response = await client.get(f"{_API_BASE}/album/{resource_id}")

@@ -1,5 +1,5 @@
+// Archivo de pruebas y scripts auxiliares de interfaz.
 
-            // --- Internacionalización (ES / EN / JA) ---
             const I18N = {
                 es: {
                     nav_metadata: "Metadatos", nav_download: "Descarga", nav_playlist: "Playlist", nav_library: "Biblioteca",
@@ -412,7 +412,6 @@
                     btn.classList.toggle("active", btn.dataset.lang === currentLang);
                 });
 
-                // Re-renderiza listas dinámicas ya pobladas para que también cambien de idioma
                 if (typeof refreshSpotifyDownloadButton === "function") refreshSpotifyDownloadButton();
                 if (typeof resolvedSpotifyTracks !== "undefined" && resolvedSpotifyTracks.length > 0) renderSpotifyTrackList();
                 if (typeof userPlaylists !== "undefined" && userPlaylists.length > 0) loadSpotifyPlaylists();
@@ -427,8 +426,6 @@
                     refreshSpotifyAuthStatus();
                 }
 
-                // Textos de estado que no usan data-i18n porque a veces muestran datos reales
-                // (nombre de archivo, título de pista) en vez de una frase traducible.
                 if (typeof setWsStatus === "function") setWsStatus(currentWsStatusKey, currentWsColor);
                 if (typeof setStatusPill === "function") setStatusPill(currentStatusPillKey, currentStatusPillColor);
                 if (!hasStartedProcessing) {
@@ -471,7 +468,6 @@
             let currentStatusPillKey = "player_waiting_status";
             let currentStatusPillColor = "#10b981";
 
-            // --- Navegación entre vistas ---
             function showView(name) {
                 document.querySelectorAll(".view").forEach(function(el) { el.classList.remove("active"); });
                 document.getElementById("view-" + name).classList.add("active");
@@ -484,8 +480,6 @@
                         el.classList.add("nav-item-inactive");
                     }
                 });
-                // El módulo derecho no aporta nada en PLAYLISTS (se oculta); en LIBRARY funciona
-                // como reproductor en vez de panel de progreso.
                 let processModule = document.getElementById("process-module");
                 let progressPanel = document.getElementById("progress-panel");
                 let playerPanel = document.getElementById("player-panel");
@@ -723,7 +717,6 @@
                     .catch(function(e) { console.error("Error al cancelar:", e); });
             }
 
-            // --- Pestaña SPOTIFY: resolver enlace, previsualizar y seleccionar pistas ---
             let resolvedSpotifyTracks = [];
 
             function escapeHtml(text) {
@@ -886,7 +879,6 @@
                 });
             }
 
-            // --- Pestaña PLAYLISTS: navegar playlists, ver canciones y replicarlas contra la biblioteca local ---
             let userPlaylists = [];
             let currentPlaylistTracks = [];
             let currentPlaylistName = "";
@@ -939,7 +931,6 @@
                 trackListEl.innerHTML = '<p class="font-data-sm text-[13px] text-muted/40">' + t("playlists_loading_songs") + '</p>';
                 document.getElementById("replicate-controls").style.display = "none";
 
-                // Al cambiar de playlist, el preview de replicación anterior ya no aplica
                 replicateMatches = [];
                 document.getElementById("replicate-track-list").innerHTML = "";
                 document.getElementById("replicate-match-summary").textContent = "";
@@ -1007,9 +998,6 @@
                     let data = await res.json();
                     if (!res.ok) throw new Error(data.detail || t("error_unknown"));
 
-                    // Conservamos el track de Spotify completo (álbum, artwork, ISRC, etc.), no
-                    // solo title/artist/path: hace falta para re-etiquetar si el usuario asocia
-                    // manualmente un archivo que el fuzzy matching no encontró solo.
                     replicateMatches = data.matches.map(function(m) {
                         let entry = Object.assign({}, m);
                         entry.included = !!m.path;
@@ -1037,8 +1025,6 @@
                     let statusIcon = matched
                         ? '<span class="material-symbols-outlined text-[16px] text-secondary" title="Encontrada">check_circle</span>'
                         : '<span class="material-symbols-outlined text-[16px] text-muted/40" title="No encontrada">help</span>';
-                    // Solo las pistas no encontradas automáticamente pueden asociarse a mano o descargarse;
-                    // las que ya matchearon quedan intactas.
                     let manualBtn = matched ? '' :
                         '<button type="button" onclick="manualMatchTrack(' + i + ')" title="Asociar con un archivo de mi biblioteca" class="material-symbols-outlined text-[16px] text-accent/80 hover:text-accent">attach_file</button>' +
                         '<button type="button" onclick="downloadMissingTrack(' + i + ')" title="Descargar e inyectar metadatos" class="material-symbols-outlined text-[16px] text-secondary hover:text-accent ml-1">download</button>';
@@ -1057,7 +1043,6 @@
                 updateReplicateSummary();
             }
 
-            // --- Drag and drop libre para reordenar el preview de la playlist ---
             let dragSourceIndex = null;
 
             function handleTrackDragStart(e, index) {
@@ -1119,7 +1104,7 @@
 
                 let pickRes = await fetch('/api/select_file');
                 let pickData = await pickRes.json();
-                if (!pickData.path) return; // el usuario cerró el diálogo sin elegir nada
+                if (!pickData.path) return;
 
                 let confirmed = confirm(t("confirm_manual_match", {path: pickData.path, artist: entry.artist, title: entry.title}));
                 if (!confirmed) return;
@@ -1156,7 +1141,6 @@
 
                 let originalBtnHTML = null;
                 let btn = null;
-                // Encontrar el botón visualmente para mostrar estado de carga
                 let row = document.querySelector('.replicate-track-row[data-index="' + index + '"]');
                 if (row) {
                     btn = row.querySelector('button[title*="Descargar"]');
@@ -1223,7 +1207,6 @@
                 }
             }
 
-            // --- Pestaña LIBRARY: carpeta persistente, navegador agrupable y reproductor ---
             let libraryTracks = [];
             let libraryPlaylists = [];
             let libraryGrouping = "all";
@@ -1243,7 +1226,6 @@
 
                     let browseInput = document.getElementById("library_browse_dir");
                     if (browseInput) browseInput.value = dir;
-                    // Precarga también el campo de la pestaña PLAYLISTS si todavía está vacío
                     let replicateInput = document.getElementById("library_dir");
                     if (replicateInput && !replicateInput.value) replicateInput.value = dir;
 
@@ -1365,7 +1347,6 @@
                 const menu = document.getElementById("library-context-menu");
                 menu.style.display = "flex";
                 
-                // Adjust position
                 let x = event.clientX;
                 let y = event.clientY;
                 if (x + 220 > window.innerWidth) x -= 220;
@@ -1570,7 +1551,6 @@
                 }).join("");
             }
 
-            // --- Reproductor ---
             function playFromQueue(key, index) {
                 currentQueueKey = key;
                 currentQueueIndex = index;
@@ -1732,7 +1712,6 @@
             libraryAudio.addEventListener("pause", function() { setPlayPauseIcon(false); });
             libraryAudio.addEventListener("play", function() { setPlayPauseIcon(true); });
 
-            // --- Ajustes (modal): credenciales de API, toggle del Plan C, carpetas predeterminadas ---
             function openSettings() {
                 loadSettingsIntoForm();
                 refreshSpotifyAuthStatus();
@@ -1766,7 +1745,6 @@
                 modal.classList.remove("flex");
             }
 
-            // --- Modal "Sobre" (About): se abre al hacer clic en el logo "C." de la barra lateral ---
             function openAbout() {
                 let modal = document.getElementById("about-modal");
                 modal.classList.remove("hidden");
@@ -1779,9 +1757,8 @@
                 modal.classList.remove("flex");
             }
 
-            // --- Modal de apoyo (Ko-fi): tras completar un lote grande de canciones ---
             const KOFI_SUPPORT_THRESHOLD = 250;
-            const MANUAL_TAGGING_MINUTES_PER_SONG = 5; // estimación de tiempo de etiquetado manual por canción
+            const MANUAL_TAGGING_MINUTES_PER_SONG = 5;
 
             function formatDurationWords(totalSeconds) {
                 totalSeconds = Math.max(0, Math.round(totalSeconds));
@@ -1816,7 +1793,6 @@
                 modal.classList.remove("flex");
             }
 
-            // --- Aviso de actualización: comprueba el último release estable de GitHub ---
             function renderUpdateBanner(data) {
                 if (localStorage.getItem("cicada_dismissed_update") === data.latest_version) return;
 
@@ -1872,7 +1848,6 @@
                 document.documentElement.setAttribute('data-theme', theme);
             }
 
-            // Nombre de archivo de logo (en inglés) para cada color de acento (en español)
             const LOGO_FILE_BY_COLOR = {
                 azul: 'blue',
                 verde: 'green',
@@ -1945,7 +1920,6 @@
                     let data = await res.json();
                     if (!res.ok) throw new Error(data.detail || t("error_unknown"));
 
-                    // Reflejar los cambios en los campos ya visibles de otras pestañas, sin recargar la página
                     let inputDirField = document.getElementById("input_dir");
                     if (inputDirField) inputDirField.value = payload.process_input_dir;
                     let outputDirField = document.getElementById("output_dir");
@@ -2003,13 +1977,11 @@
                 }
             }
 
-            // Vista inicial
             applyLanguage(currentLang);
             showView('process');
             loadLibraryConfig();
             prefillProcessDirsFromSettings();
             
-            // Cargar y aplicar tema inicial
             fetch('/api/settings').then(r => r.json()).then(data => {
                 document.documentElement.setAttribute('data-theme', data.theme || "grafito");
                 setAccentColor(data.color_accent || "azul");

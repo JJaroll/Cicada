@@ -19,12 +19,6 @@ import os
 
 if getattr(sys, 'frozen', False):
     if sys.stdout is None or sys.stderr is None:
-        # Sin consola adjunta (--windowed en Windows), sys.stdout/stderr
-        # quedan en None — cualquier print() suelto lanzaría una excepción
-        # no capturada y abortaría el proceso en silencio. Se redirige a un
-        # archivo real en vez de os.devnull para poder diagnosticar un
-        # crash de producción; sin esto, cualquier error quedaría
-        # descartado sin dejar rastro.
         from cicada.core.app_paths import get_app_data_dir
         _log_path = get_app_data_dir() / "launcher.log"
         _log_file = open(_log_path, "a", buffering=1, encoding="utf-8")

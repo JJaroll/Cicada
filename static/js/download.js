@@ -1,4 +1,4 @@
-// Extraído de cicada/core/main.py — soporte multicanal: Spotify, YouTube Music y Deezer.
+// Gestión de descargas y resolución de enlaces multicanal (Spotify, YouTube Music, Deezer).
 let resolvedSpotifyTracks = [];
 let currentMusicProvider = "spotify";
 
@@ -171,5 +171,3 @@ function startSpotifyDownload() {
         resetUi();
     });
 }
-
-// --- Pestaña PLAYLISTS: navegar playlists, ver canciones y replicarlas contra la biblioteca local ---

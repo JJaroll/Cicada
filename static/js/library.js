@@ -1,7 +1,7 @@
-// Extraído de cicada/core/main.py — sin cambios de comportamiento. Ver docs/IPOD_INTEGRATION.md
+// Exploración, navegación y gestión de la biblioteca local de música.
 let libraryTracks = [];
-let librarySelectMode = false;          // modo "Agregar a iPod": selección múltiple
-let librarySelected = new Set();        // paths seleccionados
+let librarySelectMode = false;
+let librarySelected = new Set();
 let libraryPlaylists = [];
 let libraryGrouping = "all";
 let libraryViewMode = "list";
@@ -16,7 +16,6 @@ async function loadLibraryConfig() {
 
         let browseInput = document.getElementById("library_browse_dir");
         if (browseInput) browseInput.value = dir;
-        // Precarga también el campo de la pestaña PLAYLISTS si todavía está vacío
         let replicateInput = document.getElementById("library_dir");
         if (replicateInput && !replicateInput.value) replicateInput.value = dir;
 
@@ -165,8 +164,7 @@ function showLibraryContextMenu(event, el) {
     contextMenuTrackPath = el.dataset.path;
     const menu = document.getElementById("library-context-menu");
     menu.style.display = "flex";
-    
-    // Adjust position
+
     let x = event.clientX;
     let y = event.clientY;
     if (x + 220 > window.innerWidth) x -= 220;
@@ -300,7 +298,6 @@ function renderLibraryBrowser() {
     }).join("");
 }
 
-// --- Agregar a iPod (modo selección; alimenta el carrito de sincronización) ---
 function updateLibraryIpodButton() {
     const btn = document.getElementById("library-add-ipod-btn");
     if (!btn) return;
@@ -412,5 +409,3 @@ async function commitLibrarySelectionToIpod() {
         updateLibrarySelectUI();
     }
 }
-
-// --- Reproductor ---

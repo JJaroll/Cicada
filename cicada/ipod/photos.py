@@ -1,11 +1,4 @@
-"""Gestión de Fotos en el iPod.
-
-Proporciona escaneo integral de fotos en el iPod:
-- Lee 'Photos/Photo Database' y decodifica miniaturas/vistas de 'Photos/Thumbs/F1007_1.ithmb'.
-- Escanea 'Photos/Full Resolution/' para fotos en máxima resolución.
-- Genera y cachea en disco miniaturas (360x360) y vistas previas HD (1920x1920).
-- Permite agregar y eliminar fotos del dispositivo.
-"""
+"""Gestión y visualización de fotos almacenadas en el iPod."""
 from __future__ import annotations
 
 import hashlib
@@ -91,7 +84,6 @@ def _parse_photo_database(mount: Path | str) -> List[dict]:
                 hdr_len, total_len, num_mhod, img_id = struct.unpack("<IIII", data[pos + 4:pos + 20])
                 src_id = struct.unpack("<I", data[pos + 20:pos + 24])[0]
                 mtime_raw = struct.unpack("<I", data[pos + 28:pos + 32])[0] if pos + 32 <= file_len else 0
-                # Mac HFS epoch (1904) to Unix epoch (1970) diff: 2082844800
                 mtime = float(mtime_raw - 2082844800) if mtime_raw > 2082844800 else float(mtime_raw)
 
                 sub_pos = pos + hdr_len
@@ -166,7 +158,6 @@ def scan_ipod_photos(mount: Path | str) -> List[IpodPhotoInfo]:
     photos: List[IpodPhotoInfo] = []
     seen_rel_paths: set[str] = set()
 
-    # 1. Si hay items en Photo Database, incorporarlos
     if db_items:
         for idx, item in enumerate(db_items, start=1):
             img_id = item["img_id"]
@@ -174,7 +165,6 @@ def scan_ipod_photos(mount: Path | str) -> List[IpodPhotoInfo]:
             dt_str = datetime.fromtimestamp(mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M")
             full_path = item["full_path"]
 
-            # Verificar si existe archivo full-resolution real en disco
             real_file = None
             if full_path:
                 clean_full = full_path.lstrip("/")
@@ -213,7 +203,6 @@ def scan_ipod_photos(mount: Path | str) -> List[IpodPhotoInfo]:
                     )
                 )
 
-    # 2. Escanear Full Resolution para fotos sueltas
     if full_res.is_dir():
         for root, _dirs, files in os.walk(full_res):
             for fn in files:
@@ -259,7 +248,6 @@ def get_photo_thumbnail_bytes(
     clean_path = urllib.parse.unquote(rel_path).strip()
     cache_dir = _get_cache_dir()
 
-    # Caso 1: Foto almacenada en Photo Database (db:ID)
     if clean_path.startswith("db:"):
         try:
             img_id = int(clean_path.split(":", 1)[1])
@@ -276,14 +264,12 @@ def get_photo_thumbnail_bytes(
         if not item:
             return None
 
-        # Si tiene full res, usarlo
         if item.get("full_path"):
             full_res = _get_full_res_dir(mount_path)
             candidate = (full_res / item["full_path"].lstrip("/")).resolve()
             if candidate.is_file():
                 return get_photo_thumbnail_bytes(mount_path, str(candidate.relative_to(full_res)), max_size)
 
-        # De lo contrario decodificar de F1007_1.ithmb
         thumb_spec = item.get("thumb_1007") or item.get("thumb_1005")
         if not thumb_spec:
             return None
@@ -305,7 +291,6 @@ def get_photo_thumbnail_bytes(
             pass
         return out_bytes
 
-    # Caso 2: Archivo en Full Resolution
     full_res = _get_full_res_dir(mount_path)
     clean_rel = clean_path.replace("\\", "/").lstrip("/")
     target = (full_res / clean_rel).resolve()
@@ -349,7 +334,6 @@ def get_photo_preview_bytes(
     clean_path = urllib.parse.unquote(rel_path).strip()
     cache_dir = _get_cache_dir()
 
-    # Caso 1: Foto en Photo Database (db:ID)
     if clean_path.startswith("db:"):
         try:
             img_id = int(clean_path.split(":", 1)[1])
@@ -392,7 +376,6 @@ def get_photo_preview_bytes(
             pass
         return out_bytes
 
-    # Caso 2: Archivo en Full Resolution
     full_res = _get_full_res_dir(mount_path)
     clean_rel = clean_path.replace("\\", "/").lstrip("/")
     target = (full_res / clean_rel).resolve()
@@ -433,7 +416,6 @@ def resolve_photo_raw_file(mount: Path | str, rel_path: str) -> Optional[Path]:
     mount_path = Path(mount)
     clean_path = urllib.parse.unquote(rel_path).strip()
     if clean_path.startswith("db:"):
-        # No es un archivo suelto, se genera dinámicamente o se busca en full_path
         try:
             img_id = int(clean_path.split(":", 1)[1])
             db_items = _parse_photo_database(mount_path)

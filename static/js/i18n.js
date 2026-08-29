@@ -1,4 +1,4 @@
-// Extraído de cicada/core/main.py — sin cambios de comportamiento. Ver docs/IPOD_INTEGRATION.md
+// Diccionario y utilidades de internacionalización (i18n) para Cicada.
 const I18N = {
     es: {
         nav_metadata: "Metadatos", nav_download: "Descarga", nav_playlist: "Playlist", nav_library: "Biblioteca", nav_ipod: "iPod",

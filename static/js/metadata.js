@@ -1,4 +1,4 @@
-// Extraído de cicada/core/main.py — sin cambios de comportamiento. Ver docs/IPOD_INTEGRATION.md
+// Procesamiento y etiquetado de metadatos de la biblioteca de audio.
 function fileCardHtml(name, sub) {
     return '<div class="bg-btn border border-theme rounded-lg p-3 flex items-center gap-3">' +
         '<div class="w-8 h-8 rounded bg-accent/20 flex items-center justify-center flex-shrink-0">' +
@@ -105,7 +105,6 @@ function cancelProcess() {
         .catch(function(e) { console.error("Error al cancelar:", e); });
 }
 
-// --- Pestaña SPOTIFY: resolver enlace, previsualizar y seleccionar pistas ---
 let currentArtworkBase64 = null;
 
 function switchTrackInfoTab(tab) {

@@ -1,8 +1,4 @@
-// static/js/ipod/ui.js — Eventos, orquestación y estado de la sección iPod:
-// ipodState, cambio de categoría/vista, carrito de sincronización, menú
-// contextual, drag-drop de playlists, modales, filtros y las acciones de
-// escanear/reparar/expulsar/respaldar. Consume static/js/ipod/api.js (red) y
-// static/js/ipod/render.js (plantillas); ambos deben cargar antes que este.
+// Controlador de interfaz, eventos y estado del módulo iPod.
 
 let ipodState = {
     connected: false,
@@ -13,7 +9,7 @@ let ipodState = {
     podcasts: [],
     audiobooks: [],
     currentCategory: 'songs',
-    viewMode: 'list', // 'list' | 'grid'
+    viewMode: 'list',
     searchQuery: '',
     filters: {
         genre: '',
@@ -29,9 +25,9 @@ let ipodState = {
     photosSelectMode: false,
     lightboxIndex: -1,
     photosSearchQuery: '',
-    syncBasket: [],           // pistas locales pendientes de enviar al iPod (por source_path)
-    syncBasketPlaylists: [],  // playlists pendientes de crear: {name, source_paths}
-    conflicts: []             // conflictos de rating pendientes (GET /api/ipod/conflicts)
+    syncBasket: [],
+    syncBasketPlaylists: [],
+    conflicts: []
 };
 
 function _setIpodButtons(enabled) {
@@ -44,7 +40,6 @@ function _setIpodButtons(enabled) {
     }
 }
 
-// --- ESCANEO DEL DISPOSITIVO ---
 async function scanIpod() {
     const container = document.getElementById("ipod-info-container");
     const noDevice = document.getElementById("ipod-no-device");
@@ -78,13 +73,11 @@ async function scanIpod() {
                 fmtEl.textContent = t("ipod_signature_label") + ": " + (ipod.checksum || t("ipod_unknown"));
             }
 
-            // Imagen del iPod
             const imgEl = document.getElementById("ipod-device-img");
             if (imgEl && ipod.image_url) {
                 imgEl.src = ipod.image_url;
             }
 
-            // Almacenamiento
             renderIpodStorage(ipod.storage);
 
             if (container) container.classList.remove("hidden");
@@ -96,10 +89,6 @@ async function scanIpod() {
             await loadIpodLibrary();
             switchIpodCategory(ipodState.currentCategory || "songs");
 
-            // Actualiza la línea base de reproducciones (rating/play_count/etc.)
-            // en segundo plano: solo lee el dispositivo y escribe SQLite local,
-            // nunca el iPod — si falla, no debe romper el escaneo visible. El
-            // badge de conflictos se refresca DESPUÉS (depende del baseline recién commiteado).
             ipodSyncPlayback()
                 .then(() => _refreshIpodConflictsBadge())
                 .catch(e => console.error("Error sincronizando playback state:", e));
@@ -128,12 +117,9 @@ async function scanIpod() {
     }
 }
 
-// --- RENDER DE ALMACENAMIENTO ---
 function renderIpodStorage(storage) {
     const storageText = document.getElementById("ipod-storage-text");
 
-    // Categoría "Fotos" (solo indicador, ver renderIpodPhotos): visible
-    // únicamente si el dispositivo ya tiene fotos ocupando espacio.
     ipodState.photosBytes = (storage && storage.photos_bytes) || 0;
     const photosBtn = document.getElementById("ipod-cat-photos-btn");
     if (photosBtn) photosBtn.classList.toggle("hidden", ipodState.photosBytes <= 0);
@@ -180,7 +166,6 @@ function renderIpodStorage(storage) {
         segOther.title = `Otro: ${_formatBytes(storage.other_bytes)} (${pctOther.toFixed(1)}%)`;
     }
 
-    // Actualizar leyendas con tamaños exactos
     const legAudio = document.getElementById("storage-legend-audio");
     const legVideo = document.getElementById("storage-legend-video");
     const legPhotos = document.getElementById("storage-legend-photos");
@@ -210,7 +195,6 @@ function _isMusicTrack(t) {
     return true;
 }
 
-// --- CARGA DE CONTENIDO ---
 async function loadIpodLibrary() {
     try {
         const [tRes, pRes, vRes, podRes, abRes, phRes] = await Promise.allSettled([
@@ -230,13 +214,10 @@ async function loadIpodLibrary() {
         ipodState.audiobooks = (abRes.status === "fulfilled" && abRes.value.res.ok) ? (abRes.value.data.audiobooks || []) : [];
         ipodState.photos = (phRes.status === "fulfilled" && phRes.value.res.ok) ? (phRes.value.data.photos || []) : [];
 
-        // Actualizar contadores
         updateIpodCategoryCounts();
 
-        // Poblar filtros
         populateIpodFilterDropdowns();
 
-        // Renderizar vista actual
         renderCurrentIpodCategory();
     } catch (e) {
         console.error("Error cargando biblioteca del iPod:", e);
@@ -260,7 +241,6 @@ function updateIpodCategoryCounts() {
     if (cPhotos) cPhotos.textContent = (ipodState.photos || []).length;
 }
 
-// --- POBLAR DROPDOWNS DE FILTRO ---
 function populateIpodFilterDropdowns() {
     const genres = new Set();
     const years = new Set();
@@ -290,16 +270,13 @@ function _fillSelect(id, items) {
     if (currentVal) sel.value = currentVal;
 }
 
-// --- CAMBIO DE CATEGORÍA ---
 function switchIpodCategory(category) {
     ipodState.currentCategory = category;
 
-    // Actualizar botones de sub-sidebar
     document.querySelectorAll(".ipod-cat-btn").forEach(btn => {
         btn.classList.toggle("active", btn.dataset.cat === category);
     });
 
-    // Ocultar todos los contenedores de categoría
     const containers = [
         "ipod-view-songs",
         "ipod-view-playlists",
@@ -315,11 +292,9 @@ function switchIpodCategory(category) {
         if (el) el.classList.add("hidden");
     });
 
-    // Mostrar el contenedor de la categoría activa
     const targetEl = document.getElementById(`ipod-view-${category}`);
     if (targetEl) targetEl.classList.remove("hidden");
 
-    // Visibilidad del switch de vista y filtros según la categoría
     const viewSwitch = document.getElementById("ipod-viewmode-switch");
     const filterBtn = document.getElementById("ipod-filter-btn");
     if (viewSwitch) {
@@ -361,8 +336,6 @@ function renderCurrentIpodCategory() {
     }
 }
 
-// --- CARRITO DE SINCRONIZACIÓN (pendientes de enviar al iPod) ---
-// Cada item: {source_path, title, artist, album, filetype, length_ms}
 function addToSyncBasket(items) {
     const have = new Set(ipodState.syncBasket.map(i => i.source_path));
     let added = 0;
@@ -380,9 +353,6 @@ function addToSyncBasket(items) {
 
 function removeFromSyncBasket(sourcePath) {
     ipodState.syncBasket = ipodState.syncBasket.filter(i => i.source_path !== sourcePath);
-    // Mantiene syncBasketPlaylists en sincronía: si una pista sale del carrito, también
-    // sale de cualquier playlist pendiente que la referenciaba (si no, la playlist podía
-    // terminar refiriendo solo paths que ya no se envían, y el backend la descartaba entera).
     ipodState.syncBasketPlaylists = ipodState.syncBasketPlaylists
         .map(p => ({ ...p, source_paths: p.source_paths.filter(sp => sp !== sourcePath) }))
         .filter(p => p.source_paths.length > 0);
@@ -390,7 +360,6 @@ function removeFromSyncBasket(sourcePath) {
     renderIpodSyncBasket();
 }
 
-// Registra una playlist pendiente (nombre + tracks) y mete sus pistas al carrito.
 function addPlaylistToSyncBasket(name, items) {
     addToSyncBasket(items);
     const paths = (items || []).map(i => i && i.source_path).filter(Boolean);
@@ -439,7 +408,6 @@ function renderIpodSyncBasket() {
     list.innerHTML = plHtml + basket.map(it => ipodSyncBasketTrackRowHtml(it)).join("");
 }
 
-// --- CONFLICTOS DE RATING (local vs. dispositivo vs. última sincronización) ---
 async function _refreshIpodConflictsBadge() {
     const badge = document.getElementById("ipod-count-conflicts");
     try {
@@ -516,7 +484,6 @@ async function resolveAllIpodConflicts(resolution) {
     }
 }
 
-// Envía el carrito al iPod vía el pipeline real (/media/sync), con gate de consentimiento.
 async function syncBasketToIpod() {
     const basket = ipodState.syncBasket;
     const playlists = ipodState.syncBasketPlaylists;
@@ -613,7 +580,6 @@ async function syncBasketToIpod() {
     }
 }
 
-// --- VISTA 1: CANCIONES ---
 function renderIpodSongs() {
     const listContainer = document.getElementById("ipod-songs-list");
     const gridContainer = document.getElementById("ipod-songs-grid");
@@ -635,7 +601,7 @@ function renderIpodSongs() {
         if (ipodState.filters.album && t.album !== ipodState.filters.album) return false;
         return true;
     });
-    ipodState.filteredSongs = filtered;   // para reproducir por índice (#4)
+    ipodState.filteredSongs = filtered;
 
     if (ipodState.viewMode === "list") {
         listContainer.classList.remove("hidden");
@@ -660,7 +626,6 @@ function renderIpodSongs() {
     }
 }
 
-// --- Menú contextual de elementos del iPod (Canciones, Podcasts, Audiolibros) ---
 let ipodContextTrack = null;
 
 function showIpodSongContextMenu(event, dbTrackId, title, artist) {
@@ -937,9 +902,6 @@ async function contextRemoveFromIpod() {
     }
 }
 
-// --- Reproducir una canción del iPod desde la biblioteca local (#4) ---
-// Busca en la biblioteca local (libraryTracks) una pista que corresponda a la del
-// iPod (por título + artista; fallback a título). Devuelve el track local o null.
 function _findLocalTrack(iTrack) {
     if (typeof libraryTracks === "undefined" || !libraryTracks || !libraryTracks.length) return null;
     const nt = _normTxt(iTrack.title);
@@ -958,8 +920,6 @@ function playIpodTrack(index) {
         alert(t("ipod_play_not_in_library"));
         return;
     }
-    // Cola con las pistas del iPod que sí están en la biblioteca, para que
-    // siguiente/anterior naveguen entre ellas. Reproduce desde la clickeada.
     const queue = [];
     let startIdx = 0;
     songs.forEach((s, si) => {
@@ -974,7 +934,6 @@ function playIpodTrack(index) {
     if (typeof playFromQueue === "function") playFromQueue("__ipod__", startIdx);
 }
 
-// --- VISTA 2: PLAYLISTS ---
 function renderIpodPlaylists() {
     const plsList = document.getElementById("ipod-playlists-list");
     const tracksList = document.getElementById("ipod-playlist-tracks-list");
@@ -1000,7 +959,6 @@ function renderIpodPlaylists() {
     if (selectedPl) {
         const isMaster = !!selectedPl.is_master;
         const songs = ipodState.songs || ipodState.tracks.filter(_isMusicTrack);
-        // Master = todas las canciones de música (no reordenable); usuario = sus pistas reales.
         const plTracks = isMaster ? songs : (selectedPl.tracks || []);
         if (titleEl) titleEl.textContent = selectedPl.title || "Playlist";
         if (countEl) countEl.textContent = plTracks.length + " " + t("ipod_tracks_count");
@@ -1026,7 +984,6 @@ function renderIpodPlaylists() {
     }
 }
 
-// --- Reordenar pistas de una playlist del iPod (drag-drop -> persistir) ---
 let ipodDragSourceIndex = null;
 let ipodDraggedNode = null;
 let ipodPlaylistDirty = false;
@@ -1079,7 +1036,6 @@ async function saveIpodPlaylistOrder() {
     const btn = document.getElementById("ipod-playlist-save-order-btn");
     const inner = document.getElementById("ipod-playlist-save-order-inner");
 
-    // Bloquear botón y mostrar animación de trabajo
     if (btn) {
         btn.disabled = true;
         btn.classList.add("pointer-events-none", "opacity-80");
@@ -1210,11 +1166,10 @@ function showIpodPlaylistTrackContextMenu(event, trackIdx) {
 
 function selectIpodPlaylist(idx) {
     ipodState.selectedPlaylistIndex = idx;
-    ipodPlaylistDirty = false;   // descarta cambios no guardados al cambiar
+    ipodPlaylistDirty = false;
     renderIpodPlaylists();
 }
 
-// --- Agregar canciones de la biblioteca local a una playlist del iPod ---
 let ipodPlaylistNewlyAddedPaths = new Set();
 
 function openIpodPlaylistAddPicker() {
@@ -1270,11 +1225,9 @@ function toggleLibrarySongInIpodPlaylist(path) {
     );
 
     if (existingIndex >= 0) {
-        // Deseleccionar / quitar de la playlist
         pl.tracks.splice(existingIndex, 1);
         ipodPlaylistNewlyAddedPaths.delete(path);
     } else {
-        // Agregar / seleccionar en la playlist
         pl.tracks.push({
             source_path: l.path, title: l.title || "", artist: l.artist || "",
             album: l.album || "", length_ms: null, db_track_id: null,
@@ -1289,7 +1242,6 @@ function toggleLibrarySongInIpodPlaylist(path) {
     renderIpodAddPickerList(search ? search.value : "");
 }
 
-// --- VISTA 4: VIDEOS ---
 function renderIpodVideos() {
     const grid = document.getElementById("ipod-videos-grid");
     const empty = document.getElementById("ipod-videos-empty");
@@ -1311,7 +1263,6 @@ function renderIpodVideos() {
     grid.innerHTML = ipodState.videos.map((vid, idx) => ipodVideoCardHtml(vid, idx)).join("");
 }
 
-// --- VISTA 5: PODCASTS ---
 function renderIpodPodcasts() {
     const pList = document.getElementById("ipod-podcasts-list");
     const epList = document.getElementById("ipod-podcast-episodes-list");
@@ -1344,7 +1295,6 @@ function selectIpodPodcast(idx) {
     renderIpodPodcasts();
 }
 
-// --- VISTA 6: AUDIOLIBROS ---
 function renderIpodAudiobooks() {
     const abList = document.getElementById("ipod-audiobooks-list");
     const chList = document.getElementById("ipod-audiobook-chapters-list");
@@ -1377,7 +1327,6 @@ function selectIpodAudiobook(idx) {
     renderIpodAudiobooks();
 }
 
-// --- VISTA: FOTOS (Galería y Visor Lightbox solo lectura) ---
 function onIpodPhotosSearch(val) {
     ipodState.photosSearchQuery = (val || "").trim().toLowerCase();
     renderIpodPhotos();
@@ -1420,7 +1369,6 @@ function renderIpodPhotos() {
     }).join("");
 }
 
-// --- VISOR LIGHTBOX DE FOTOS EN PANTALLA COMPLETA ---
 function openPhotoLightbox(idx) {
     const photos = ipodState.photos || [];
     if (idx < 0 || idx >= photos.length) return;
@@ -1485,7 +1433,6 @@ if (!window._ipodLightboxKeyHandlerRegistered) {
     });
 }
 
-// --- BÚSQUEDA Y FILTROS ---
 function handleIpodSearch(val) {
     ipodState.searchQuery = val.trim();
     renderCurrentIpodCategory();
@@ -1524,7 +1471,6 @@ function setIpodViewMode(mode) {
     renderIpodSongs();
 }
 
-// --- ACCIONES Y MODALES ---
 function handleIpodAddAction() {
     switch (ipodState.currentCategory) {
         case "songs":
@@ -1545,7 +1491,6 @@ function handleIpodAddAction() {
     }
 }
 
-// Modal Suscribir Podcast
 function openSubscribePodcastModal() {
     const modal = document.getElementById("ipod-subscribe-podcast-modal");
     if (modal) {
@@ -1565,7 +1510,6 @@ function closeSubscribePodcastModal() {
     }
 }
 
-// Modal Agregar Audiolibros
 function openAddAudiobookModal() {
     const modal = document.getElementById("ipod-add-audiobook-modal");
     if (modal) {
@@ -1662,7 +1606,6 @@ async function deleteIpodItem(type, idOrIdx) {
     }
 }
 
-// Modal Crear Playlist
 function openCreatePlaylistModal() {
     const modal = document.getElementById("ipod-create-playlist-modal");
     const input = document.getElementById("new_playlist_name");
@@ -1692,7 +1635,6 @@ async function submitCreatePlaylist() {
     const btn = document.getElementById("ipod-create-playlist-submit-btn");
     const inner = document.getElementById("ipod-create-playlist-submit-inner");
 
-    // Bloquear botón y mostrar animación de trabajo
     if (btn) {
         btn.disabled = true;
         btn.classList.add("pointer-events-none", "opacity-80");
@@ -1730,7 +1672,6 @@ async function submitCreatePlaylist() {
     }
 }
 
-// Modal Importar Playlist
 let _availableImportPlaylists = [];
 
 async function openImportPlaylistModal() {
@@ -1922,7 +1863,6 @@ async function selectImportPlaylist(idx) {
     }
 }
 
-// --- EXPULSAR IPOD ---
 async function ejectIpod() {
     if (!confirm(t("ipod_eject_confirm"))) return;
     try {
@@ -1938,7 +1878,6 @@ async function ejectIpod() {
     }
 }
 
-// --- SINCRONIZACIÓN Y BACKUPS (conservados y adaptados) ---
 async function syncIpod() {
     const btn = document.getElementById("btn-sync-ipod");
     try {

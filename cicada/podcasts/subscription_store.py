@@ -1,13 +1,4 @@
-"""Persistencia de suscripciones a podcasts.
-
-Reescrito respecto al origen (``src/iopenpod/podcasts/subscription_store.py``
-@ ``c66a4bdb`` — ver docs/VENDORED.md Paquete 8): en iOpenPod las
-suscripciones vivían en un JSON dentro del propio iPod montado, escrito
-vía un writer atómico específico del dispositivo. Acá viven en
-``~/.cicada/podcasts.db`` (SQLite), mismo patrón que
-``cicada.ipod.sync.state.SyncStateDB`` — la gestión de podcasts es útil
-con o sin iPod conectado, no debe depender de tener uno montado.
-"""
+"""Persistencia y almacenamiento de suscripciones a podcasts en SQLite."""
 from __future__ import annotations
 
 import os
@@ -80,8 +71,6 @@ class SubscriptionStore:
             )
             conn.commit()
 
-    # ── Lectura ──────────────────────────────────────────────────────────
-
     def get_feeds(self) -> list[PodcastFeed]:
         with self._connection() as conn:
             feed_rows = conn.execute("SELECT * FROM feeds ORDER BY title COLLATE NOCASE").fetchall()
@@ -133,8 +122,6 @@ class SubscriptionStore:
         with self._connection() as conn:
             row = conn.execute("SELECT * FROM episodes WHERE guid = ?", (guid,)).fetchone()
             return self._row_to_episode(row) if row is not None else None
-
-    # ── Escritura ────────────────────────────────────────────────────────
 
     def add_feed(self, feed: PodcastFeed) -> None:
         """Guarda (o reemplaza) un feed y sus episodios. Idempotente."""

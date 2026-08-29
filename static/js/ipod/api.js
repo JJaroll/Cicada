@@ -1,7 +1,4 @@
-// static/js/ipod/api.js — Única puerta de entrada a /api/ipod/*: parseo de
-// respuesta, extracción de mensajes de error y detección de desconexión
-// espontánea del iPod (MOUNT_NOT_FOUND en mitad de una operación, distinta
-// del chequeo previo de "no hay dispositivo").
+// Cliente API para comunicación y operaciones con el iPod.
 
 function _ipodErr(data) {
     const d = data && data.detail;

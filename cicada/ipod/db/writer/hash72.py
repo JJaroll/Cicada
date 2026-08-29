@@ -1,31 +1,5 @@
-"""
-HASH72 implementation for iPod Nano 5G.
-Ported from libgpod's itdb_hash72.c.
+"""Implementación de firma HASH72 para bases de datos de iPod Nano 5G y Classic."""
 
-Note: iTunes also writes a HASH72 signature on iPod Classic devices, but
-the Classic firmware only checks HASH58 (scheme=1).  We preserve HASH72
-from a reference database when available but do not require it for Classic.
-
-IMPORTANT: This requires a HashInfo file that must be extracted from a valid
-iTunes sync. The HashInfo file contains the IV and random bytes needed to
-generate signatures.
-
-If you don't have a HashInfo file:
-1. Sync once with iTunes (creates /iPod_Control/Device/HashInfo)
-2. OR use extract_hash_info() with a known-good iTunesDB from iTunes
-
-Usage:
-    from hash72 import write_hash72
-
-    with open("iTunesDB", "rb") as f:
-        itdb_data = bytearray(f.read())
-
-    # Requires HashInfo file to exist at /iPod_Control/Device/HashInfo
-    write_hash72(itdb_data, ipod_path="/media/ipod")
-
-    with open("iTunesDB", "wb") as f:
-        f.write(itdb_data)
-"""
 
 import hashlib
 import os

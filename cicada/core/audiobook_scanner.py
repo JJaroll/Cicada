@@ -1,13 +1,4 @@
-"""
-Escaneo de una carpeta del sistema de archivos buscando archivos de
-audiolibro, para elegir cuáles sincronizar sin requerir que el usuario
-ya sepa la ruta exacta de cada uno.
-
-Módulo separado de `playlist_manager.py`: el filtro de extensiones y la
-metadata que interesa (autor, capítulos) son propios de audiolibros, no
-de música general.
-"""
-
+"""Escaneo y extracción de metadatos de audiolibros locales."""
 from __future__ import annotations
 
 import os
@@ -19,11 +10,6 @@ import mutagen
 from cicada.ipod.db.writer.chapter_extraction import extract_chapters
 
 AUDIOBOOK_EXTENSIONS = {".m4b", ".m4a", ".mp3", ".aac"}
-
-# Medido contra una biblioteca real (~/Music/Musik, 954 archivos de audio,
-# profundidad relativa máxima 2 con la estructura Artist/Album/track): estos
-# valores dejan margen (~2x archivos, 3x profundidad) sin dejar de actuar
-# como tope ante un árbol de carpetas gigante o cíclico por symlinks.
 _MAX_FILES = 2000
 _MAX_DEPTH = 6
 

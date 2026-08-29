@@ -1,14 +1,4 @@
-"""Parser de feeds RSS/Atom de podcasts.
-
-Vendorizado (parcial) desde ``src/iopenpod/podcasts/feed_parser.py`` @
-``c66a4bdb`` — ver docs/VENDORED.md Paquete 8 y NOTICE. Portado de
-``requests`` a ``httpx`` (async, ya usado en el resto de Cicada) por
-decisión explícita: no agregar una segunda librería HTTP.
-
-Usa ``feedparser`` para tolerar la variedad de formatos de feeds de
-podcast, incluidas las extensiones ``itunes:`` de Apple.
-"""
-
+"""Parser de feeds RSS/Atom de podcasts."""
 from __future__ import annotations
 
 import calendar
@@ -126,8 +116,6 @@ def _merge_feed(existing: PodcastFeed, feed_info, new_episodes: list[PodcastEpis
             ep.downloaded_path = old.downloaded_path
         merged.append(ep)
 
-    # Conserva episodios que salieron del feed pero tienen estado local
-    # (descargados) — no perder ese dato solo porque el feed los rotó.
     for old_ep in existing_by_guid.values():
         if old_ep.downloaded_path:
             merged.append(old_ep)
@@ -176,7 +164,7 @@ def _parse_episode(entry) -> PodcastEpisode | None:
                 break
 
     if not audio_url:
-        return None  # entrada sin audio (p. ej. solo notas del episodio)
+        return None
 
     guid = entry.get("id") or audio_url
 
@@ -211,9 +199,6 @@ def _parse_episode(entry) -> PodcastEpisode | None:
         episode_number=ep_num,
         season_number=season_num,
     )
-
-
-# ── Helpers ──────────────────────────────────────────────────────────────────
 
 def _get_text(obj, attr: str, default: str = "") -> str:
     val = _get_attr_or_key(obj, attr)
