@@ -15,7 +15,7 @@ Cicada identifica tus canciones, les aplica metadatos completos (título, artist
     * **AcoustID:** Plan de contingencia para canciones de nicho o remixes raros.
     * **iTunes:** Enriquecimiento de metadatos (portadas HD, géneros, números de pista).
 * **🏷️ Etiquetado Universal:** Escribe tags ID3v2.3 y nativos (mp3, m4a, flac, wav), incrusta portadas y organiza tus archivos automáticamente por `Artista/Álbum/NN - Título.ext`.
-* **📥 Integración con Spotify:** Resuelve playlists, álbumes o tracks desde tu cuenta (vía OAuth2) y descarga el audio directamente a máxima calidad con `yt-dlp`.
+* **📥 Descarga Multicanal de Música:** Resuelve canciones, álbumes y playlists desde enlaces de **Spotify**, **YouTube Music** y **Deezer** (incluyendo enlaces compartidos y listas públicas), y descarga el audio directamente a máxima calidad con `yt-dlp`.
 * **🔄 Sincronización Inteligente:** Genera playlists `.m3u8` reutilizando tu biblioteca local existente mediante *fuzzy matching*, evitando que descargues archivos duplicados.
 * **🎵 Reproductor Integrado:** Escucha tus pistas locales directamente en la web con soporte de salto de tiempo (HTTP Range) y agrupación por artista o álbum.
 * **🎨 Interfaz Moderna:** Interfaz con Modo Claro (Aluminio) y Oscuro (Grafito), inspirada en la estética retro-moderna de los reproductores clásicos.

@@ -1,19 +1,18 @@
 # Cicada — Proveedores de música más allá de Spotify
 
-**Estado (2026-08-29): CORTE CERRADO.** Backend completo e implementado
-para YouTube Music y Deezer (track/álbum/playlist público por ID, sin
-login) — interfaz `MusicProvider`, providers, endpoints
-`/api/youtube_music/*` y `/api/deezer/*`, verificados end-to-end contra la
-app real, incluyendo descarga real completa confirmada con mutagen para
-ambos. Tidal queda **diseñado en detalle pero sin implementar**: exige
+**Estado (2026-08-29): CORTE CERRADO Y UI INTEGRADA.** Backend y frontend
+completos e implementados para Spotify, YouTube Music y Deezer (track,
+álbum y playlist públicos por ID o URL, incluyendo enlaces cortos como
+`link.deezer.com` o `youtu.be`, sin login) — interfaz `MusicProvider`,
+providers, endpoints `/api/youtube_music/*` y `/api/deezer/*`, y pestaña
+unificada de Descargas en la UI con auto-detección y descarga en segundo
+plano. Tidal queda **diseñado en detalle pero sin implementar**: exige
 credenciales de app propias incluso para el camino sin login de usuario
 (confirmado en vivo, ver §7), que este corte no gestionó a propósito.
-Falta la UI para YouTube Music/Deezer (fuera de este corte, backend
-primero). Con esto se cierra el proceso de desarrollo de proveedores de
-música de esta iteración — el próximo trabajo en este área es UI, o
-retomar Tidal el día que haya credenciales, no un nuevo proveedor sin
-priorizar. Diferido a una iteración posterior al release actual — no
-entra en 1.2.0.
+Con esto se cierra el proceso de desarrollo de proveedores de música de
+esta iteración — el próximo trabajo en este área es retomar Tidal el día
+que haya credenciales, no un nuevo proveedor sin priorizar. Diferido a
+una iteración posterior al release actual.
 
 Contexto: Spotify hoy es la única fuente externa de metadata de playlists en
 Cicada. Se investigó generalizar ese patrón a otros servicios (YouTube Music,
