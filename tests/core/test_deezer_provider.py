@@ -47,6 +47,16 @@ def test_parse_url_rejects_unrecognized_input():
         p.parse_url("https://music.youtube.com/playlist?list=PLxxxx")
 
 
+def test_parse_short_url():
+    p = _make_provider()
+    mock_resp = httpx.Response(
+        status_code=200,
+        request=httpx.Request("GET", "https://www.deezer.com/mx/track/5664764"),
+    )
+    with patch("httpx.Client.get", return_value=mock_resp):
+        assert p.parse_url("https://link.deezer.com/s/34fMkSoReh8LfLWLuvWSz") == ("track", "5664764")
+
+
 @pytest.mark.asyncio
 async def test_get_tracks_rejects_unsupported_resource_type():
     p = _make_provider()

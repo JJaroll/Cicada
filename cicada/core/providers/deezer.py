@@ -29,6 +29,7 @@ _API_BASE = "https://api.deezer.com"
 _URL_RE = re.compile(
     r"deezer\.com/(?:[a-z]{2}/)?(track|album|playlist)/(\d+)"
 )
+_SHORT_URL_RE = re.compile(r"(?:link\.deezer\.com|deezer\.page\.link)")
 _BARE_ID_RE = re.compile(r"^\d+$")
 
 
@@ -53,6 +54,25 @@ class DeezerProvider(MusicProvider):
         match = _URL_RE.search(cleaned)
         if match:
             return match.group(1), match.group(2)
+
+        if _SHORT_URL_RE.search(cleaned):
+            try:
+                with httpx.Client(follow_redirects=True, timeout=10.0) as client:
+                    resp = client.get(cleaned)
+                    final_url = str(resp.url)
+                    match_final = _URL_RE.search(final_url)
+                    if match_final:
+                        return match_final.group(1), match_final.group(2)
+                    if "dest=" in final_url:
+                        import urllib.parse
+                        parsed = urllib.parse.urlparse(final_url)
+                        params = urllib.parse.parse_qs(parsed.query)
+                        dest = params.get("dest", [""])[0]
+                        match_dest = _URL_RE.search(dest)
+                        if match_dest:
+                            return match_dest.group(1), match_dest.group(2)
+            except Exception as e:
+                logger.warning("Error resolviendo enlace corto de Deezer %s: %s", cleaned, e)
 
         if _BARE_ID_RE.match(cleaned):
             # Un ID numérico suelto no indica su tipo por sí mismo; se asume
