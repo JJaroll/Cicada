@@ -232,6 +232,11 @@ class DownloadManager:
         return full_by_id
 
     async def _fetch_bpm_map(self, client: httpx.AsyncClient, track_ids: List[str], headers: dict) -> Dict[str, float]:
+        # Spotify restringió /v1/audio-features a apps creadas antes del
+        # 27-nov-2024 (ver docs/MUSIC_PROVIDERS.md §1). Si el usuario configura
+        # credenciales de una app nueva, este endpoint da 403 para todo el
+        # mundo: no es un bug, el try/except de abajo lo tolera devolviendo
+        # el mapa vacío y el BPM simplemente no llega a los tracks.
         bpm_by_id: Dict[str, float] = {}
         ids = [tid for tid in track_ids if tid]
         if not ids:
