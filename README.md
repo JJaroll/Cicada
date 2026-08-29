@@ -20,7 +20,7 @@ Cicada identifica tus canciones, les aplica metadatos completos (título, artist
 * **🎵 Reproductor Integrado:** Escucha tus pistas locales directamente en la web con soporte de salto de tiempo (HTTP Range) y agrupación por artista o álbum.
 * **🎨 Interfaz Moderna:** Interfaz con Modo Claro (Aluminio) y Oscuro (Grafito), inspirada en la estética retro-moderna de los reproductores clásicos.
 * **🛡️ Reanudable:** Guarda el progreso de cada sesión en tiempo real para que puedas retomar el trabajo tras interrupciones.
-* **🎧 Integración con iPod:** Detecta tu iPod, sincroniza música y playlists (incluyendo sync bidireccional con resolución de conflictos de calificación), escribe cover art, y gestiona video, podcasts y audiolibros — todo con backup automático y rollback ante errores. Ver la sección dedicada más abajo.
+* **🎧 Integración con iPod:** Detecta tu iPod, sincroniza música y playlists (incluyendo importación de playlists replicadas y sync bidireccional con resolución de conflictos de calificación), escribe cover art, gestiona video, podcasts y audiolibros, y ofrece visualización de fotos existentes en el dispositivo en modo de solo lectura — todo con backup automático y rollback ante errores. Ver la sección dedicada más abajo.
 
 ---
 
@@ -146,8 +146,9 @@ expulsión segura del volumen.
 
 ### Qué funciona hoy
 
-* **Música y playlists:** lectura y escritura de la biblioteca, creación y
-  envío de playlists desde Cicada al dispositivo.
+* **Música y playlists:** lectura y escritura de la biblioteca, creación,
+  eliminación e **importación de playlists locales y replicadas** con resolución
+  automática de canciones en subcarpetas.
 * **Sincronización bidireccional:** reproducciones y saltos del iPod se
   reflejan de vuelta en Cicada, con resolución interactiva de conflictos de
   calificación (el único campo genuinamente conflictivo — reproducciones y
@@ -162,18 +163,19 @@ expulsión segura del volumen.
   [`docs/IPOD_INTEGRATION.md`](docs/IPOD_INTEGRATION.md).
 * **Video, podcasts y audiolibros:** gestión completa (lectura, escritura,
   metadatos específicos como capítulos embebidos).
+* **Visualización de Fotos (Solo Lectura):** decodificación directa en tiempo
+  real de miniaturas y fotos a resolución completa desde `Photo Database` y
+  archivos binarios `.ithmb` (RGB565) del iPod, con galería y visor Lightbox
+  interactivo de solo lectura (sin modificar la base de datos de fotos).
 * **Visibilidad opcional:** un switch en **Ajustes** oculta toda la sección
   iPod de la interfaz para quien no tenga el dispositivo — no reduce el
   tamaño de instalación ni desinstala nada, solo la interfaz.
 
 ### Qué NO funciona
 
-* **Fotos:** investigado a fondo (7 líneas de investigación independientes,
-  incluyendo comparación contra sync real de iTunes/Música y de una
-  herramienta de terceros) y finalmente excluida del proyecto sin causa raíz
-  identificable sin desensamblar el firmware. Detalle completo en
-  [`docs/VENDORED.md`](docs/VENDORED.md) (Paquete 9) y
-  [`docs/IPOD_INTEGRATION.md`](docs/IPOD_INTEGRATION.md).
+* **Modificación / Sincronización de Fotos:** La escritura o adición/eliminación
+  de fotos en el iPod no está soportada (el módulo opera en modo 100% de solo
+  lectura y visualización segura para preservar la integridad del firmware).
 * **iPod touch** (y el "iPod Mobile" de los Motorola ROKR/SLVR/RAZR): **no
   soportado, y no está planeado como extensión incremental.** Es un
   dispositivo con SO propio (iOS) que sincroniza por un protocolo distinto,

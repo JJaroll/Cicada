@@ -1,6 +1,6 @@
 # Cicada Terms of Service
 
-Last updated: July 19, 2026.
+Last updated: August 28, 2026.
 
 Welcome to **Cicada**. By downloading, installing, or using this software, you agree to comply with the following terms. If you do not agree with any of these terms, please do not use the application.
 
@@ -11,14 +11,14 @@ Cicada is open-source software distributed under the **GNU GPLv3** license. It i
 As a user of Cicada, you are responsible for:
 * **Legal Use of Content**: Cicada automates the management of your music files. It is your responsibility to ensure that you own the legal rights to the files you process, organize, or synchronize. The developer does not promote or take responsibility for piracy or illegal distribution of copyrighted material.
 * **API Configuration**: The use of third-party services (such as Spotify or AcoustID) requires you to provide your own credentials (Client ID, API Keys). You are responsible for complying with the terms of service of those platforms when using your personal keys.
+* **Hardware and Device Synchronization**: Cicada provides tools to interact with physical storage devices and legacy media players (such as Apple iPod). While Cicada incorporates transactional safety mechanisms, dry-run plan validations, and automatic database backups before writing, you are responsible for maintaining your own data backups.
 
-## 3. Third-Party Integration
-Cicada interacts with external services (Spotify Web API, AcoustID).
-* The application does not store your Spotify login credentials on external servers; credentials are managed locally on your device.
-* The functionality of Cicada depends on the availability and service policies of these APIs, which may change without notice.
+## 3. Third-Party Integration and Trademarks
+* **Web Services**: Cicada interacts with external services (Spotify Web API, AcoustID). The application does not store your login credentials on external servers; credentials are managed locally on your device. The functionality of Cicada depends on the availability and service policies of these APIs, which may change without notice.
+* **Hardware & Trademarks**: "iPod", "iTunes", "Apple", and "Spotify" are trademarks of their respective owners. Cicada is an independent, open-source project and is not affiliated with, endorsed by, or sponsored by Apple Inc., Spotify AB, or any other trademark holder.
 
 ## 4. Limitation of Liability
-In no event shall the developer of Cicada be liable for any indirect, incidental, or consequential damages resulting from the use or inability to use this application, even if advised of the possibility of such damages.
+In no event shall the developer of Cicada be liable for any direct, indirect, incidental, or consequential damages resulting from the use or inability to use this application or any connected hardware/storage device, even if advised of the possibility of such damages.
 
 ## 5. Updates and Changes
 The developer reserves the right to modify or discontinue any part of Cicada's functionality in future versions. Continued use of the application after the publication of updates implies acceptance of any changes to these terms.

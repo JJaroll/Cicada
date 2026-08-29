@@ -40,3 +40,6 @@ tests/fixtures/*
 
 # Graphify
 graphify-out/
+
+#experiment
+ui-exp/

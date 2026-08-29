@@ -20,7 +20,7 @@ Cicada identifies your songs, applies comprehensive metadata (title, artist, alb
 * **🎵 Built-in Player:** Listen to your local tracks directly on the web with HTTP Range support for seeking and grouping by artist or album.
 * **🎨 Modern Interface:** Interface with Light Mode (Aluminum) and Dark Mode (Graphite), inspired by the retro-modern aesthetic of classic players.
 * **🛡️ Resumable:** Saves the progress of each session in real time so you can resume work after interruptions.
-* **🎧 iPod Integration:** Detects your iPod, syncs music and playlists (including bidirectional sync with rating-conflict resolution), writes cover art, and manages video, podcasts, and audiobooks — all with automatic backup and rollback on error. See the dedicated section below.
+* **🎧 iPod Integration:** Detects your iPod, syncs music and playlists (including local/replicated playlist import and bidirectional sync with rating-conflict resolution), writes cover art, manages video, podcasts, and audiobooks, and provides read-only viewing of photos stored on the device — all with automatic backup and rollback on error. See the dedicated section below.
 
 ---
 
@@ -146,8 +146,9 @@ error), and safe volume ejection.
 
 ### What works today
 
-* **Music and playlists:** reading and writing the library, creating and
-  sending playlists from Cicada to the device.
+* **Music and playlists:** reading and writing the library, creating, deleting,
+  and **importing local/replicated playlists** with automatic path resolution
+  for files organized in subfolders.
 * **Bidirectional synchronization:** play counts and skips from the iPod
   are reflected back in Cicada, with interactive resolution of rating
   conflicts (the only field that's genuinely conflict-prone — play counts
@@ -162,18 +163,19 @@ error), and safe volume ejection.
   [`docs/IPOD_INTEGRATION.md`](docs/IPOD_INTEGRATION.md).
 * **Video, podcasts, and audiobooks:** full management (reading, writing,
   format-specific metadata like embedded chapters).
+* **Photo Viewing (Read-Only):** real-time decoding of thumbnails and full-res
+  photos directly from the iPod's `Photo Database` and binary `.ithmb` files
+  (RGB565), with a gallery and interactive Lightbox viewer without altering the
+  photo database.
 * **Optional visibility:** a switch in **Settings** hides the entire iPod
   section from the interface for anyone without the device — it doesn't
   reduce install size or uninstall anything, just the UI.
 
 ### What doesn't work
 
-* **Photos:** thoroughly investigated (7 independent lines of
-  investigation, including comparisons against real iTunes/Music syncs and
-  a third-party tool) and ultimately excluded from the project with no
-  root cause identified without disassembling the firmware. Full detail in
-  [`docs/VENDORED.md`](docs/VENDORED.md) (Package 9) and
-  [`docs/IPOD_INTEGRATION.md`](docs/IPOD_INTEGRATION.md).
+* **Photo Modification / Sync:** Writing or adding/deleting photos on the
+  iPod is not supported (the photo subsystem is strictly 100% read-only to
+  safeguard firmware integrity).
 * **iPod touch** (and the Motorola ROKR/SLVR/RAZR "iPod Mobile"): **not
   supported, and not planned as an incremental extension.** It's a
   device with its own OS (iOS) that syncs over a different protocol, most
