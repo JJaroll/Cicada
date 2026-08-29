@@ -1,11 +1,8 @@
-import asyncio
 import base64
 import json
 import logging
 import os
 import re
-import subprocess
-import sys
 import time
 from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import urlencode, quote
@@ -13,6 +10,8 @@ from urllib.parse import urlencode, quote
 import httpx
 
 from cicada.core.app_paths import get_app_data_dir
+from cicada.core.audio_downloader import AudioDownloader
+from cicada.core.providers.base import MusicProvider, PlaylistMeta, TrackMeta
 
 logger = logging.getLogger(__name__)
 
@@ -24,14 +23,24 @@ _SPOTIFY_URI_RE = re.compile(
 )
 
 
-class DownloadManager:
+class DownloadManager(MusicProvider):
     """
     Gestor de descargas de Cicada.
     Resuelve tracks/álbumes/playlists de Spotify vía el flujo OAuth2
     "Authorization Code" (login del usuario, requerido por Spotify para leer
     playlists privadas/colaborativas y canciones guardadas) contra la API oficial,
     y descarga su audio correspondiente desde YouTube Music.
+
+    Implementa MusicProvider (docs/MUSIC_PROVIDERS.md §4) sobre su propia API
+    pública ya existente (get_spotify_tracks/get_user_playlists) — parse_url()
+    y get_tracks() son wrappers nuevos, _parse_spotify_url() y
+    get_spotify_tracks() no se tocan porque tests y callers ya los usan
+    directamente.
     """
+
+    name = "spotify"
+    supports_public_playlist_by_id = True   # Client Credentials — ver docs/MUSIC_PROVIDERS.md §1
+    requires_auth_for_own_library = True
 
     AUTHORIZE_URL = "https://accounts.spotify.com/authorize"
     TOKEN_URL = "https://accounts.spotify.com/api/token"
@@ -42,19 +51,7 @@ class DownloadManager:
     TOKEN_EXPIRY_MARGIN_SECONDS = 60
 
     def __init__(self) -> None:
-        self.upgrade_ytdlp()
-
-    def upgrade_ytdlp(self) -> None:
-        try:
-            if not getattr(sys, 'frozen', False):
-                subprocess.run(
-                    [sys.executable, "-m", "pip", "install", "--upgrade", "yt-dlp"],
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    check=True
-                )
-        except Exception as e:
-            logger.warning(f"No se pudo auto-actualizar yt-dlp en el inicio: {e}")
+        self._audio_downloader = AudioDownloader()
 
     @staticmethod
     def _get_client_credentials() -> Tuple[str, str]:
@@ -444,6 +441,9 @@ class DownloadManager:
 
     async def get_spotify_tracks(self, spotify_url: str) -> List[Dict[str, Any]]:
         resource_type, resource_id = self._parse_spotify_url(spotify_url)
+        return await self._fetch_tracks_for_resource(resource_type, resource_id)
+
+    async def _fetch_tracks_for_resource(self, resource_type: str, resource_id: str) -> List[Dict[str, Any]]:
         token = await self.get_user_token()
         headers = {"Authorization": f"Bearer {token}"}
 
@@ -473,59 +473,18 @@ class DownloadManager:
 
         raise ValueError(f"Tipo de recurso de Spotify no soportado: {resource_type}")
 
-    def _sync_download(self, query: str, download_path: str) -> str:
-        import yt_dlp
+    # --- Implementación de MusicProvider (docs/MUSIC_PROVIDERS.md §4) ---
+    # Wrappers sobre la API ya existente arriba; ningún método/nombre previo
+    # se renombra ni se elimina.
 
-        os.makedirs(download_path, exist_ok=True)
+    def parse_url(self, url: str) -> Tuple[str, str]:
+        return self._parse_spotify_url(url)
 
-        ydl_opts = {
-            'format': 'bestaudio[ext=m4a]/bestaudio/best',
-            'outtmpl': os.path.join(download_path, '%(title)s.%(ext)s'),
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'm4a',
-            }],
-            'playlist_items': '1',
-            'quiet': True,
-            'no_warnings': True,
-            'noprogress': True,
-        }
+    async def get_tracks(self, resource_type: str, resource_id: str) -> List[TrackMeta]:
+        return await self._fetch_tracks_for_resource(resource_type, resource_id)  # type: ignore[return-value]
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(query, download=True)
-            if not info:
-                raise RuntimeError(f"No se obtuvieron resultados de búsqueda para: '{query}'")
-
-            if 'entries' in info:
-                if not info['entries']:
-                    raise RuntimeError(f"La búsqueda en YouTube no retornó resultados para: '{query}'")
-                video_info = info['entries'][0]
-            else:
-                video_info = info
-
-            temp_filename = ydl.prepare_filename(video_info)
-
-            base_path, _ = os.path.splitext(temp_filename)
-            final_path = f"{base_path}.m4a"
-
-            if not os.path.exists(final_path):
-                if os.path.exists(temp_filename):
-                    final_path = temp_filename
-                else:
-                    basename = os.path.basename(base_path)
-                    matching_files = [
-                        os.path.join(download_path, f)
-                        for f in os.listdir(download_path)
-                        if f.startswith(basename)
-                    ]
-                    if matching_files:
-                        final_path = matching_files[0]
-                    else:
-                        raise FileNotFoundError(
-                            f"No se pudo encontrar el archivo descargado final: {final_path} (temp: {temp_filename})"
-                        )
-
-            return os.path.abspath(final_path)
+    def is_authenticated(self) -> bool:
+        return self.TOKEN_FILE.exists()
 
     async def download_audio(self, query: str, download_path: str) -> str:
-        return await asyncio.to_thread(self._sync_download, query, download_path)
+        return await self._audio_downloader.download_audio(query, download_path)
