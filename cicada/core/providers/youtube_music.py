@@ -19,14 +19,22 @@ from cicada.core.providers.base import MusicProvider, PlaylistMeta, TrackMeta
 
 logger = logging.getLogger(__name__)
 
-_PLAYLIST_URL_RE = re.compile(
-    r"music\.youtube\.com/playlist\?(?:.*&)?list=([a-zA-Z0-9_-]+)"
+_TRACK_URL_RE = re.compile(
+    r"(?:(?:music|www|m)\.)?(?:youtube\.com/watch\?(?:.*&)?v=|youtu\.be/)([a-zA-Z0-9_-]{11})"
 )
-_PLAYLIST_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{10,}$")
+_ALBUM_URL_RE = re.compile(
+    r"(?:music\.)?youtube\.com/browse/(MPREb_[a-zA-Z0-9_-]+)"
+)
+_PLAYLIST_URL_RE = re.compile(
+    r"(?:(?:music|www|m)\.)?youtube\.com/playlist\?(?:.*&)?list=([a-zA-Z0-9_-]+)"
+)
+_BARE_ALBUM_ID_RE = re.compile(r"^MPREb_[a-zA-Z0-9_-]+$")
+_BARE_PLAYLIST_ID_RE = re.compile(r"^(?:VL)?(?:PL|OLAK5uy_|RD)[a-zA-Z0-9_-]+$")
+_BARE_VIDEO_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{11}$")
 
 
 class YouTubeMusicProvider(MusicProvider):
-    """Metadata de playlists públicas de YouTube Music, sin auth de usuario.
+    """Metadata de tracks, álbumes y playlists públicas de YouTube Music, sin auth de usuario.
     La descarga real de audio se hace aparte con AudioDownloader, usando el
     videoId exacto (provider_track_id) en vez de una búsqueda por texto.
     """
@@ -34,7 +42,7 @@ class YouTubeMusicProvider(MusicProvider):
     name = "youtube_music"
     supports_public_playlist_by_id = True
     requires_auth_for_own_library = True
-    supported_resource_types = ("playlist",)
+    supported_resource_types = ("track", "album", "playlist")
 
     def __init__(self) -> None:
         self._yt = YTMusic()
@@ -42,15 +50,29 @@ class YouTubeMusicProvider(MusicProvider):
     def parse_url(self, url: str) -> Tuple[str, str]:
         cleaned = url.strip()
 
-        match = _PLAYLIST_URL_RE.search(cleaned)
-        if match:
-            return "playlist", self._strip_browse_prefix(match.group(1))
+        match_track = _TRACK_URL_RE.search(cleaned)
+        if match_track:
+            return "track", match_track.group(1)
 
-        if _PLAYLIST_ID_RE.match(cleaned):
+        match_album = _ALBUM_URL_RE.search(cleaned)
+        if match_album:
+            return "album", match_album.group(1)
+
+        match_playlist = _PLAYLIST_URL_RE.search(cleaned)
+        if match_playlist:
+            return "playlist", self._strip_browse_prefix(match_playlist.group(1))
+
+        if _BARE_ALBUM_ID_RE.match(cleaned):
+            return "album", cleaned
+
+        if _BARE_PLAYLIST_ID_RE.match(cleaned):
             return "playlist", self._strip_browse_prefix(cleaned)
 
+        if _BARE_VIDEO_ID_RE.match(cleaned):
+            return "track", cleaned
+
         raise ValueError(
-            f"URL/ID de playlist de YouTube Music no reconocido: {url}"
+            f"URL/ID de YouTube Music no reconocido (se esperaba track/album/playlist): {url}"
         )
 
     @staticmethod
@@ -65,14 +87,75 @@ class YouTubeMusicProvider(MusicProvider):
         if resource_type not in self.supported_resource_types:
             raise ValueError(
                 f"YouTube Music solo soporta {self.supported_resource_types} en este "
-                f"alcance, no '{resource_type}' — un álbum de YT Music vive en un "
-                f"espacio de IDs distinto (browseId 'MPREb_...'), no en el de playlists."
+                f"alcance, no '{resource_type}'."
             )
 
+        if resource_type == "track":
+            return self._get_single_track(resource_id)
+        elif resource_type == "album":
+            return self._get_album_tracks(resource_id)
+        else:
+            return self._get_playlist_tracks(resource_id)
+
+    def _get_single_track(self, video_id: str) -> List[TrackMeta]:
+        try:
+            watch = self._yt.get_watch_playlist(video_id)
+            if watch.get("tracks"):
+                item = watch["tracks"][0]
+                artists = item.get("artists") or []
+                artist_name = ", ".join(a["name"] for a in artists if a.get("name")) if artists else (item.get("byline") or "Unknown Artist")
+                album_info = item.get("album") or {}
+                return [{
+                    "title": item.get("title") or "",
+                    "artist": artist_name,
+                    "album": album_info.get("name", ""),
+                    "artwork_url": self._best_thumbnail(item.get("thumbnail")),
+                    "provider_track_id": video_id,
+                }]
+        except Exception:
+            logger.debug("get_watch_playlist falló para %s, intentando get_song", video_id, exc_info=True)
+
+        song = self._yt.get_song(video_id)
+        details = song.get("videoDetails") or {}
+        thumbs = (details.get("thumbnail") or {}).get("thumbnails") or []
+        return [{
+            "title": details.get("title") or "",
+            "artist": details.get("author") or "Unknown Artist",
+            "artwork_url": self._best_thumbnail(thumbs),
+            "provider_track_id": video_id,
+        }]
+
+    def _get_album_tracks(self, browse_id: str) -> List[TrackMeta]:
+        album = self._yt.get_album(browse_id)
+        album_title = album.get("title") or ""
+        artwork_url = self._best_thumbnail(album.get("thumbnails"))
+        artists = album.get("artists") or []
+        default_artist = ", ".join(a["name"] for a in artists if a.get("name")) if artists else "Unknown Artist"
+
+        tracks: List[TrackMeta] = []
+        for item in album.get("tracks") or []:
+            if not item or not item.get("videoId"):
+                continue
+
+            t_artists = item.get("artists") or []
+            t_artist = ", ".join(a["name"] for a in t_artists if a.get("name")) if t_artists else default_artist
+            track: TrackMeta = {
+                "title": item.get("title") or "",
+                "artist": t_artist,
+                "album": album_title,
+                "artwork_url": self._best_thumbnail(item.get("thumbnails")) or artwork_url,
+                "provider_track_id": item["videoId"],
+            }
+            tracks.append(track)
+
+        return tracks
+
+    def _get_playlist_tracks(self, resource_id: str) -> List[TrackMeta]:
         # ytmusicapi es síncrona (usa requests); no hay una versión async
         # oficial, y no vale la pena to_thread() acá porque esto se llama
         # una sola vez por resolución de link, no en un loop caliente.
         playlist = self._yt.get_playlist(resource_id)
+        playlist_artwork = self._best_thumbnail(playlist.get("thumbnails"))
 
         tracks: List[TrackMeta] = []
         for item in playlist.get("tracks") or []:
@@ -80,10 +163,11 @@ class YouTubeMusicProvider(MusicProvider):
                 continue
 
             artists = item.get("artists") or []
+            artist_name = ", ".join(a["name"] for a in artists if a.get("name")) if artists else "Unknown Artist"
             track: TrackMeta = {
                 "title": item.get("title") or "",
-                "artist": artists[0].get("name") if artists else "Unknown Artist",
-                "artwork_url": self._best_thumbnail(item.get("thumbnails")),
+                "artist": artist_name,
+                "artwork_url": self._best_thumbnail(item.get("thumbnails")) or playlist_artwork,
                 "provider_track_id": item["videoId"],
             }
 
@@ -99,7 +183,9 @@ class YouTubeMusicProvider(MusicProvider):
     def _best_thumbnail(thumbnails) -> str:
         if not thumbnails:
             return ""
-        return max(thumbnails, key=lambda t: t.get("width") or 0).get("url", "")
+        if isinstance(thumbnails, list):
+            return max(thumbnails, key=lambda t: (t.get("width") or 0) if isinstance(t, dict) else 0).get("url", "")
+        return ""
 
     async def get_user_playlists(self) -> List[PlaylistMeta]:
         raise NotImplementedError(

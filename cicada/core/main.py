@@ -683,7 +683,7 @@ async def get():
                             <span class="font-label-caps text-[12px] tracking-widest text-muted/60" data-i18n="spotify_link_title">Enlace de Spotify</span>
                         </div>
                         <div class="flex gap-2">
-                            <input type="text" id="spotify_url" placeholder="https://open.spotify.com/track|album|playlist/..." class="cicada-input flex-1 rounded-lg px-3 py-3 text-[15px]"/>
+                            <input type="text" id="spotify_url" placeholder="Spotify, YouTube Music o Deezer (canción, álbum o playlist)..." class="cicada-input flex-1 rounded-lg px-3 py-3 text-[15px]"/>
                             <button type="button" id="resolveBtn" onclick="resolveSpotifyUrl()" class="px-5 rounded-lg bg-accent text-white font-label-caps text-[12px] hover:brightness-110 transition-all inline-flex items-center gap-1.5">
                                 <span class="material-symbols-outlined text-[18px]">search</span> <span data-i18n="spotify_analyze_btn">Analizar</span>
                             </button>
@@ -1525,10 +1525,10 @@ async def get():
         <audio id="library-audio" preload="none"></audio>
 
         <script>window.CICADA_VERSION = "__CICADA_VERSION__";</script>
-        <script src="/static/js/i18n.js?v=2.2.9"></script>
+        <script src="/static/js/i18n.js?v=2.3.0"></script>
         <script src="/static/js/common.js?v=2.2.10"></script>
         <script src="/static/js/metadata.js?v=2.2.0"></script>
-        <script src="/static/js/download.js?v=2.2.0"></script>
+        <script src="/static/js/download.js?v=2.3.0"></script>
         <script src="/static/js/playlist.js?v=2.2.1"></script>
         <script src="/static/js/library.js?v=2.2.2"></script>
         <script src="/static/js/library_audiobooks.js?v=1.0.1"></script>

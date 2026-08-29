@@ -1,5 +1,17 @@
-// Extraído de cicada/core/main.py — sin cambios de comportamiento. Ver docs/IPOD_INTEGRATION.md
+// Extraído de cicada/core/main.py — soporte multicanal: Spotify, YouTube Music y Deezer.
 let resolvedSpotifyTracks = [];
+let currentMusicProvider = "spotify";
+
+function detectMusicProvider(url) {
+    let u = (url || "").trim().toLowerCase();
+    if (u.includes("deezer.com") || u.includes("deezer.page.link") || /^\d+$/.test(u)) {
+        return "deezer";
+    }
+    if (u.includes("youtube.com") || u.includes("youtu.be") || /^pl[a-z0-9_-]+/i.test(u)) {
+        return "youtube_music";
+    }
+    return "spotify";
+}
 
 async function resolveSpotifyUrl() {
     let url = document.getElementById("spotify_url").value.trim();
@@ -12,13 +24,16 @@ async function resolveSpotifyUrl() {
         return;
     }
 
+    currentMusicProvider = detectMusicProvider(url);
+    let resolveEndpoint = "/api/" + currentMusicProvider + "/resolve";
+
     resolveBtn.disabled = true;
     resolveBtn.innerHTML = '<span class="material-symbols-outlined text-[18px]">sync</span> ' + t("spotify_analyzing_btn");
     statusEl.textContent = "";
     listEl.innerHTML = '<p class="font-data-sm text-[13px] text-muted/40">' + t("spotify_analyzing_status") + '</p>';
 
     try {
-        let res = await fetch('/api/spotify/resolve', {
+        let res = await fetch(resolveEndpoint, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({url: url})
@@ -143,7 +158,9 @@ function startSpotifyDownload() {
     img.classList.add("hidden");
     placeholder.classList.remove("hidden");
 
-    fetch('/api/spotify/download', {
+    let downloadEndpoint = "/api/" + (currentMusicProvider || "spotify") + "/download";
+
+    fetch(downloadEndpoint, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({tracks: selectedTracks, output_dir: output_dir})
