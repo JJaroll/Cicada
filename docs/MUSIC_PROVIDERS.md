@@ -458,3 +458,78 @@ confirmar contra un payload real sin auth), y si el registro de app en
 `developer.tidal.com` es self-service inmediato o requiere aprobación.
 Ambos puntos son el primer paso real si se retoma este proveedor, antes
 de escribir ningún código nuevo.
+
+---
+
+## 8. Visión a largo plazo — objetivo declarado, no comprometido
+
+Esta sección deja constancia de la intención y visión a largo plazo del proyecto
+para que cualquiera que retome el desarrollo entienda hacia dónde va el diseño,
+**separada estrictamente del alcance del corte actual** y sin constituir trabajo
+planificado o comprometido para la iteración presente.
+
+### 8.1 Alcance del corte actual (sin cambios, ya en curso)
+
+El trabajo de este ciclo de desarrollo se acota a los 4 servicios priorizados:
+
+- **Spotify:** Integración existente completa (login OAuth2, lectura de "mis
+  playlists", resolución de URLs y replicación local).
+- **YouTube Music:** Implementado (resolución de playlists públicas y descarga
+  determinística por video ID vía yt-dlp).
+- **Deezer:** En curso / implementado (resolución de tracks, álbumes y playlists
+  públicas por ID y descarga vía yt-dlp).
+- **Tidal:** Próximo / diseñado en detalle (§7), último de este corte.
+
+**Con Tidal, el trabajo de ESTE proceso de desarrollo se detiene.** No se
+seguirán agregando más servicios en esta ronda; el trabajo posterior inmediato
+se enfocará en la UI frontend o en la resolución de credenciales de Tidal.
+
+### 8.2 Visión a largo plazo — paridad de nivel-Spotify
+
+El objetivo final a largo plazo es integrar servicios adicionales al **mismo
+nivel de profundidad que Spotify tiene hoy**: autenticación completa del
+usuario final (OAuth2 / device-flow), listado de "mis playlists" propias y
+guardadas, y no únicamente la resolución de enlaces públicos por ID.
+
+Esto incluye:
+
+1. **Completar el login de nivel-Spotify para los 3 integrados en este corte:**
+   - **YouTube Music:** Flujo *device-code* o gestión de cookies de sesión vía
+     `ytmusicapi` (§4).
+   - **Deezer:** Flujo OAuth2 estándar para usuario final (una vez confirmado el
+     estado del registro de apps en su portal de desarrolladores, §4.3).
+   - **Tidal:** Flujo Authorization Code + PKCE con scopes de usuario
+     (`playlists.read`, §7).
+
+2. **Candidatos nuevos a evaluar (aspiracionales, SIN investigación técnica todavía):**
+   Los siguientes servicios representan aspiraciones futuras para explorar,
+   marcados explícitamente como **sin evaluar** (no se asume viabilidad técnica
+   ni se descartan a priori; requerirán su correspondiente investigación formal
+   de APIs, modelos de autenticación, costos y políticas de acceso cuando se
+   retome el área):
+   - **Amazon Music**
+   - **Audiomack**
+   - **Napster**
+   - **Pandora**
+   - **Qobuz**
+
+3. **Nota de precisión conceptual (servicios que difieren del modelo `MusicProvider`):**
+   Para que quien retome esto no pierda tiempo intentando forzar abstracciones:
+   - **Discogs:** Plataforma orientada a la catalogación de lanzamientos físicos
+     (vinilos, CDs, cassettes) y coleccionismo, no a la reproducción o streaming
+     de audio.
+   - **LastFM:** Servicio enfocado en *scrobbling*, estadísticas e historial de
+     escucha, no en actuar como fuente primaria de playlists con audio
+     resoluble.
+   - *Duda abierta a resolver:* Ambos servicios probablemente **NO encajen** en
+     el modelo `MusicProvider` tal como está diseñado hoy (que asume recursos de
+     audio reproducibles o descargables). Se documenta como una duda abierta de
+     arquitectura a resolver antes de intentar integrarlos, no como una decisión
+     tomada en ninguna dirección.
+
+4. **Servicios formalmente descartados:**
+   - **Apple Music, SoundCloud y Bandcamp** continúan descartados por los
+     motivos técnicos, económicos y de API documentados en detalle en la
+     [Sección 3](#3-descartes-explícitos-no-diferidos--no-se-van-a-implementar),
+     a la cual se remite para evitar duplicar el análisis.
+
