@@ -1,3 +1,4 @@
+"""Icono en la bandeja del sistema para Cicada."""
 import sys
 import webbrowser
 from pathlib import Path
@@ -12,6 +13,7 @@ TRAY_ICON_PATH = _BASE_DIR / "static" / "tray_icon.png"
 
 
 def run_tray_icon(app_url: str, on_quit: Callable[[], None]) -> bool:
+    # Inicia el icono interactivo en la bandeja del sistema.
     try:
         import pystray
         from PIL import Image

@@ -1,17 +1,4 @@
-"""Generador de planes de escritura en staging off-device (dry-run) — Etapa 2c.
-
-Un :class:`Plan` representa una mutación propuesta para la biblioteca del iPod:
-1. Valida precondiciones de seguridad (GUID write-safe).
-2. Determina si se requiere advertencia previa de Music.app.
-3. Captura una huella criptográfica del estado pre-existente (:class:`PreStateFingerprint`)
-   para que :func:`apply` pueda detectar si el plan quedó obsoleto antes de escribir.
-4. Genera los 7 artefactos de la base de datos en un directorio de staging **off-device**:
-   - `iTunesCDB` (comprimido y firmado).
-   - `Library.itdb`, `Locations.itdb`, `Dynamic.itdb`, `Extras.itdb`, `Genius.itdb`, `Locations.itdb.cbk`.
-5. Ejecuta verificaciones internas de consistencia sobre los artefactos en staging antes de congelar el plan.
-
-Este módulo **NUNCA** escribe en el volumen del iPod.
-"""
+"""Generador de planes de escritura en staging para el iPod."""
 from __future__ import annotations
 
 import hashlib
@@ -180,11 +167,7 @@ def create_plan(
     timestamp: Optional[datetime] = None,
     sync_artwork: Optional[bool] = None,
 ) -> Plan:
-    """Construye un plan de escritura dry-run completo en staging off-device.
-
-    :raises UnsafeDeviceError: si el GUID del dispositivo proviene de una fuente débil.
-    :raises InconsistentArtifactsError: si los artefactos en staging fallan la verificación.
-    """
+    # Genera un plan de escritura verificado en staging.
     if not device_info.guid_is_write_safe or not device_info.firewire_guid:
         raise UnsafeDeviceError(
             f"El dispositivo en {mount} no tiene un GUID de procedencia segura para escribir "

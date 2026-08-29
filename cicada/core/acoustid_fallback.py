@@ -1,7 +1,4 @@
-"""
-Plan B de identificación de audio: fingerprinting acústico vía AcoustID/MusicBrainz.
-"""
-
+"""Identificación de audio mediante huella acústica con AcoustID."""
 import asyncio
 import os
 from pathlib import Path
@@ -68,6 +65,7 @@ def _parsear_respuesta_acoustid(respuesta: Dict[str, Any]) -> Dict[str, Any]:
 
 
 async def identificar_con_acoustid(ruta_archivo: str) -> Dict[str, Any]:
+    # Identifica una pista mediante huella acústica en AcoustID.
     if not ACOUSTID_API_KEY:
         return {
             "status": "error",
@@ -115,6 +113,7 @@ async def procesar_archivos_huerfanos(
     rutas_archivos: List[str],
     max_concurrencia: int = 3,
 ) -> List[Dict[str, Any]]:
+    # Procesa múltiples archivos de audio concurrentemente con AcoustID.
     semaforo = asyncio.Semaphore(max_concurrencia)
 
     async def _procesar_uno(ruta: str) -> Dict[str, Any]:

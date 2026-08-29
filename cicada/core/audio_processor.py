@@ -1,3 +1,4 @@
+"""Procesamiento y etiquetado de metadatos en archivos de audio."""
 import re
 import shutil
 import httpx
@@ -29,6 +30,7 @@ class AudioProcessor:
                 return b""
 
     def sanitize_filename(self, name: str) -> str:
+        # Limpia caracteres no válidos para nombres de archivo.
         return re.sub(r'[<>:"/\\|?*]', '_', str(name))
 
     @staticmethod
@@ -44,11 +46,6 @@ class AudioProcessor:
         return release_date if isinstance(release_date, str) else ''
 
     def _apply_extended_id3_tags(self, tags, metadata: dict) -> None:
-        """
-        Inyecta metadatos extendidos provenientes de la API de Spotify (ISRC,
-        fecha de lanzamiento original, compositor, BPM) en un objeto de tags
-        ID3. Cada campo se omite silenciosamente si no está presente en `metadata`.
-        """
         isrc = self._extract_isrc(metadata)
         if isrc:
             tags.add(TSRC(encoding=3, text=isrc))
@@ -95,10 +92,7 @@ class AudioProcessor:
             if len(tpos) > 1: meta["disc_count"] = tpos[1]
 
     def read_full_metadata(self, file_path: str) -> Dict[str, Any]:
-        """
-        Reads all relevant tags (including advanced ones like Disc, Compilation, Grouping, Comments)
-        from the given audio file and returns them as a dictionary matching the app's metadata format.
-        """
+        # Lee los metadatos completos de un archivo de audio.
         path = Path(file_path)
         if not path.exists():
             return {}
@@ -176,6 +170,7 @@ class AudioProcessor:
         return meta
 
     async def apply_metadata_and_move(self, source_path: str, output_base_dir: str, metadata: Dict[str, Any]) -> str:
+        # Aplica metadatos al audio y lo organiza en disco.
         path = Path(source_path)
         ext = path.suffix.lower()
 

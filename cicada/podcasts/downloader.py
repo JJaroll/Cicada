@@ -1,12 +1,4 @@
-"""Descarga de episodios de podcast a un caché local del host.
-
-No vendorizado de iOpenPod: el ``downloader.py`` original mezclaba
-streaming HTTP con ``DeviceDownloadSafety`` (validación de espacio libre
-y límites de nombre del filesystem *del iPod*, porque ahí el destino
-podía ser el propio dispositivo). Acá el destino es siempre un caché en
-``~/.cicada/``, así que esa capa no aplica — nos quedamos con streaming
-simple a archivo temporal + rename atómico, escrito desde cero.
-"""
+"""Descarga de episodios de podcast al almacenamiento local."""
 from __future__ import annotations
 
 import hashlib
@@ -43,13 +35,13 @@ _CONTENT_TYPE_MAP = {
 
 
 def default_podcasts_cache_dir() -> Path:
+    # Devuelve el directorio base para caché de podcasts.
     base = Path(os.environ.get("CICADA_HOME") or (Path.home() / ".cicada"))
     return base / "podcasts_cache"
 
 
 def episode_cache_dir(feed_url: str) -> Path:
-    """Directorio de descarga para los episodios de un feed, derivado de
-    un hash de la URL (evita colisiones y caracteres inválidos)."""
+    # Obtiene el directorio de caché para el feed.
     url_hash = hashlib.sha256(feed_url.encode()).hexdigest()[:16]
     return default_podcasts_cache_dir() / url_hash
 
@@ -58,7 +50,7 @@ def _safe_filename(guid: str, audio_url: str) -> str:
     parsed = urlparse(audio_url)
     ext = Path(unquote(parsed.path)).suffix.lower()
     if ext not in _KNOWN_AUDIO_EXTS:
-        ext = ".mp3"  # corregido después según Content-Type si hace falta
+        ext = ".mp3"
 
     safe = re.sub(r"[^\w\-.]", "_", guid)
     if len(safe) > 120:
@@ -72,7 +64,7 @@ def _ext_from_content_type(content_type: str) -> str:
 
 
 class DownloadCancelled(Exception):
-    """La descarga fue cancelada explícitamente (no un error de red)."""
+    pass
 
 
 async def download_episode(
@@ -83,23 +75,7 @@ async def download_episode(
     progress_cb=None,
     is_cancelled=None,
 ) -> str:
-    """Descarga un episodio a `dest_dir`, vía archivo temporal + rename atómico.
-
-    Args:
-        audio_url: URL del enclosure de audio.
-        guid: identificador del episodio, usado para el nombre de archivo.
-        dest_dir: carpeta destino (se crea si no existe).
-        progress_cb: callback opcional (bytes_descargados, total_bytes).
-        is_cancelled: callback opcional sin argumentos que devuelve True
-                       si la descarga debe abortar.
-
-    Returns:
-        Ruta absoluta del archivo descargado.
-
-    Raises:
-        httpx.HTTPError: en errores de red.
-        DownloadCancelled: si `is_cancelled()` devolvió True durante la descarga.
-    """
+    # Descarga un episodio de podcast al almacenamiento local.
     dest_dir.mkdir(parents=True, exist_ok=True)
     filename = _safe_filename(guid, audio_url)
     dest_path = dest_dir / filename

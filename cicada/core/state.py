@@ -1,7 +1,4 @@
-"""Estado y servicios compartidos de la app: rutas/config en ~/.cicada, los
-singletons de servicio (metadata/audio/download/playlist) y el ConnectionManager
-del WebSocket. Extraído de main.py para que los routers lo importen sin acoplarse
-al módulo principal. Importar este módulo carga el .env y crea los singletons."""
+"""Estado y servicios compartidos de la aplicación."""
 from __future__ import annotations
 
 import json
@@ -25,6 +22,7 @@ CONFIG_FILE = APP_DATA_DIR / ".cicada_config.json"
 
 
 def load_app_config() -> Dict[str, Any]:
+    # Carga la configuración persistente de la aplicación.
     if not CONFIG_FILE.exists():
         return {}
     try:
@@ -34,6 +32,7 @@ def load_app_config() -> Dict[str, Any]:
 
 
 def save_app_config(data: Dict[str, Any]) -> None:
+    # Guarda la configuración de la aplicación en disco.
     CONFIG_FILE.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 
 
@@ -50,6 +49,7 @@ class ConnectionManager:
         self.active_connections: list[WebSocket] = []
 
     async def connect(self, websocket: WebSocket):
+        # Acepta y registra una nueva conexión WebSocket.
         await websocket.accept()
         self.active_connections.append(websocket)
 
@@ -58,6 +58,7 @@ class ConnectionManager:
             self.active_connections.remove(websocket)
 
     async def broadcast(self, message: str):
+        # Envía un mensaje a todas las conexiones activas.
         for connection in list(self.active_connections):
             try:
                 await connection.send_text(message)

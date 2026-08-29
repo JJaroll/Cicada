@@ -13,7 +13,7 @@ _IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".avif", ".bmp")
 
 
 def normalize_artwork_url(url: str) -> str:
-    """Normaliza URLs de artwork que traen la extensión como query string suelta."""
+    # Normaliza URLs de carátulas con extensiones malformadas.
     raw = (url or "").strip()
     if not raw or "?" not in raw:
         return raw

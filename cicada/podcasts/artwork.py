@@ -1,22 +1,4 @@
-"""Descarga y embebido de la carátula del feed en episodios de podcast.
-
-Vendorizado (parcial) desde ``src/iopenpod/podcasts/downloader.py`` @
-``c66a4bdb`` — ver docs/VENDORED.md Paquete 8. ``embed_feed_artwork()``
-y ``prepare_artwork_bytes()`` (esta última desde
-``src/iopenpod/podcasts/artwork.py``, mismo commit) están portadas casi
-literal — límite de 1400px y calidad JPEG 90 son la misma decisión ya
-probada por iOpenPod, no un valor elegido de nuevo acá.
-
-Dirección opuesta a ``cicada/shared/artwork.py`` (Fase 4a): ese extrae
-arte YA embebido en un archivo; esto descarga de una URL remota y lo
-embebe. No hay pieza común reusable entre ambos salvo la dependencia de
-``mutagen``, ya presente en el proyecto.
-
-No vendorizado el ``DeviceDownloadSafety`` del original (igual que
-``downloader.py`` de este mismo paquete): esa capa valida espacio/nombre
-del filesystem *del iPod*, y acá el destino es siempre el caché local
-del host.
-"""
+"""Descarga y embebido de carátulas para episodios de podcasts."""
 from __future__ import annotations
 
 import io
@@ -36,7 +18,7 @@ _EMBEDDABLE_EXTS = {".mp3", ".m4a", ".m4b", ".aac"}
 
 
 def prepare_artwork_bytes(data: bytes) -> bytes | None:
-    """Decodifica bytes de imagen arbitrarios y devuelve JPEG listo para embeber."""
+    # Prepara bytes de imagen JPEG para ser embebidos.
     if not data or len(data) < 64:
         return None
 
@@ -60,13 +42,7 @@ def prepare_artwork_bytes(data: bytes) -> bytes | None:
 
 
 async def embed_artwork(file_path: str, artwork_url: str) -> bool:
-    """Descarga `artwork_url` y la embebe en `file_path` (MP3/M4A/M4B/AAC).
-
-    Salta silenciosamente (devuelve False) si no hay URL, el formato no
-    soporta artwork embebido, el archivo ya tiene una carátula, o algo
-    falla en la descarga/decodificación — un episodio sin carátula sigue
-    siendo un episodio válido, no debe bloquear la descarga del audio.
-    """
+    # Descarga y embebe la carátula en el audio.
     if not artwork_url:
         return False
 

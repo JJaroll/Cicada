@@ -1,3 +1,4 @@
+"""Identificación y enriquecimiento de metadatos de audio."""
 import re
 import asyncio
 import httpx
@@ -8,18 +9,6 @@ from shazamio import Shazam
 from cicada.core.acoustid_fallback import identificar_con_acoustid
 
 class MetadataManager:
-    """
-    Identifica metadatos de una pista de audio encadenando varias fuentes,
-    de la más precisa a la más especulativa:
-
-      Plan A: Shazam (huella acústica, más preciso)
-      Plan B: AcoustID/MusicBrainz (fallback cuando Shazam no reconoce)
-      Plan C: heurística sobre el nombre de archivo (opcional, menos fiable)
-      Plan D: enriquecimiento con iTunes (álbum, portada, número de pista)
-
-    Cada plan solo se activa si el anterior falla, y Plan D corre siempre
-    al final para completar datos que Shazam/AcoustID no traen.
-    """
 
     def __init__(self):
         self.shazam = Shazam()
@@ -42,6 +31,7 @@ class MetadataManager:
         return text.strip()
 
     async def identify_audio(self, file_path: str) -> Dict[str, Any]:
+        # Identifica la pista mediante reconocimiento acústico de Shazam.
         async with self.semaphore:
             await asyncio.sleep(0.5)
             try:
@@ -62,10 +52,7 @@ class MetadataManager:
                 return {"success": False, "error": f"SHAZAM_ERROR: {str(e)}"}
 
     async def extract_from_filename(self, file_path: str) -> tuple[str, str]:
-        """
-        Plan C: deduce título y artista a partir del nombre del archivo cuando
-        ni Shazam ni AcoustID lograron identificar la pista.
-        """
+        # Deduce título y artista a partir del nombre.
         try:
             stem = Path(file_path).stem
 
@@ -109,6 +96,7 @@ class MetadataManager:
             return (nombre_limpio or "Unknown Title"), "Unknown Artist"
 
     async def fetch_itunes_metadata(self, title: str, artist: str) -> Dict[str, Any]:
+        # Consulta metadatos enriquecidos en el catálogo de iTunes.
         async with self.semaphore:
             await asyncio.sleep(1.0)
             term = f"{title} {artist}"
@@ -150,14 +138,7 @@ class MetadataManager:
                     return {"success": False, "error": f"ITUNES_ERROR: {str(e)}"}
 
     async def process_file_metadata(self, file_path: str, logger_callback=None, plan_c_enabled: bool = False) -> Dict[str, Any]:
-        """
-        Corre el pipeline completo (Plan A -> B -> C -> D) sobre un archivo.
-
-        plan_c_enabled: si Shazam y AcoustID fallan, controla si se recurre al
-        Plan C (deducir título/artista del nombre de archivo). Apagado por
-        defecto porque suele ser poco preciso; con él apagado, esos archivos
-        se reportan como error en vez de adivinar.
-        """
+        # Identifica y completa los metadatos del archivo.
         if logger_callback: await logger_callback("⚗️ Extrayendo huella acústica con Shazam...")
         shazam_res = await self.identify_audio(file_path)
 

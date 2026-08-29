@@ -1,7 +1,4 @@
-"""DTOs de entrada de escritura del iTunesDB: TrackInfo, PlaylistInfo y su
-PlaylistItemMeta. Antes vivían dentro de los módulos-chunk del writer
-(mhit_writer/mhyp_writer), lo que forzaba a sqlite/coordinator/api a importar de
-las tripas del writer; aquí quedan como tipos neutrales compartidos."""
+"""Modelos de datos para pistas y listas de reproducción del iPod."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field

@@ -1,14 +1,4 @@
-"""Detección y resolución de conflictos de rating — Fase 3.
-
-Diff de tres vías (local / dispositivo / baseline) para el único campo
-sincronizable que no se puede fusionar automáticamente: el rating. Los
-contadores (play_count/skip_count) se suman y los timestamps toman ``max()``
-en bidirectional.py — no son conflictivos y no pasan por aquí.
-
-Política: nunca resolver un conflicto real en silencio. ``scan_for_conflicts``
-solo clasifica (no escribe nada); ``resolve_conflicts`` requiere que el
-llamador indique explícitamente qué lado gana — nunca decide por su cuenta.
-"""
+"""Detección y resolución de conflictos de calificación en sincronización."""
 from __future__ import annotations
 
 import time
@@ -23,8 +13,6 @@ from cicada.ipod.sync.state import LocalPlaybackStateRecord, PlaybackStateRecord
 
 @dataclass
 class RatingConflict:
-    """Ambos lados cambiaron desde el último sync Y difieren entre sí —
-    ninguno de los dos valores es automáticamente correcto."""
     guid: str
     ipod_dbid: int
     local_path: Optional[str]
@@ -35,8 +23,6 @@ class RatingConflict:
 
 @dataclass
 class PendingLocalPush:
-    """Solo el lado local cambió (o ambos cambiaron al mismo valor): no es
-    conflicto — falta empujar el rating local al dispositivo."""
     guid: str
     ipod_dbid: int
     local_path: Optional[str]
@@ -56,12 +42,7 @@ class ConflictScanResult:
 
 
 def scan_for_conflicts(mount: Path | str, sync_db: SyncStateDB, guid: str) -> ConflictScanResult:
-    """Clasifica cada pista cuyo rating local se apartó del baseline.
-
-    Pistas sin baseline (``known is None``) se ignoran: sin un último sync
-    conocido no hay "cambio desde entonces" que evaluar — bidirectional.py ya
-    las trata como primera aparición, no como conflicto.
-    """
+    # Detecta conflictos de calificación entre local y dispositivo.
     known_states = sync_db.get_all_playback_states(guid)
     local_states = sync_db.get_all_local_playback_states(guid)
     device_stats = read_ipod_playback_stats(mount)
@@ -105,15 +86,7 @@ def resolve_conflicts(
     device_info,
     consent_ack: bool = False,
 ) -> ApplyResult:
-    """Aplica ``resolution`` ("local" | "device") a uno o más conflictos ya
-    detectados, en un solo lote. "local": escribe los ratings locales al
-    iPod (un único ``apply()``, no uno por pista) y luego alinea ambas
-    tablas locales al valor ganador. "device": no escribe nada en el iPod
-    (ya tiene ese valor) — solo alinea las tablas locales. En ambos casos,
-    ``playback_state`` y ``local_playback_state`` quedan consistentes entre
-    sí al terminar (mismo valor de rating en las dos), para que el próximo
-    escaneo no vuelva a marcar el mismo conflicto.
-    """
+    # Resuelve conflictos de calificación aplicando la política indicada.
     if resolution not in ("local", "device"):
         raise ValueError(f"resolution inválida: {resolution!r} (debe ser 'local' o 'device')")
     if not conflicts:
@@ -152,3 +125,4 @@ def resolve_conflicts(
             ), conn=conn)
 
     return result if result is not None else ApplyResult(success=True, tracks_written=len(conflicts))
+

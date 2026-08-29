@@ -1,7 +1,4 @@
-"""Descarga de audio desde YouTube vía yt-dlp, compartida entre proveedores de
-música (Spotify, YouTube Music, y los que se agreguen después — ver
-docs/MUSIC_PROVIDERS.md). Ningún proveedor descarga audio "de sí mismo": todos
-resuelven metadata y delegan la descarga real acá, contra YouTube."""
+"""Descarga de audio desde fuentes externas mediante yt-dlp."""
 from __future__ import annotations
 
 import asyncio
@@ -14,13 +11,11 @@ logger = logging.getLogger(__name__)
 
 
 class AudioDownloader:
-    """Envoltorio sobre yt-dlp: descarga el mejor audio disponible de un video
-    o del primer resultado de una búsqueda, y lo deja como .m4a en disco."""
-
     def __init__(self) -> None:
         self.upgrade_ytdlp()
 
     def upgrade_ytdlp(self) -> None:
+        # Actualiza la herramienta yt-dlp a su última versión.
         try:
             if not getattr(sys, 'frozen', False):
                 subprocess.run(
@@ -87,4 +82,5 @@ class AudioDownloader:
             return os.path.abspath(final_path)
 
     async def download_audio(self, query: str, download_path: str) -> str:
+        # Descarga el audio correspondiente en la ruta indicada.
         return await asyncio.to_thread(self._sync_download, query, download_path)

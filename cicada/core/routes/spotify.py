@@ -1,6 +1,4 @@
-"""Router de Spotify: inicio de descargas (biblioteca/pistas), resolución de
-enlaces, listado de playlists del usuario, descarga de una pista suelta y el flujo
-de autenticación OAuth."""
+"""Endpoints de autenticación, resolución y descarga de Spotify."""
 from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
@@ -41,6 +39,7 @@ class DownloadSingleTrackRequest(BaseModel):
 
 @router.post("/api/spotify")
 async def start_spotify_download(request: SpotifyRequest, background_tasks: BackgroundTasks):
+    # Inicia la descarga completa de Spotify en segundo plano.
     process_control.cancel_requested = False
     background_tasks.add_task(process_spotify_download, request.url, request.output_dir)
     return {"message": "Descarga de Spotify iniciada en segundo plano"}
@@ -48,6 +47,7 @@ async def start_spotify_download(request: SpotifyRequest, background_tasks: Back
 
 @router.post("/api/spotify/resolve")
 async def resolve_spotify_url(request: SpotifyResolveRequest):
+    # Resuelve pistas desde una URL de Spotify.
     try:
         tracks = await download_manager.get_spotify_tracks(request.url)
         return {"tracks": tracks}
@@ -64,6 +64,7 @@ async def resolve_spotify_url(request: SpotifyResolveRequest):
 
 @router.post("/api/spotify/download")
 async def start_spotify_tracks_download(request: SpotifyTracksDownloadRequest, background_tasks: BackgroundTasks):
+    # Inicia la descarga de pistas seleccionadas de Spotify.
     if not request.tracks:
         raise HTTPException(status_code=400, detail="No se seleccionó ninguna pista para descargar.")
     process_control.cancel_requested = False
@@ -73,6 +74,7 @@ async def start_spotify_tracks_download(request: SpotifyTracksDownloadRequest, b
 
 @router.get("/api/spotify/playlists")
 async def list_spotify_playlists():
+    # Obtiene las listas de reproducción del usuario de Spotify.
     try:
         playlists = await download_manager.get_user_playlists()
         return {"playlists": playlists}
@@ -88,6 +90,7 @@ async def list_spotify_playlists():
 
 @router.post("/api/spotify/download_single")
 async def download_single_track(request: DownloadSingleTrackRequest):
+    # Descarga y etiqueta una pista individual de Spotify.
     try:
         search_query = f"ytsearch1:{request.track.get('artist', '')} {request.track.get('title', '')} Topic"
         file_path = await download_manager.download_audio(search_query, request.output_dir)
@@ -99,6 +102,7 @@ async def download_single_track(request: DownloadSingleTrackRequest):
 
 @router.get("/api/auth/login")
 async def spotify_login():
+    # Redirige al flujo de autenticación OAuth de Spotify.
     try:
         auth_url = download_manager.get_auth_url()
         return RedirectResponse(auth_url)
@@ -109,11 +113,13 @@ async def spotify_login():
 
 @router.get("/api/auth/status")
 async def spotify_auth_status():
+    # Consulta el estado de autenticación de Spotify.
     return {"connected": download_manager.TOKEN_FILE.exists()}
 
 
 @router.get("/api/auth/callback")
 async def spotify_callback(code: Optional[str] = None, error: Optional[str] = None):
+    # Procesa el callback OAuth de Spotify y guarda tokens.
     if error or not code:
         return RedirectResponse(url=f"/?spotify_auth=error&reason={error or 'missing_code'}")
 
@@ -123,3 +129,4 @@ async def spotify_callback(code: Optional[str] = None, error: Optional[str] = No
         return RedirectResponse(url=f"/?spotify_auth=error&reason={e}")
 
     return RedirectResponse(url="/?spotify_auth=success")
+

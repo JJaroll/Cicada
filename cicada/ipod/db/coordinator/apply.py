@@ -1,32 +1,4 @@
-"""Orquestador de aplicación de planes con rollback transaccional — Etapa 2c.
-
-Implementa la instalación atómica de los 7 artefactos de base de datos en el iPod
-(más ArtworkDB + 4 .ithmb cuando el plan tocó artwork — Fase 4, Etapa 4d, ver
-:data:`Plan.artwork_touched`) mediante 5 fases rigurosas:
-
-- **Fase A (Precondiciones)**: Revalida montaje, permisos de escritura, procedencia
-  del GUID, gate de consentimiento, integridad de artefactos en staging y coincidencia
-  de la huella pre-estado (:class:`PreStateFingerprint`). Falla -> dispositivo intacto.
-- **Fase B (Backup verificado)**: Crea snapshot `DB_ONLY` con :func:`create_backup`
-  (incluye `iPod_Control/Artwork/` solo si `plan.artwork_touched`) y re-verifica su
-  integridad criptográfica antes de cualquier mutación. Falla -> dispositivo intacto.
-- **Fase C (Stage en device)**: Transfiere los archivos a `<destino>.cicada-new` en el
-  mismo directorio del iPod y ejecuta fsync sobre cada uno. Todo el I/O pesado ocurre aquí.
-  Falla -> se purgan los `.cicada-new`; destinos intactos.
-- **Fase D (Commit por renames)**: Escribe atómicamente el marcador `inflight.json` en
-  almacenamiento local y ejecuta `os.replace` en orden canónico estricto: primero
-  ArtworkDB/.ithmb si aplica (lo que referencian debe existir antes que quien referencia),
-  luego `Locations.itdb` -> `Locations.itdb.cbk` -> `Library.itdb` -> `Dynamic.itdb` ->
-  `Extras.itdb` -> `Genius.itdb` -> `iTunesCDB` (el ancla final).
-  Falla -> rollback inmediato con :func:`restore_backup`.
-- **Fase E (Verificación post-commit)**: Re-lee el iPod (parser iTunesCDB + sqlite3 +
-  ArtworkDB si aplica), valida firma HASHAB, conteo de tracks, consistencia e
-  integridad referencial artwork_id_ref -> ArtworkDB. Falla -> rollback inmediato.
-  Éxito -> elimina `inflight.json`, marca primera escritura en consentimiento y retorna éxito.
-
-Incluye :func:`recover_inflight_commit` para recuperación cross-sesión si un corte de
-energía interrumpe un commit en progreso.
-"""
+"""Orquestador de aplicación de planes con rollback transaccional."""
 from __future__ import annotations
 
 import hashlib
@@ -214,7 +186,7 @@ def get_inflight_marker(guid: str, *, commit_dir: Optional[Path | str] = None) -
 
 
 def purge_staging_temps(mount: Path) -> None:
-    """Elimina explícitamente cualquier archivo temporal `*.cicada-new` residual en el iPod."""
+    # Limpia archivos temporales de staging en el dispositivo.
     control_dir = mount / "iPod_Control"
     if not control_dir.is_dir():
         return
@@ -235,10 +207,7 @@ def recover_inflight_commit(
     *,
     commit_dir: Optional[Path | str] = None,
 ) -> bool:
-    """Restaura el iPod desde el backup registrado si un commit previo fue interrumpido.
-
-    Devuelve True si se ejecutó una recuperación con éxito, False si no había marcador.
-    """
+    # Recupera transacciones interrumpidas mediante el respaldo de seguridad.
     marker = get_inflight_marker(guid, commit_dir=commit_dir)
     if not marker:
         return False
@@ -266,8 +235,7 @@ def apply(
     commit_dir: Optional[str | Path] = None,
     on_progress: Optional[Callable[[str, float], None]] = None,
 ) -> ApplyResult:
-    """Ejecuta de forma atómica y verificada el plan sobre el iPod con rollback ante cualquier fallo."""
-
+    # Aplica el plan transaccionalmente con verificación y rollback.
     def _progress(msg: str, frac: float) -> None:
         if on_progress is not None:
             try:

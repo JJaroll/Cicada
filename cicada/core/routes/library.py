@@ -69,6 +69,7 @@ def _match_tracks_against_library(tracks: List[Dict[str, Any]], library_dir: str
 
 @router.post("/api/library/match")
 async def match_library_tracks(request: LibraryMatchRequest):
+    # Empareja pistas con la biblioteca local.
     try:
         matches = await asyncio.to_thread(_match_tracks_against_library, request.tracks, request.library_dir)
         return {"matches": matches}
@@ -78,14 +79,7 @@ async def match_library_tracks(request: LibraryMatchRequest):
 
 @router.post("/api/library/manual_match")
 async def manual_match_track(request: ManualMatchRequest):
-    """
-    Asociación manual: el usuario eligió a mano qué archivo local corresponde
-    a un track de Spotify que el fuzzy matching no pudo encontrar solo (por
-    ejemplo, porque Shazam/AcoustID nunca lo identificaron correctamente y
-    quedó con tags genéricos). Re-etiqueta ese archivo con los metadatos
-    reales del track de Spotify y lo reorganiza dentro de la biblioteca,
-    igual que el resto del pipeline de Cicada.
-    """
+    # Asocia y re-etiqueta manualmente una pista local.
     try:
         new_path = await audio_processor.apply_metadata_and_move(request.file_path, request.library_dir, request.track)
         return {"path": new_path}
@@ -95,6 +89,7 @@ async def manual_match_track(request: ManualMatchRequest):
 
 @router.post("/api/library/show_in_folder")
 async def show_in_folder(request: TrackActionRequest):
+    # Revela el archivo de audio en el explorador.
     import platform
     import subprocess
     import os
@@ -116,6 +111,7 @@ async def show_in_folder(request: TrackActionRequest):
 
 @router.delete("/api/library/track")
 async def delete_track(request: TrackActionRequest):
+    # Elimina el archivo de audio del disco.
     import os
     path = request.path
     if not os.path.exists(path):
@@ -129,6 +125,7 @@ async def delete_track(request: TrackActionRequest):
 
 @router.get("/api/library/track_info")
 async def get_track_info(path: str):
+    # Obtiene los metadatos detallados de la pista.
     import os
     if not os.path.exists(path):
         raise HTTPException(status_code=404, detail="El archivo no existe.")
@@ -141,6 +138,7 @@ async def get_track_info(path: str):
 
 @router.post("/api/library/track_info")
 async def update_track_info(request: TrackInfoUpdateRequest):
+    # Actualiza y guarda los metadatos de la pista.
     import os
     if not os.path.exists(request.path):
         raise HTTPException(status_code=404, detail="El archivo original no existe.")
@@ -159,6 +157,7 @@ async def update_track_info(request: TrackInfoUpdateRequest):
 
 @router.post("/api/library/generate_playlist")
 async def generate_playlist_file(request: GeneratePlaylistRequest):
+    # Genera una lista de reproducción .m3u8 en disco.
     if not request.file_paths:
         raise HTTPException(status_code=400, detail="No se especificaron canciones para la playlist.")
     try:
@@ -172,12 +171,14 @@ async def generate_playlist_file(request: GeneratePlaylistRequest):
 
 @router.get("/api/library/config")
 async def get_library_config():
+    # Obtiene la configuración de ruta de la biblioteca.
     config = load_app_config()
     return {"library_dir": config.get("library_dir", "")}
 
 
 @router.post("/api/library/config")
 async def set_library_config(request: LibraryConfigRequest):
+    # Guarda la ruta configurada de la biblioteca.
     config = load_app_config()
     config["library_dir"] = request.library_dir
     save_app_config(config)
@@ -186,6 +187,7 @@ async def set_library_config(request: LibraryConfigRequest):
 
 @router.get("/api/library/browse")
 async def browse_library(library_dir: str):
+    # Escanea y agrupa la música de la biblioteca.
     if not library_dir:
         raise HTTPException(status_code=400, detail="Falta especificar la carpeta de biblioteca.")
     try:
@@ -198,6 +200,7 @@ async def browse_library(library_dir: str):
 
 @router.get("/api/library/browse_audiobooks")
 async def browse_audiobooks(library_dir: str):
+    # Escanea la carpeta buscando archivos de audiolibros.
     if not library_dir:
         raise HTTPException(status_code=400, detail="Falta especificar la carpeta a explorar.")
     try:
@@ -226,6 +229,7 @@ def _resolve_path_within_library(raw_path: str) -> Path:
 
 @router.get("/api/library/artwork")
 async def get_track_artwork(path: str):
+    # Extrae y devuelve la portada embebida del audio.
     target = _resolve_path_within_library(path)
     image_bytes, mime = await asyncio.to_thread(extract_embedded_artwork, target)
     if not image_bytes:
@@ -247,7 +251,7 @@ def _iter_file_range(file_path: Path, start: int, length: int, chunk_size: int =
 
 @router.get("/api/library/stream")
 async def stream_track(path: str, request: Request):
-
+    # Transmite el archivo de audio para reproducción local.
     target = _resolve_path_within_library(path)
     file_size = target.stat().st_size
     media_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"

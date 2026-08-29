@@ -1,9 +1,4 @@
-"""Interfaz genérica de proveedor de música (ver docs/MUSIC_PROVIDERS.md §4).
-
-Todo proveedor resuelve metadata de playlists/tracks de su servicio; ninguno
-descarga audio "de sí mismo" — eso es responsabilidad compartida de
-cicada.core.audio_downloader.AudioDownloader, contra YouTube, para todos.
-"""
+"""Interfaz base para proveedores de música."""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

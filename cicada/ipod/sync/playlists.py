@@ -1,12 +1,4 @@
-"""Sincronización y preservación de listas de reproducción para iPod — Fase 3.
-
-Responsabilidades:
-1. Conversión de listas de reproducción estándar locales a instancias `PlaylistInfo`
-   resolviendo los paths locales a `ipod_dbid`s y asignando IDs de 64 bits.
-2. Preservación byte-exacta de Smart Playlists existentes en el iPod (v1: sin evaluar,
-   re-escribiendo sus blobs de reglas y preferencias `mhod50`, `mhod51`, `mhod55`, `mhod100`, `mhod102`).
-3. Actualización del mapeo de playlists en `SyncStateDB`.
-"""
+"""Sincronización y preservación de listas de reproducción del iPod."""
 from __future__ import annotations
 
 import logging
@@ -30,13 +22,11 @@ logger = logging.getLogger(__name__)
 
 
 def _generate_playlist_id() -> int:
-    """Genera un identificador positivo de 64 bits para una lista de reproducción."""
     return (int(time.time() * 1000) ^ random.randint(1, 0xFFFFFF)) & 0x7FFFFFFFFFFFFFFF
 
 
 @dataclass
 class LocalPlaylist:
-    """Definición de una lista de reproducción estándar proveniente de Cicada."""
     name: str
     track_paths: List[str] = field(default_factory=list)
     playlist_id: Optional[int] = None
@@ -44,7 +34,6 @@ class LocalPlaylist:
 
 @dataclass
 class PreparedPlaylists:
-    """Conjunto consolidado de playlists listas para pasar a `create_plan()`."""
     standard_playlists: List[PlaylistInfo] = field(default_factory=list)
     smart_playlists: List[PlaylistInfo] = field(default_factory=list)
     unresolved_tracks_count: int = 0
@@ -60,14 +49,7 @@ def prepare_standard_playlists(
     sync_db: Optional[SyncStateDB] = None,
     path_to_dbid_map: Optional[Dict[str, int]] = None,
 ) -> Tuple[List[PlaylistInfo], int]:
-    """Convierte listas de reproducción locales a `PlaylistInfo` resolviendo los dbids de pistas.
-
-    :param local_playlists: Colección de listas locales a sincronizar.
-    :param guid: FireWireGUID del iPod.
-    :param sync_db: Repositorio persistente `SyncStateDB` (opcional si se provee path_to_dbid_map).
-    :param path_to_dbid_map: Mapa directo `{local_path: ipod_dbid}` para resolución en memoria.
-    :returns: Tupla `(playlists_info, total_unresolved_tracks)`.
-    """
+    # Convierte listas de reproducción locales a PlaylistInfo.
     resolved_playlists: List[PlaylistInfo] = []
     total_unresolved = 0
 
@@ -102,11 +84,7 @@ def prepare_standard_playlists(
 
 
 def extract_smart_playlists_for_preservation(mount: Path | str) -> List[PlaylistInfo]:
-    """Extrae las smart playlists existentes en el iPod preservando sus blobs crudos.
-
-    Lee `iTunesCDB` o `iTunesDB` con el parser y rescata las reglas y configuraciones
-    `smart_prefs`, `smart_rules`, `raw_mhod55`, `raw_mhod100`, `raw_mhod102` y metadatos de MHIP.
-    """
+    # Extrae y preserva las listas inteligentes del iPod.
     mount_path = Path(mount)
     itunes_dir = mount_path / "iPod_Control" / "iTunes"
     cdb_file = itunes_dir / "iTunesCDB"
@@ -238,7 +216,7 @@ def prepare_all_playlists(
     path_to_dbid_map: Optional[Dict[str, int]] = None,
     preserve_smart_playlists: bool = True,
 ) -> PreparedPlaylists:
-    """Prepara tanto las playlists estándar como las smart playlists para `create_plan()`."""
+    # Prepara listas estándar e inteligentes para el plan.
     std_pls, unresolved = prepare_standard_playlists(
         local_playlists=local_playlists,
         guid=guid,
@@ -262,7 +240,7 @@ def record_playlists_in_db(
     playlists: Sequence[PlaylistInfo],
     sync_db: SyncStateDB,
 ) -> None:
-    """Registra las playlists sincronizadas en `playlists_map` de `SyncStateDB`."""
+    # Guarda el registro de listas en la base local.
     now = int(time.time())
     with sync_db.transaction() as conn:
         sync_db.delete_playlist_maps(guid, conn=conn)
@@ -279,3 +257,4 @@ def record_playlists_in_db(
                     ),
                     conn=conn,
                 )
+

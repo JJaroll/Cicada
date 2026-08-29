@@ -1,21 +1,4 @@
-"""CLI del módulo iPod.
-
-Uso::
-
-    python -m cicada ipod status [--usb]
-    python -m cicada ipod tracks [--json]
-    python -m cicada ipod plan --tracks-file <pistas.json>
-    python -m cicada ipod sync --tracks-file <pistas.json> [--ack-consent]
-    python -m cicada ipod consent {show,grant,revoke}
-    python -m cicada ipod backup [--full]
-    python -m cicada ipod restore <archivo.tar.zst>
-    python -m cicada ipod list-backups
-    python -m cicada ipod eject [--force]
-    python -m cicada ipod sync-playback [--dry-run]
-
-Todas las operaciones sobre el disco pasan por :mod:`cicada.ipod.device.write_guard`,
-:mod:`cicada.ipod.db.coordinator.plan` y :mod:`cicada.ipod.db.coordinator.apply`.
-"""
+"""Interfaz de línea de comandos para gestión del iPod."""
 from __future__ import annotations
 
 import argparse
@@ -76,6 +59,7 @@ def _load_tracks_from_file(path: str) -> list[TrackInfo]:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    # Construye el parser de comandos CLI para iPod.
     parser = argparse.ArgumentParser(prog="cicada ipod", description="Gestión y sincronización del iPod")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -358,6 +342,7 @@ _HANDLERS = {
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    # Ejecuta el comando CLI seleccionado para el iPod.
     parser = build_parser()
     args = parser.parse_args(argv)
     try:

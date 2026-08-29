@@ -1,15 +1,4 @@
-"""Identidad del iPod leída **solo del volumen** — orquestación propia de Cicada.
-
-Reemplaza la orquestación de `scanner`/`info` de iOpenPod (que enreda escritura
-al dispositivo y USB en vivo). Aquí:
-
-- **nunca se escribe** en el volumen (solo se leen `SysInfoExtended`/`SysInfo`),
-- la **vía USB es opcional** y su ausencia no rompe nada,
-- si nada resuelve la familia/generación, se **degrada a un DeviceInfo parcial**,
-  nunca a una excepción.
-
-Cascada de identificación: **FamilyID → sufijo de serie → ModelNumStr → USB PID**.
-"""
+"""Identificación del dispositivo iPod y lectura de información del sistema."""
 from __future__ import annotations
 
 import logging
@@ -119,15 +108,7 @@ def _looks_like_ipod_volume(mount: Path) -> bool:
 
 
 def discover_ipods(*, candidates: Optional[list] = None) -> ScanResult:
-    """Descubre iPods entre los volúmenes montados. Distingue 3 estados:
-
-    - **ready**: hay al menos un volumen con ``iPod_Control/`` (legible).
-    - **no_ipod_control**: hay un volumen que parece iPod pero sin ``iPod_Control/``
-      (recién formateado, o iPod_Control borrado). Mensaje propio.
-    - **no_device**: no hay ningún candidato.
-
-    Solo lee. No revalida para escritura (eso es de write_guard).
-    """
+    # Detecta y enumera los dispositivos iPod conectados.
     from cicada.ipod.device import write_guard as wg
     cands = wg._candidate_mounts() if candidates is None else [Path(c) for c in candidates]
 
@@ -184,13 +165,8 @@ def _synth_sysinfoextended(guid, family_id, serial, model_number) -> bytes:
 
 
 def read_device_info(mount: str | Path, *, use_usb: bool = False) -> DeviceInfo:
-    """Lee la identidad del iPod montado en ``mount``. **No escribe en el volumen.**
-
-    Orden de resolución del GUID: **disco → caché fuerte → USB → caché débil.**
-    ``use_usb=False`` por defecto. El fallo de USB nunca es silencioso
-    (``usb_error``). El caché por puntero débil nunca se usa por encima de USB, y
-    no es apto para firmar en Fase 2 (``guid_is_write_safe``).
-    """
+    # Obtiene información técnica y de modelo del iPod.
+    mount_path = Path(mount).resolve()
     from cicada.ipod.device import authority
     from cicada.ipod.device.volume_id import volume_fingerprint
     from cicada.ipod.device.vpd import query_vpd

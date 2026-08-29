@@ -1,11 +1,4 @@
-"""Gestión del estado persistente local en SQLite (~/.cicada/ipod.db) — Fase 3.
-
-Mantiene:
-- Registro de dispositivos iPod conocidos (tabla ``devices``).
-- Mapeo bidireccional entre rutas locales y PIDs del iPod (tabla ``track_map``).
-- Línea base de contadores de reproducción para deltas (tabla ``playback_state``).
-- Mapeo de listas de reproducción sincronizadas (tabla ``playlists_map``).
-"""
+"""Gestión del estado persistente local en base de datos SQLite."""
 from __future__ import annotations
 
 import os
@@ -20,7 +13,7 @@ from cicada.ipod.db.sqlite._helpers import s64, u64
 
 
 def default_sync_db_path() -> Path:
-    """Ruta por defecto de la base de datos local (~/.cicada/ipod.db o $CICADA_HOME/ipod.db)."""
+    # Devuelve la ruta por defecto a la base de datos.
     base = Path(os.environ.get("CICADA_HOME") or (Path.home() / ".cicada"))
     return base / "ipod.db"
 
@@ -194,6 +187,7 @@ class SyncStateDB:
 
 
     def upsert_device(self, dev: DeviceRecord, conn: Optional[sqlite3.Connection] = None) -> None:
+        # Registra o actualiza un dispositivo en la base de datos.
         now = int(time.time())
         first = dev.first_seen or now
         last = dev.last_seen or now
@@ -222,6 +216,7 @@ class SyncStateDB:
                 _do_work(c)
 
     def get_device(self, guid: str) -> Optional[DeviceRecord]:
+        # Obtiene el registro del dispositivo según su GUID.
         with self._connection() as conn:
             row = conn.execute("SELECT * FROM devices WHERE guid = ?", (guid,)).fetchone()
             if not row:
@@ -237,6 +232,7 @@ class SyncStateDB:
             )
 
     def list_devices(self) -> List[DeviceRecord]:
+        # Lista todos los dispositivos registrados en el sistema.
         with self._connection() as conn:
             rows = conn.execute("SELECT * FROM devices ORDER BY last_seen DESC").fetchall()
             return [
@@ -257,6 +253,7 @@ class SyncStateDB:
         self.upsert_track_maps([rec], conn=conn)
 
     def upsert_track_maps(self, records: List[TrackMapRecord], conn: Optional[sqlite3.Connection] = None) -> None:
+        # Registra o actualiza mapeos de pistas en la base.
         if not records:
             return
 
@@ -305,6 +302,7 @@ class SyncStateDB:
                 _do_work(c)
 
     def get_track_map(self, guid: str, ipod_dbid: int) -> Optional[TrackMapRecord]:
+        # Obtiene el mapeo de una pista según su identificador.
         with self._connection() as conn:
             row = conn.execute(
                 "SELECT * FROM track_map WHERE guid = ? AND ipod_dbid = ?",
@@ -372,6 +370,7 @@ class SyncStateDB:
         self.upsert_playback_states([rec], conn=conn)
 
     def upsert_playback_states(self, records: List[PlaybackStateRecord], conn: Optional[sqlite3.Connection] = None) -> None:
+        # Guarda estados de reproducción conocidos para el dispositivo.
         if not records:
             return
 
@@ -426,7 +425,7 @@ class SyncStateDB:
             return self._row_to_playback_state(row)
 
     def get_all_playback_states(self, guid: str) -> Dict[int, PlaybackStateRecord]:
-        """Devuelve un mapa {ipod_dbid (uint64): PlaybackStateRecord} de todas las pistas registradas."""
+        # Obtiene todos los estados de reproducción de un dispositivo.
         with self._connection() as conn:
             rows = conn.execute(
                 "SELECT * FROM playback_state WHERE guid = ?",

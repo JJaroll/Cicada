@@ -1,11 +1,4 @@
-"""Router de YouTube Music: resolución de playlists públicas por link/ID (sin
-login) e inicio de descarga de pistas ya resueltas. Mismo patrón que
-routes/spotify.py — ver docs/MUSIC_PROVIDERS.md para el diseño de
-MusicProvider que ambos implementan.
-
-"Mis playlists" (requiere auth de usuario) queda fuera de este router: se
-consulta youtube_music_provider.requires_auth_for_own_library antes de
-ofrecer esa opción en la UI, no se expone un endpoint que solo pueda fallar."""
+"""Endpoints de resolución y descarga para YouTube Music."""
 from __future__ import annotations
 
 from typing import Any, Dict, List
@@ -30,6 +23,7 @@ class YouTubeMusicTracksDownloadRequest(BaseModel):
 
 @router.post("/api/youtube_music/resolve")
 async def resolve_youtube_music_url(request: YouTubeMusicResolveRequest):
+    # Resuelve pistas desde una URL de YouTube Music.
     try:
         resource_type, resource_id = youtube_music_provider.parse_url(request.url)
         tracks = await youtube_music_provider.get_tracks(resource_type, resource_id)
@@ -42,8 +36,10 @@ async def resolve_youtube_music_url(request: YouTubeMusicResolveRequest):
 
 @router.post("/api/youtube_music/download")
 async def start_youtube_music_tracks_download(request: YouTubeMusicTracksDownloadRequest, background_tasks: BackgroundTasks):
+    # Inicia la descarga en segundo plano de YouTube Music.
     if not request.tracks:
         raise HTTPException(status_code=400, detail="No se seleccionó ninguna pista para descargar.")
     process_control.cancel_requested = False
     background_tasks.add_task(process_youtube_music_selected_tracks, request.tracks, request.output_dir)
     return {"message": "Descarga de pistas seleccionadas iniciada en segundo plano"}
+

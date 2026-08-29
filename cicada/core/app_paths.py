@@ -1,9 +1,11 @@
+"""Resolución de rutas de datos de la aplicación."""
 import os
 import sys
 from pathlib import Path
 
 
 def get_app_data_dir() -> Path:
+    # Obtiene el directorio base de datos de Cicada.
     if not getattr(sys, "frozen", False):
         return Path(__file__).resolve().parents[2]
 

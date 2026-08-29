@@ -1,9 +1,4 @@
-"""Motor de sincronización bidireccional de reproducciones del iPod — Fase 3.
-
-Lee contadores de reproducción, calificaciones y timestamps desde el iPod
-(Dynamic.itdb en Nano 6G/7G o iTunesDB/iTunesCDB en clásicos), los normaliza a
-época Unix (1970) y calcula los deltas frente al baseline persistido en SyncStateDB.
-"""
+"""Sincronización bidireccional de estadísticas de reproducción del iPod."""
 from __future__ import annotations
 
 import logging
@@ -66,11 +61,7 @@ class PlaybackDeltaReport:
 
 
 def read_ipod_playback_stats(mount: Path | str) -> Dict[int, RawPlaybackStat]:
-    """Lee y normaliza las estadísticas de reproducción actuales del iPod.
-
-    Prioriza `Dynamic.itdb` (Nano 6G/7G) y realiza fallback a `iTunesCDB`/`iTunesDB`.
-    Devuelve un diccionario `{ipod_dbid (uint64): RawPlaybackStat}`.
-    """
+    # Lee las estadísticas de reproducción desde el iPod.
     mount_path = Path(mount)
     dynamic_itdb = mount_path / "iPod_Control" / "iTunes" / "iTunes Library.itlp" / "Dynamic.itdb"
 
@@ -164,15 +155,7 @@ def compute_playback_deltas(
     sync_db: SyncStateDB,
     guid: str,
 ) -> PlaybackDeltaReport:
-    """Calcula los deltas entre el estado actual del iPod y el baseline de SyncStateDB.
-
-    El rating es el único campo no fusionable (play_count/skip_count se suman,
-    los timestamps toman ``max()``): si el lado local (``local_playback_state``)
-    también se apartó del baseline, este función **no** commitea el rating del
-    dispositivo — lo deja tal cual para que ``conflicts.scan_for_conflicts``
-    decida. Sin este guard, un conflicto real quedaría resuelto en silencio a
-    favor del dispositivo en cada escaneo automático.
-    """
+    # Calcula diferencias de reproducción contra el estado anterior.
     ipod_stats = read_ipod_playback_stats(mount)
     known_states = sync_db.get_all_playback_states(guid)
     local_states = sync_db.get_all_local_playback_states(guid)
@@ -261,7 +244,7 @@ def commit_playback_deltas(
     report: PlaybackDeltaReport,
     sync_db: SyncStateDB,
 ) -> None:
-    """Actualiza la línea base en SyncStateDB tras aplicar los deltas con éxito."""
+    # Persiste las estadísticas actualizadas en la base local.
     if not report.has_changes:
         return
 
@@ -287,11 +270,7 @@ def commit_playback_deltas(
 
 
 def sync_playback_stats(mount, device_info, sync_db: Optional[SyncStateDB] = None) -> PlaybackDeltaReport:
-    """Escanea + confirma en un solo paso: registra el dispositivo (si hace
-    falta, por la FK de ``playback_state``), calcula los deltas y los
-    persiste como nueva línea base. Punto de entrada único para que API y CLI
-    no dupliquen la secuencia ``upsert_device -> compute -> commit``.
-    """
+    # Sincroniza las estadísticas de reproducción del iPod.
     db = sync_db or SyncStateDB()
     db.upsert_device(DeviceRecord(
         guid=device_info.firewire_guid,

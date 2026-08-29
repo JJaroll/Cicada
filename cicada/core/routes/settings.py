@@ -1,5 +1,4 @@
-"""Router de configuración: GET/POST /api/settings — credenciales en .env y
-preferencias de la app (tema, acento, directorios, plan C)."""
+"""Endpoints para consultar y actualizar la configuración de Cicada."""
 from __future__ import annotations
 
 import os
@@ -30,6 +29,7 @@ class SettingsRequest(BaseModel):
 
 @router.get("/api/settings")
 async def get_settings():
+    # Obtiene la configuración actual de la aplicación.
     config = load_app_config()
     return {
         "acoustid_api_key": os.environ.get("ACOUSTID_API_KEY", ""),
@@ -47,6 +47,7 @@ async def get_settings():
 
 @router.post("/api/settings")
 async def update_settings(request: SettingsRequest):
+    # Actualiza y guarda la configuración del usuario.
     if request.acoustid_api_key is not None:
         os.environ["ACOUSTID_API_KEY"] = request.acoustid_api_key
         acoustid_fallback.ACOUSTID_API_KEY = request.acoustid_api_key
@@ -78,3 +79,4 @@ async def update_settings(request: SettingsRequest):
     save_app_config(config)
 
     return {"message": "Configuración guardada."}
+

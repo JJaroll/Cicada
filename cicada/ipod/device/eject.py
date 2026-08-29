@@ -1,25 +1,4 @@
-"""Expulsión segura del iPod, con identificación del proceso que bloquea.
-
-Lección del dispositivo real: la expulsión puede ser **rechazada de forma
-persistente** por otro proceso (en macOS, ``AMPDevicesAgent`` — el servicio de
-Música). En vez de fallar con un booleano mudo, esta función:
-
-- hace **flush** antes de intentar (vía :mod:`durability`),
-- **nunca fuerza por defecto** (``force`` es decisión explícita del usuario),
-- usa **timeout** en todo subproceso (no se cuelga),
-- y devuelve **quién bloquea** (:class:`Blocker`) al llamador, con un nombre
-  entendible (``friendly_name``) para poder decir *"Música está usando el iPod,
-  ciérralo e intenta de nuevo"*.
-
-Estado por plataforma:
-- **macOS**: implementado (parser del disidente de ``diskutil`` + fallback ``lsof``).
-- **Linux**: implementado (``umount`` no forzado + bloqueadores vía ``lsof``).
-- **Windows**: **esbozado** — devuelve un resultado honesto ("no se pueden
-  identificar procesos bloqueadores en Windows todavía"). Pendiente en VENDORED.md.
-
-Módulo propio de Cicada (no vendorizado): iOpenPod expulsa pero NO identifica al
-proceso que bloquea.
-"""
+"""Expulsión segura del iPod e identificación de procesos bloqueadores."""
 from __future__ import annotations
 
 import logging
@@ -269,14 +248,10 @@ def _eject_windows_stub(mount: Path) -> EjectResult:
 
 
 def eject_ipod(mount: str | Path, *, force: bool = False,
-               timeout: float = 30.0) -> EjectResult:
-    """Expulsa el iPod montado en ``mount``, identificando a quien bloquee.
-
-    Hace flush antes (best-effort). ``force=False`` por defecto: la vía forzada
-    solo se toma si el usuario lo pide explícitamente.
-    """
-    mount = Path(mount)
-    ok, flush_msg = durability.flush_filesystem(mount, allow_unavailable=True)
+               timeout: float = 10.0) -> EjectResult:
+    # Expulsa de forma segura el volumen del iPod.
+    mount_path = Path(mount)
+    ok, flush_msg = durability.flush_filesystem(mount_path, allow_unavailable=True)
     if not ok:
         logger.warning("Flush previo a la expulsión no confirmado: %s", flush_msg)
 

@@ -1,35 +1,4 @@
-"""Backup y restore del iPod — Fase 0.
-
-Snapshot de ``iPod_Control/`` a un ``.tar.zst``, y su restauración. **Todo pasa
-por :mod:`cicada.ipod.device.write_guard`**: el restore valida cada ruta destino
-antes de escribir y jamás borra recursivamente ``iPod_Control/`` (usa
-``safe_rmtree``, que rechaza los directorios protegidos).
-
-Dos modos:
-
-- ``db-only`` (por defecto): ``iPod_Control/iTunes/`` y ``iPod_Control/Device/``
-  (~4 MB). Es lo que se rota (se conservan los últimos :data:`KEEP_DB_ONLY`).
-  ``include_artwork=True`` añade también ``iPod_Control/Artwork/`` — el
-  coordinador (apply.py, Etapa 4d) solo lo activa cuando el plan que se va a
-  aplicar realmente construyó artwork (``plan.artwork_touched``), porque el
-  payload de píxeles crudo puede pesar ~130 KB/track (decenas o cientos de MB
-  en una biblioteca real) y no se justifica en cada backup rotado si el sync
-  no toca carátulas.
-- ``full``: el árbol completo de ``iPod_Control/``, incluido ``Music/``, más
-  ``Photos/`` si existe en el dispositivo — vive a nivel de volumen, fuera
-  de ``iPod_Control/`` (puede haber sido escrita por iTunes/Música u otra
-  herramienta; Cicada no escribe ahí, pero un backup ``full`` cubre todo lo
-  que hay en el dispositivo, no solo lo que Cicada gestiona).
-
-Salida: ``~/.cicada/backups/ipod/<guid>/<guid>_<timestamp>_<modo>.tar.zst``.
-En Fase 0 el GUID aún no se puede leer (llega en Fase 1); se usa el fallback
-:data:`UNKNOWN_GUID`.
-
-Los artefactos de macOS/FAT32 (``._*``, ``.DS_Store``…) se excluyen del tar con
-:mod:`cicada.ipod.util.fsfilter`.
-
-Ver docs/IPOD_INTEGRATION.md (Fase 0).
-"""
+"""Creación y restauración de copias de seguridad del iPod."""
 from __future__ import annotations
 
 import hashlib
@@ -246,18 +215,7 @@ def create_backup(
     timestamp: Optional[datetime] = None,
     include_artwork: bool = False,
 ) -> Path:
-    """Crea un backup ``.tar.zst`` del iPod y devuelve su ruta.
-
-    Revalida el montaje con :func:`resolve_mount`, construye el tar aplicando
-    :mod:`fsfilter`, verifica integridad y rota los ``db-only`` antiguos.
-
-    :param candidates: se pasa a ``resolve_mount`` (inyección en tests).
-    :param include_artwork: en modo ``db-only``, añade ``iPod_Control/Artwork/``
-        al backup. Ver docstring del módulo — úsalo solo cuando el plan que se
-        va a aplicar a continuación realmente toca artwork.
-    :raises WriteGuardError: si el iPod no está montado.
-    :raises BackupIntegrityError: si el archivo no supera la verificación.
-    """
+    # Crea un respaldo comprimido del estado del iPod.
     resolved = resolve_mount(candidates=candidates if candidates is not None else [mount])
     guid = _resolve_guid(resolved, guid)
     base = Path(backups_dir) if backups_dir is not None else default_backups_dir()
@@ -312,29 +270,7 @@ def restore_backup(
     candidates: Optional[Iterable[os.PathLike | str]] = None,
     include_artwork: bool = False,
 ) -> None:
-    """Restaura un ``.tar.zst`` sobre el iPod, dejando el árbol idéntico al backup.
-
-    Seguridad (todo vía write_guard):
-
-    1. Revalida el montaje (:func:`resolve_mount`) y que sea escribible.
-    2. **Antes de escribir nada**, valida que *cada* miembro del tar cae dentro
-       de ``iPod_Control/`` o ``Photos/`` (defensa ante path traversal en el
-       archivo) — ``Photos/`` es la única raíz fuera de ``iPod_Control/``,
-       puede aparecer en un backup ``full`` de un dispositivo con fotos
-       reales de terceros.
-    3. Extrae sobrescribiendo, y luego reconcilia: elimina de las raíces
-       restauradas lo que no esté en el backup (archivos con ``unlink``,
-       directorios extra no protegidos con ``safe_rmtree``). **Nunca** hace
-       ``rmtree`` de ``iPod_Control/`` ni de directorios protegidos.
-
-    :param include_artwork: debe coincidir con el ``include_artwork`` usado al
-        crear ``archive`` (ver :func:`create_backup`). Necesario para que la
-        raíz ``iPod_Control/Artwork/`` se pode incluso cuando el backup se
-        tomó ANTES de que esa carpeta existiera (primera escritura de
-        artwork): el archivo no tiene ningún miembro ahí, así que sin esto
-        la reconciliación del paso 3 nunca la tocaría y dejaría huérfanos
-        cualquier ArtworkDB/.ithmb que el intento fallido llegó a instalar.
-    """
+    # Restaura el iPod a partir de un respaldo.
     archive = Path(archive)
     resolved = resolve_mount(candidates=candidates if candidates is not None else [mount])
     assert_writable(resolved)
@@ -452,10 +388,7 @@ def list_backups(
     backups_dir: Optional[os.PathLike | str] = None,
     guid: Optional[str] = None,
 ) -> list[BackupInfo]:
-    """Lista los backups existentes, del más reciente al más antiguo.
-
-    :param guid: si se indica, solo los de ese dispositivo; si no, todos.
-    """
+    # Lista los respaldos disponibles para un GUID.
     base = Path(backups_dir) if backups_dir is not None else default_backups_dir()
     if not base.is_dir():
         return []

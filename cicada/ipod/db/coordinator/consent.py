@@ -1,26 +1,4 @@
-"""Gate de consentimiento para la advertencia de firma no-Apple en el iPod.
-
-La primera escritura de Cicada en el iPod usa una firma HASHAB propia, no la de
-Apple — el firmware del iPod la acepta igual. Esa divergencia, por sí sola, NO
-rompe la compatibilidad con Music.app: verificado contra hardware real (ver
-docs/IPOD_INTEGRATION.md §0.3; mhbd y SQLite de Cicada son idénticos byte a byte
-a los de iOpenPod salvo IDs aleatorios esperados). El riesgo real de que Music.app
-rechace el dispositivo es que YA cargue residuo de otra herramienta (iOpenPod u
-otra) de una sesión previa — archivo de autoridad ajeno
-(iOpenPodSysInfoAuthority), SysInfo/SysInfoExtended reescritos, o .backup en
-sitio —, algo independiente de lo que escriba Cicada. `cicada ipod clean-foreign`
-ayuda a limpiar ese residuo (hoy solo cubre el archivo de autoridad, no los
-.backup ajenos).
-
-Este módulo persiste el consentimiento del usuario off-device
-en ~/.cicada/consent/<sha256(guid)[:16]>.json.
-
-Invariantes:
-- Persistencia estrictamente OFF-DEVICE (nunca se escribe en el iPod).
-- Clave por GUID hash para no exponer el identificador del dispositivo en rutas/logs.
-- Escritura atómica (temporal + os.replace).
-- Una vez otorgado, no se vuelve a requerir consentimiento para ese dispositivo.
-"""
+"""Control y persistencia de consentimiento para escrituras en iPod."""
 from __future__ import annotations
 
 import json
@@ -51,7 +29,7 @@ _DEFAULT_CICADA_VERSION = "0.1.0"
 
 
 class ConsentRequiredError(Exception):
-    """Se requiere consentimiento explícito del usuario antes de la primera escritura."""
+    pass
 
 
 @dataclass(frozen=True)
@@ -64,7 +42,6 @@ class ConsentRecord:
 
 
 def default_consent_dir() -> Path:
-    """``~/.cicada/consent`` (o $CICADA_HOME/consent)."""
     return cicada_home() / "consent"
 
 
@@ -72,7 +49,6 @@ _guid_hash = guid_hash
 
 
 def get_consent_path(guid: str | bytes, *, consent_dir: Optional[Path | str] = None) -> Path:
-    """Ruta al archivo JSON de consentimiento para el GUID dado."""
     base = Path(consent_dir) if consent_dir is not None else default_consent_dir()
     return base / f"{_guid_hash(guid)}.json"
 
@@ -99,7 +75,6 @@ def get_consent_record(
     *,
     consent_dir: Optional[Path | str] = None,
 ) -> Optional[ConsentRecord]:
-    """Obtiene el registro de consentimiento si existe y es válido, o None."""
     path = get_consent_path(guid, consent_dir=consent_dir)
     if not path.is_file():
         return None
@@ -122,7 +97,7 @@ def has_music_app_consent(
     *,
     consent_dir: Optional[Path | str] = None,
 ) -> bool:
-    """Indica si el usuario ya aprobó la advertencia de Music.app para este GUID."""
+    # Comprueba si el dispositivo tiene consentimiento registrado.
     record = get_consent_record(guid, consent_dir=consent_dir)
     return bool(record and record.music_app_ack)
 
@@ -134,7 +109,7 @@ def record_music_app_consent(
     timestamp: Optional[datetime] = None,
     consent_dir: Optional[Path | str] = None,
 ) -> ConsentRecord:
-    """Registra y persiste el consentimiento del usuario para el GUID indicado."""
+    # Registra el consentimiento del usuario para el dispositivo.
     dt = timestamp or datetime.now(timezone.utc)
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
@@ -161,7 +136,6 @@ def mark_first_write_committed(
     timestamp: Optional[datetime] = None,
     consent_dir: Optional[Path | str] = None,
 ) -> bool:
-    """Actualiza el registro de consentimiento marcando que la primera escritura se completó con éxito."""
     record = get_consent_record(guid, consent_dir=consent_dir)
     if not record or not record.music_app_ack:
         return False
@@ -188,10 +162,11 @@ def revoke_music_app_consent(
     *,
     consent_dir: Optional[Path | str] = None,
 ) -> bool:
-    """Elimina el registro de consentimiento para el GUID dado (útil para pruebas o reseteo)."""
+    # Revoca el consentimiento registrado para el dispositivo.
     path = get_consent_path(guid, consent_dir=consent_dir)
     try:
         path.unlink(missing_ok=True)
         return True
     except OSError:
         return False
+

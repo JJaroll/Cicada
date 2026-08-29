@@ -1,27 +1,4 @@
-"""Autoridad de SysInfo — reimplementación propia de Cicada (off-device).
-
-iOpenPod cachea la procedencia de la identidad del dispositivo en un archivo
-``iOpenPodSysInfoAuthority`` **dentro de** ``iPod_Control/Device/``, y llega a
-reescribir ``SysInfo``/``SysInfoExtended`` en el dispositivo. Eso hace que
-Music.app considere el iPod corrupto y pida restaurarlo.
-
-Cicada **no escribe nada en el volumen** por este camino. Esta reimplementación
-cumple la misma interfaz que espera ``info.py`` (``read_authority``,
-``check_authority_coverage``, ``update_sysinfo``, ``cache_sysinfo_extended`` +
-``SOURCE_RANK``/``SYSINFO_FIELDS``), pero persiste todo en ``~/.cicada/``:
-
-    ~/.cicada/sysinfo/<sha256(guid)[:16]>/
-    ├── authority.json     # procedencia; incluye el GUID real dentro
-    └── SysInfoExtended     # payload cacheado (bytes del plist)
-
-El caché se indexa por **FireWireGUID** (no por punto de montaje): el mismo iPod
-puede montarse en rutas distintas, y el usuario puede tener varios dispositivos.
-El nombre de carpeta es ``sha256(guid)[:16]`` para no exponer el identificador
-del dispositivo en rutas, logs ni capturas; el GUID real vive dentro del JSON.
-
-Ver docs/IPOD_INTEGRATION.md §0.2. Atribución en cicada/ipod/NOTICE (la lógica
-de ranking/procedencia y las tablas derivan de iOpenPod, MIT).
-"""
+"""Gestión off-device de la autoridad y caché de SysInfo."""
 from __future__ import annotations
 
 import hashlib
@@ -295,6 +272,7 @@ def _now() -> str:
 
 
 def read_authority(ipod_path: str) -> dict:
+    # Lee el registro de autoridad persistido para el iPod.
     """Lee nuestra autoridad (off-device) del dispositivo en ``ipod_path``.
 
     Devuelve ``{}`` si no hay caché. **Nunca** lee ni parsea el
@@ -308,6 +286,7 @@ def read_authority(ipod_path: str) -> dict:
 
 
 def check_authority_coverage(ipod_path: str) -> tuple[bool, dict[str, str]]:
+    # Comprueba cobertura de campos de autoridad del dispositivo.
     """¿Cubre la autoridad todos los campos core? Devuelve (all_tracked, sources).
 
     Igual semántica que iOpenPod: si el ``SysInfo``/``SysInfoExtended`` del
@@ -356,6 +335,7 @@ _SENTINELS = frozenset({"", "0", "unknown", "Unknown", None})
 
 
 def update_sysinfo(info: "DeviceInfo") -> None:
+    # Actualiza los datos de SysInfo en el caché.
     """Persiste la procedencia de la identidad de ``info`` — **sin tocar el volumen**.
 
     A diferencia de iOpenPod, no reescribe ``SysInfo`` en el dispositivo. Solo
@@ -412,6 +392,7 @@ def cache_sysinfo_extended(
     metadata: dict | None = None,
     expected_volume_identity_key: str = "",
 ) -> bool:
+    # Almacena SysInfoExtended en el caché off-device.
     """Cachea un SysInfoExtended **fuera del dispositivo** y refresca hashes.
 
     Escribe el payload en ``~/.cicada/sysinfo/<hash>/SysInfoExtended`` y su
@@ -473,6 +454,7 @@ def _normalise_sysinfo_extended(raw_xml: bytes | str) -> bytes:
 
 
 def clean_foreign_artifacts(ipod_path: str) -> list[str]:
+    # Limpia artefactos extraños creados por otras herramientas.
     """Elimina artefactos ajenos conocidos del dispositivo, vía write_guard.
 
     Cubre dos categorías, ambas confirmadas en hardware real como causa de

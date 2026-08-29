@@ -1,8 +1,4 @@
-"""Copia de audio de la biblioteca local al iPod — prerequisito de la escritura
-de base. plan/apply solo escriben la base de datos asumiendo que los audios ya
-están en el iPod; este módulo copia los archivos a ``iPod_Control/Music/Fxx/``,
-les asigna una ``location`` estilo iTunes, y coordina la limpieza en rollback.
-Solo AÑADE archivos con nombres únicos: nunca sobrescribe audio existente."""
+"""Transferencia y sincronización de archivos de audio al iPod."""
 from __future__ import annotations
 
 import logging
@@ -116,6 +112,7 @@ def _copy_into_ipod(source: Path, dest: Path, mount: Path) -> None:
 
 
 def copy_media(mount: str | Path, assignments: list[MediaAssignment]) -> list[str]:
+    # Copia los archivos de audio al almacenamiento del iPod.
     """Copia cada ``source`` a su destino en el iPod (confinado + durable). Devuelve
     las ``dest_relpath`` copiadas, para poder limpiarlas en rollback. Si alguna
     copia falla, borra lo ya copiado y relanza."""
@@ -133,6 +130,7 @@ def copy_media(mount: str | Path, assignments: list[MediaAssignment]) -> list[st
 
 
 def cleanup_media(mount: str | Path, relpaths: list[str]) -> None:
+    # Elimina archivos transferidos en caso de rollback.
     """Borra (confinado) los audios copiados. Best-effort: no lanza."""
     mount = Path(mount)
     for rel in relpaths:
@@ -240,6 +238,7 @@ def _playlist_dbids(pl, tid2db) -> list:
 
 
 def update_ipod_playlist(mount, playlist_name, ordered_dbids, *, device_info, consent_ack=False):
+    # Actualiza el orden de pistas de una playlist.
     """Reescribe UNA playlist existente con un nuevo orden de pistas (dbids),
     preservando todo lo demás (pistas + resto de playlists). Puro DB, sin copia de
     audio. Transaccional vía apply (backup + rollback). Devuelve el ApplyResult."""
@@ -295,6 +294,7 @@ def update_ipod_playlist(mount, playlist_name, ordered_dbids, *, device_info, co
 
 
 def delete_ipod_playlist(mount, playlist_name, *, device_info, consent_ack=False):
+    # Elimina una playlist existente del iPod.
     """Elimina UNA playlist existente del iPod, preservando todas las pistas
     y las demás playlists. Puro DB, sin borrar archivos de audio."""
     from cicada.ipod.db.coordinator.apply import apply
@@ -347,6 +347,7 @@ def delete_ipod_playlist(mount, playlist_name, *, device_info, consent_ack=False
 
 
 def set_ipod_playlist(mount, playlist_name, items, *, device_info, consent_ack=False):
+    # Crea o actualiza una playlist en el iPod.
     """Reescribe (o crea) una playlist con ``items`` ordenados: cada uno
     ``{"db_track_id": int}`` (ya en el iPod) o ``{"source_path": str, "title", ...}``
     (nuevo de la biblioteca: se copia su audio). Preserva el resto. Transaccional;
@@ -448,6 +449,7 @@ def set_ipod_playlist(mount, playlist_name, items, *, device_info, consent_ack=F
 
 
 def remove_track_from_ipod(mount, db_track_id, *, device_info, consent_ack=False):
+    # Elimina una pista y sus referencias del iPod.
     """Elimina UNA pista del iPod: la quita de la base (y de cualquier playlist que
     la referenciaba) y borra su archivo de audio. Transaccional vía ``apply``; el
     audio solo se borra **después** de un ``apply`` exitoso (si falla, nada cambia
@@ -509,6 +511,7 @@ def remove_track_from_ipod(mount, db_track_id, *, device_info, consent_ack=False
 
 
 def push_ratings_to_ipod(mount, ratings: dict, *, device_info, consent_ack=False):
+    # Actualiza las calificaciones de pistas en el iPod.
     """Escribe rating(s) en el iPod para los dbids dados — reescritura completa
     de la base (como toda escritura en este módulo), preservando playlists.
     ``ratings``: ``{db_track_id: rating_0_a_100}``. dbids que no existen en el
@@ -626,34 +629,16 @@ def _existing_master_playlist_name(lib) -> str | None:
 
 def sync_media_to_ipod(
     mount: str | Path,
-    new_tracks,
+    new_tracks: list[TrackInfo],
     *,
     device_info,
     consent_ack: bool = False,
+    playlists: list[tuple[str, list[str]]] | None = None,
     keep_existing: bool = True,
     master_playlist_name: str | None = None,
-    playlists=None,
+    on_progress: "Callable[[str, float], None] | None" = None,
 ):
-    """Copia el audio de ``new_tracks`` (cada uno con ``source_path`` local) al iPod
-    y reescribe la base (existentes + nuevos) de forma transaccional.
-
-    ``playlists``: lista opcional de ``{"name", "source_paths"}`` a **crear** en el
-    iPod. Las playlists existentes se **preservan** siempre (round-trip).
-
-    ``master_playlist_name``: si es ``None`` (caso normal — hoy no hay UI de
-    rename), se preserva el nombre que el dispositivo ya tenía puesto (leído
-    del ``Title`` de la playlist maestra existente, sin costo extra: ya se
-    parsea el ``iTunesCDB`` para preservar tracks). Sin eso, cada sync pisaba
-    en silencio un nombre real (p. ej. "iPod de Juan", puesto por el usuario
-    en Finder/Música) con el genérico "iPod" — pérdida de datos activa.
-    Si el dispositivo nunca tuvo una playlist maestra (primera sync), o el
-    caller pasa un nombre explícito, se usa ese valor.
-
-    Orden: asigna locations → ``create_plan`` (valida seguridad; no copia si falla)
-    → copia audio → ``apply`` (instala la base con su backup+rollback). En cualquier
-    fallo, ``apply`` restaura la base y aquí se borran los audios nuevos. ``apply``
-    queda intacto (sin riesgo de regresión). Devuelve el ``ApplyResult`` de apply.
-    """
+    # Sincroniza pistas y playlists de forma transaccional.
     from cicada.ipod.db.coordinator.apply import apply
     from cicada.ipod.db.coordinator.consent import ConsentRequiredError
     from cicada.ipod.db.coordinator.plan import create_plan

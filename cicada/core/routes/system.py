@@ -1,5 +1,4 @@
-"""Router de sistema/UI: selección nativa de carpeta/archivo (osascript en macOS,
-PowerShell en Windows) y chequeo de nueva versión contra las releases de GitHub."""
+"""Endpoints de integración del sistema y verificación de actualizaciones."""
 from __future__ import annotations
 
 import re
@@ -21,6 +20,7 @@ def _parse_version(v: str):
 
 @router.get("/api/select_folder")
 def select_folder():
+    # Abre el diálogo nativo para seleccionar una carpeta.
     try:
         if sys.platform == "darwin":
             script = 'tell application "System Events" to activate\n tell application "System Events" to return POSIX path of (choose folder)'
@@ -41,6 +41,7 @@ def select_folder():
 
 @router.get("/api/select_file")
 def select_file(types: str = "", multiple: bool = False):
+    # Abre el diálogo nativo para seleccionar archivos.
     try:
         if sys.platform == "darwin":
             if types:
@@ -101,6 +102,7 @@ end tell'''
 
 @router.get("/api/system/status")
 async def get_system_status():
+    # Devuelve el estado general y versión del sistema.
     from cicada.core.main import __version__, IPOD_AVAILABLE
 
     return {
@@ -112,6 +114,7 @@ async def get_system_status():
 
 @router.get("/api/check_update")
 async def check_update():
+    # Comprueba si hay actualizaciones disponibles en GitHub.
     from cicada.core.main import __version__
 
     try:
@@ -133,3 +136,4 @@ async def check_update():
         }
     except Exception:
         return {"update_available": False}
+
