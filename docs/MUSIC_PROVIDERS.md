@@ -1,7 +1,9 @@
 # Cicada — Proveedores de música más allá de Spotify
 
-**Estado (2026-08-29): interfaz `MusicProvider` implementada por Spotify y
-YouTube Music (playlist pública por ID, sin login). Deezer y Tidal siguen
+**Estado (2026-08-29): backend completo para YouTube Music (playlist
+pública por ID, sin login) — interfaz `MusicProvider`, provider, endpoints
+`/api/youtube_music/*`, verificado end-to-end contra la app real. Falta
+solo la UI (fuera de este corte, backend primero). Deezer y Tidal siguen
 como diseño diferido, sin implementar.** Diferido a una iteración posterior
 al release actual — no entra en 1.2.0.
 
@@ -213,6 +215,36 @@ usó para `requires_auth_for_own_library` vs. el `NotImplementedError` de
   paridad completa con Spotify**; soporte de álbum de YT Music queda fuera
   de este alcance (requeriría un segundo parser de URL/ID y una segunda
   llamada de API, `get_album()`, con su propio namespace de browseId).
+
+### 4.2 Endpoints (`/api/youtube_music/*`)
+
+`cicada/core/routes/youtube_music.py`, mismo patrón que `routes/spotify.py`:
+`POST /api/youtube_music/resolve` (metadata de una playlist pública) y
+`POST /api/youtube_music/download` (dispara descarga en segundo plano de
+tracks ya resueltos). No expone ningún endpoint de "mis playlists" — eso
+sigue bloqueado por `requires_auth_for_own_library`, no tiene sentido
+publicar una ruta que solo puede devolver `NotImplementedError`.
+
+`processing.py` ganó `process_youtube_music_selected_tracks()` y
+`_download_and_tag_tracks()` ahora acepta un `query_builder` inyectable:
+Spotify sigue usando la búsqueda heurística por texto (`ytsearch1:...`,
+comportamiento sin cambios, confirmado con test), YouTube Music usa el
+`provider_track_id` (videoId) exacto vía
+`https://music.youtube.com/watch?v={id}` — determinístico, sin depender de
+que la búsqueda por texto encuentre el video correcto primero.
+
+**Riesgo operacional confirmado en verificación real (2026-08-29):**
+`yt-dlp` puede empezar a exigir verificación anti-bot de YouTube
+("Sign in to confirm you're not a bot...") tras varias descargas seguidas
+desde la misma IP en poco tiempo — confirmado durante las pruebas de este
+mismo corte: la primera descarga (Paso 4) funcionó limpio, descargas
+posteriores en la misma sesión de pruebas empezaron a fallar con ese
+error, para *cualquier* video, no uno en particular. No es un bug de
+`AudioDownloader` ni de `YouTubeMusicProvider` — es el mismo riesgo de
+mantenimiento de yt-dlp que Cicada ya acepta para Spotify hoy (ver §0),
+simplemente más visible acá por el volumen de pruebas manuales
+consecutivas. Si un usuario reporta "la descarga de YouTube Music falla
+con error de login", este es el motivo más probable, no una regresión.
 
 ---
 

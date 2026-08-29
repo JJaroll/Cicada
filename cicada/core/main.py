@@ -60,6 +60,7 @@ from cicada.core.routes.settings import router as settings_router
 from cicada.core.routes.system import router as system_router
 from cicada.core.routes.library import router as library_router
 from cicada.core.routes.spotify import router as spotify_router
+from cicada.core.routes.youtube_music import router as youtube_music_router
 from cicada.core.routes.process import router as process_router
 from cicada.core.routes.podcasts import router as podcasts_router
 if IPOD_AVAILABLE:
@@ -68,6 +69,7 @@ app.include_router(settings_router)
 app.include_router(system_router)
 app.include_router(library_router)
 app.include_router(spotify_router)
+app.include_router(youtube_music_router)
 app.include_router(process_router)
 app.include_router(podcasts_router)
 

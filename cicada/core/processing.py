@@ -10,7 +10,7 @@ import os
 import random
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Callable, Dict, List
 
 from cicada.core.state import (
     audio_processor,
@@ -181,8 +181,28 @@ async def process_library(input_dir: str, output_dir: str):
         }))
 
 
-async def _download_and_tag_tracks(tracks: List[Dict[str, Any]], output_dir: str):
-    """ Descarga (YouTube Music) e inyecta metadata a una lista ya resuelta de tracks de Spotify. """
+def _ytsearch_query(track: Dict[str, Any]) -> str:
+    """Búsqueda heurística por texto — la que usa Spotify hoy, sin videoId propio."""
+    return f"ytsearch1:{track['artist']} {track['title']} Topic"
+
+
+def _exact_video_query(track: Dict[str, Any]) -> str:
+    """Descarga determinística por videoId exacto — la que puede usar cualquier
+    proveedor que ya lo trae en provider_track_id (p.ej. YouTube Music), en vez
+    de apoyarse en que la búsqueda heurística encuentre el video correcto."""
+    return f"https://music.youtube.com/watch?v={track['provider_track_id']}"
+
+
+async def _download_and_tag_tracks(
+    tracks: List[Dict[str, Any]],
+    output_dir: str,
+    query_builder: Callable[[Dict[str, Any]], str] = _ytsearch_query,
+    source_label: str = "Spotify",
+):
+    """ Descarga (YouTube) e inyecta metadata a una lista ya resuelta de tracks
+    de un proveedor de música. query_builder decide cómo localizar el video en
+    YouTube: búsqueda heurística por texto (Spotify, sin id propio) o id exacto
+    (YouTube Music, que ya trae provider_track_id). """
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
 
@@ -203,8 +223,8 @@ async def _download_and_tag_tracks(tracks: List[Dict[str, Any]], output_dir: str
         await manager.broadcast(json.dumps({"type": "cover", "url": track.get('artwork_url', '')}))
 
         try:
-            search_query = f"ytsearch1:{track['artist']} {track['title']} Topic"
-            file_path = await download_manager.download_audio(search_query, output_dir)
+            query = query_builder(track)
+            file_path = await download_manager.download_audio(query, output_dir)
             await audio_processor.apply_metadata_and_move(file_path, output_dir, track)
         except Exception as e:
             await manager.broadcast(json.dumps({
@@ -216,9 +236,9 @@ async def _download_and_tag_tracks(tracks: List[Dict[str, Any]], output_dir: str
                 await asyncio.sleep(random.uniform(4, 9))
 
     if process_control.cancel_requested:
-        await manager.broadcast(json.dumps({"type": "done", "message": "Descarga de Spotify cancelada.", "report_path": ""}))
+        await manager.broadcast(json.dumps({"type": "done", "message": f"Descarga de {source_label} cancelada.", "report_path": ""}))
     else:
-        await manager.broadcast(json.dumps({"type": "done", "message": "Descarga de Spotify completada.", "report_path": ""}))
+        await manager.broadcast(json.dumps({"type": "done", "message": f"Descarga de {source_label} completada.", "report_path": ""}))
 
 
 async def process_spotify_download(url: str, output_dir: str):
@@ -236,3 +256,9 @@ async def process_spotify_download(url: str, output_dir: str):
 
 async def process_spotify_selected_tracks(tracks: List[Dict[str, Any]], output_dir: str):
     await _download_and_tag_tracks(tracks, output_dir)
+
+
+async def process_youtube_music_selected_tracks(tracks: List[Dict[str, Any]], output_dir: str):
+    await _download_and_tag_tracks(
+        tracks, output_dir, query_builder=_exact_video_query, source_label="YouTube Music"
+    )
