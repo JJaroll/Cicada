@@ -1,6 +1,6 @@
 # 🪲 Cicada (スマート音楽オーガナイザー)
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-green) ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey) ![License](https://img.shields.io/badge/License-GPLv3-blue) ![Version](https://img.shields.io/badge/Version-1.1.1-blue)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-green) ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey) ![License](https://img.shields.io/badge/License-GPLv3-blue) ![Version](https://img.shields.io/badge/Version-2.0.0-blue)
 
 *🌍 [Español](README.md) | [English](README_en.md) | **日本語***
 
@@ -26,12 +26,12 @@ Cicadaは曲を識別し、完全なメタデータ（タイトル、アーテ�
 
 ## 📥 ダウンロード
 
-お使いのオペレーティングシステムに合わせて最新バージョン（v1.1.1）をダウンロードできます：
+お使いのオペレーティングシステムに合わせて最新バージョン（v2.0.0）をダウンロードできます：
 
-*   **Windows:** [Cicada_Setup_Windows.exe](https://github.com/JJaroll/Cicada/releases/download/v1.1.1/Cicada_Setup_Windows.exe)
-*   **macOS (Apple Silicon):** [Cicada_macOS_ARM64.dmg](https://github.com/JJaroll/Cicada/releases/download/v1.1.1/Cicada_macOS_ARM64.dmg)
-*   **macOS (Intel):** [Cicada_macOS_Intel.dmg](https://github.com/JJaroll/Cicada/releases/download/v1.1.1/Cicada_macOS_Intel.dmg)
-*   **Linux:** [Cicada_Linux.AppImage](https://github.com/JJaroll/Cicada/releases/download/v1.1.1/Cicada_Linux.AppImage)
+*   **Windows:** [Cicada_Setup_Windows.exe](https://github.com/JJaroll/Cicada/releases/download/v2.0.0/Cicada_Setup_Windows.exe)
+*   **macOS (Apple Silicon):** [Cicada_macOS_ARM64.dmg](https://github.com/JJaroll/Cicada/releases/download/v2.0.0/Cicada_macOS_ARM64.dmg)
+*   **macOS (Intel):** [Cicada_macOS_Intel.dmg](https://github.com/JJaroll/Cicada/releases/download/v2.0.0/Cicada_macOS_Intel.dmg)
+*   **Linux:** [Cicada_Linux.AppImage](https://github.com/JJaroll/Cicada/releases/download/v2.0.0/Cicada_Linux.AppImage)
 
 > **⚠️ macOSユーザーへの注意:**
 > オープンソースアプリケーションであるため、macOSはセキュリティ上の理由（Gatekeeper）で初回の実行をブロックする場合があります。アプリがブロックされた場合は、**システム設定 > プライバシーとセキュリティ**に移動し、セキュリティセクションまでスクロールして、**「このまま開く」**ボタンをクリックして実行を許可してください。

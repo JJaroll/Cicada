@@ -99,7 +99,7 @@ if sys.platform == "darwin":
         icon=APP_ICON,
         bundle_identifier="com.jjaroll.cicada",
         info_plist={
-            "CFBundleShortVersionString": "1.0.2",
+            "CFBundleShortVersionString": "2.0.0",
             "NSHighResolutionCapable": True,
             "LSUIElement": False,
         },

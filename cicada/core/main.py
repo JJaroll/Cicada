@@ -10,7 +10,7 @@ Licencia: GNU GPLv3
 """
 
 __author__ = "JJaroll"
-__version__ = "1.1.1"
+__version__ = "2.0.0"
 __maintainer__ = "JJaroll"
 __status__ = "Production"
 
@@ -1575,7 +1575,7 @@ def print_signature():
     ║ ╚█████╔╝╚█████╔╝ ██║  ██║██║  ██║╚██████╔╝███████╗███████╗           ║
     ║  ╚════╝  ╚════╝  ╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚══════╝╚══════╝           ║
     ║                                                                      ║
-    ║   Cicada v1.1.1 - "Dando vida a los píxeles."                        ║
+    ║   Cicada v2.0.0 - "Dando vida a los píxeles."                        ║
     ║   github.com/JJaroll                                                 ║
     ║                                                                      ║
     ╚══════════════════════════════════════════════════════════════════════╝

@@ -1,6 +1,6 @@
 # 🪲 Cicada (Organizador Musical Inteligente)
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-green) ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey) ![License](https://img.shields.io/badge/License-GPLv3-blue) ![Version](https://img.shields.io/badge/Version-1.1.1-blue)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-green) ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey) ![License](https://img.shields.io/badge/License-GPLv3-blue) ![Version](https://img.shields.io/badge/Version-2.0.0-blue)
 
 *🌍 **Español** | [English](README_en.md) | [日本語](README_ja.md)*
 
@@ -26,12 +26,12 @@ Cicada identifica tus canciones, les aplica metadatos completos (título, artist
 
 ## 📥 Descargas
 
-Puedes descargar la versión más reciente (v1.1.1) según tu sistema operativo:
+Puedes descargar la versión más reciente (v2.0.0) según tu sistema operativo:
 
-*   **Windows:** [Cicada_Setup_Windows.exe](https://github.com/JJaroll/Cicada/releases/download/v1.1.1/Cicada_Setup_Windows.exe)
-*   **macOS (Apple Silicon):** [Cicada_macOS_ARM64.dmg](https://github.com/JJaroll/Cicada/releases/download/v1.1.1/Cicada_macOS_ARM64.dmg)
-*   **macOS (Intel):** [Cicada_macOS_Intel.dmg](https://github.com/JJaroll/Cicada/releases/download/v1.1.1/Cicada_macOS_Intel.dmg)
-*   **Linux:** [Cicada_Linux.AppImage](https://github.com/JJaroll/Cicada/releases/download/v1.1.1/Cicada_Linux.AppImage)
+*   **Windows:** [Cicada_Setup_Windows.exe](https://github.com/JJaroll/Cicada/releases/download/v2.0.0/Cicada_Setup_Windows.exe)
+*   **macOS (Apple Silicon):** [Cicada_macOS_ARM64.dmg](https://github.com/JJaroll/Cicada/releases/download/v2.0.0/Cicada_macOS_ARM64.dmg)
+*   **macOS (Intel):** [Cicada_macOS_Intel.dmg](https://github.com/JJaroll/Cicada/releases/download/v2.0.0/Cicada_macOS_Intel.dmg)
+*   **Linux:** [Cicada_Linux.AppImage](https://github.com/JJaroll/Cicada/releases/download/v2.0.0/Cicada_Linux.AppImage)
 
 > **⚠️ Nota para usuarios de macOS:**
 > Al ser una aplicación de código abierto, macOS podría impedir su ejecución inicial por seguridad (Gatekeeper). Si el sistema bloquea la app, simplemente dirígete a **Ajustes del Sistema > Privacidad y seguridad**, desplázate hasta el apartado de seguridad y haz clic en el botón **"Abrir de todos modos"** para autorizar la ejecución.
