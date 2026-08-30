@@ -1,6 +1,6 @@
 # 🪲 Cicada (Organizador Musical Inteligente)
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-green) ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey) ![License](https://img.shields.io/badge/License-GPLv3-blue) ![Version](https://img.shields.io/badge/Version-2.0.0-blue)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-green) ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey) ![License](https://img.shields.io/badge/License-GPLv3-blue) ![Version](https://img.shields.io/badge/Version-2.0.0-blue) [![Ko-fi](https://img.shields.io/badge/Ko--fi-Apóyame-72a4f2?logo=kofi&logoColor=white)](https://ko-fi.com/jjaroll)
 
 *🌍 **Español** | [English](README_en.md) | [日本語](README_ja.md)*
 
@@ -249,6 +249,14 @@ Cicada es una aplicación local. A diferencia de los gestores de música basados
 * **Claves Locales**: Tus claves de API de Spotify y AcoustID se almacenan de forma segura en tu propio dispositivo.
 * **Sin Telemetría**: No hay rastreo, análisis de datos, ni recopilación de información.
 * **Conexión Directa**: Cuando te conectas a Spotify o AcoustID, la aplicación se comunica directamente con esos servicios. El desarrollador no tiene acceso a tu cuenta, tus listas de reproducción ni a tus claves de API.
+
+---
+
+## ☕ Apoyo
+
+Si Cicada te ha sido de utilidad y deseas apoyar el desarrollo independiente del proyecto:
+
+[![Apóyame en Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/jjaroll)
 
 ---
 

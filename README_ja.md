@@ -1,6 +1,6 @@
 # 🪲 Cicada (スマート音楽オーガナイザー)
 
-![Python](https://img.shields.io/badge/Python-3.10%2B-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-green) ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey) ![License](https://img.shields.io/badge/License-GPLv3-blue) ![Version](https://img.shields.io/badge/Version-2.0.0-blue)
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue) ![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-green) ![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey) ![License](https://img.shields.io/badge/License-GPLv3-blue) ![Version](https://img.shields.io/badge/Version-2.0.0-blue) [![Ko-fi](https://img.shields.io/badge/Ko--fi-支援-72a4f2?logo=kofi&logoColor=white)](https://ko-fi.com/jjaroll)
 
 *🌍 [Español](README.md) | [English](README_en.md) | **日本語***
 
@@ -250,6 +250,14 @@ Cicadaはローカルファーストのアプリケーションです。クラ�
 * **ローカルキー**: SpotifyおよびAcoustIDのAPIキーは、ご自身のデバイスに安全に保存されます。
 * **テレメトリなし**: 追跡、分析、データ収集は一切行われません。
 * **直接接続**: SpotifyやAcoustIDに接続する際、アプリケーションはそれらのサービスと直接通信します。開発者があなたのアカウント、プレイリスト、またはAPIキーにアクセスすることはありません。
+
+---
+
+## ☕ 開発の支援
+ 
+Cicadaが役に立ち、今後の開発を支援していただける場合はこちらからサポートをお願いします：
+
+[![Ko-fiで支援](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/jjaroll)
 
 ---
 
