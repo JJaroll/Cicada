@@ -1585,7 +1585,7 @@ def print_signature():
     except UnicodeEncodeError:
         pass
 
-if __name__ == "__main__":
+def main():
     import threading
     import uvicorn
     import webbrowser
@@ -1616,3 +1616,7 @@ if __name__ == "__main__":
 
     if not run_tray_icon(APP_URL, on_quit=_quit_app):
         server_thread.join()
+
+
+if __name__ == "__main__":
+    main()

@@ -2,7 +2,17 @@
 
 import sys
 
+from PyInstaller.utils.hooks import collect_data_files
+
 block_cipher = None
+
+# ytmusicapi carga sus traducciones (locales/*/LC_MESSAGES/base.mo) vía
+# gettext.translation() en tiempo de ejecución; no tiene hook propio de
+# PyInstaller, así que el análisis estático no detecta esos .mo como
+# dependencia y quedan fuera del bundle. Sin esto, YouTubeMusicProvider()
+# revienta con FileNotFoundError al arrancar (falla en cicada.core.state,
+# que lo instancia a nivel de módulo). Confirmado con un build real.
+YTMUSICAPI_DATAS = collect_data_files("ytmusicapi")
 
 # --- Icono según plataforma -------------------------------------------------
 if sys.platform == "win32":
@@ -33,22 +43,12 @@ elif sys.platform.startswith("linux"):
     HIDDEN_IMPORTS.append("pystray._xorg")
     HIDDEN_IMPORTS.append("Xlib")
 
-from PyInstaller.utils.hooks import collect_submodules
-
-# run.py usa runpy.run_module("cicada.core.main", ...) — un import
-# dinámico por string que el analizador estático de PyInstaller no
-# puede seguir. Sin esto, el paquete cicada/ completo (y por ende toda
-# la app) queda fuera del bundle: compila sin error, pero el binario
-# final falla con ModuleNotFoundError: No module named 'cicada' al
-# arrancar. Confirmado corriendo un build real.
-CICADA_SUBMODULES = collect_submodules("cicada")
-
 a = Analysis(
     ["run.py"],
     pathex=[],
     binaries=[],
-    datas=[("static", "static")],
-    hiddenimports=HIDDEN_IMPORTS + CICADA_SUBMODULES,
+    datas=[("static", "static")] + YTMUSICAPI_DATAS,
+    hiddenimports=HIDDEN_IMPORTS,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
