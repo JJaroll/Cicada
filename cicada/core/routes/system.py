@@ -16,35 +16,24 @@ GITHUB_REPO = "JJaroll/Cicada"
 # los diálogos nativos de Windows (FolderBrowserDialog/OpenFileDialog) se
 # lanzan desde un PowerShell hijo que arranca en segundo plano, sin foco.
 # Windows bloquea por diseño que un proceso sin foco se lo robe a otro
-# (aquí, el navegador) — ni TopMost en el Form propio ni una llamada
-# simple a SetForegroundWindow alcanzan (ambos confirmados insuficientes
-# en una Windows real: el diálogo seguía sin aparecer, ni siquiera en la
-# barra de tareas). La técnica que sí funciona de forma confiable es
-# AttachThreadInput: se adjunta temporalmente el hilo de PowerShell al
-# hilo de la ventana que tiene el foco actual (el navegador), lo que hace
-# que Windows trate a ambos como el mismo "contexto de input" y permite
-# que BringWindowToTop/SetForegroundWindow sí funcionen — mismo patrón
-# que usan las herramientas de automatización de UI cuando
-# SetForegroundWindow solo no basta.
+# (aquí, el navegador) — TopMost solo, SetForegroundWindow directo, e
+# incluso AttachThreadInput + BringWindowToTop (el patrón estándar de
+# herramientas de automatización de UI) fueron probados y confirmados
+# insuficientes en una Windows real: el diálogo seguía apareciendo
+# detrás del navegador sin ningún indicio (ni en la barra de tareas).
+#
+# En vez de seguir peleando para que el diálogo le robe el foco al
+# navegador, se minimiza la ventana que actualmente tiene el foco justo
+# antes de mostrar el diálogo (y se restaura al cerrarlo) — elimina la
+# ventana competidora en vez de forzar el diálogo por encima de ella.
 _WIN32_FOCUS_HELPER = (
     "Add-Type -Name Win32 -Namespace FocusHelper -MemberDefinition @'"
     "\n[DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow();"
-    "\n[DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);"
-    "\n[DllImport(\"kernel32.dll\")] public static extern uint GetCurrentThreadId();"
-    "\n[DllImport(\"user32.dll\")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);"
-    "\n[DllImport(\"user32.dll\")] public static extern bool BringWindowToTop(IntPtr hWnd);"
-    "\n[DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr hWnd);"
-    "\npublic static void ForceForeground(IntPtr hWnd) {"
-    "\n    IntPtr fg = GetForegroundWindow();"
-    "\n    uint fgThread = GetWindowThreadProcessId(fg, out uint _);"
-    "\n    uint curThread = GetCurrentThreadId();"
-    "\n    bool attached = fgThread != curThread && AttachThreadInput(curThread, fgThread, true);"
-    "\n    BringWindowToTop(hWnd);"
-    "\n    SetForegroundWindow(hWnd);"
-    "\n    if (attached) AttachThreadInput(curThread, fgThread, false);"
-    "\n}"
+    "\n[DllImport(\"user32.dll\")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);"
     "\n'@\n"
 )
+_SW_MINIMIZE = 6
+_SW_RESTORE = 9
 
 
 def _parse_version(v: str):
@@ -62,23 +51,19 @@ def select_folder():
             path = result.stdout.strip()
             return {"path": path} if path else {"error": "Cancelado"}
         elif sys.platform == "win32":
-            # Ver _WIN32_FOCUS_HELPER arriba: sin esto, el diálogo se abre
-            # detrás del navegador sin dar ningún indicio (confirmado en
-            # una Windows real, incluso con TopMost + SetForegroundWindow
-            # simple — ninguno de los dos alcanzó por separado).
+            # Ver _WIN32_FOCUS_HELPER arriba: minimiza la ventana en foco
+            # (el navegador) antes de mostrar el diálogo, y la restaura al
+            # cerrar — evita el problema de foco en vez de pelear contra
+            # la restricción de Windows.
             script = (
                 "Add-Type -AssemblyName System.windows.forms; "
                 f"{_WIN32_FOCUS_HELPER} "
-                "$owner = New-Object System.Windows.Forms.Form; "
-                "$owner.TopMost = $true; $owner.StartPosition = 'Manual'; "
-                "$owner.Location = New-Object System.Drawing.Point(-2000, -2000); "
-                "$owner.Size = New-Object System.Drawing.Size(1, 1); "
-                "$owner.ShowInTaskbar = $false; $owner.Show(); "
-                "[FocusHelper.Win32]::ForceForeground($owner.Handle); "
-                "$owner.Activate(); "
+                "$prevFg = [FocusHelper.Win32]::GetForegroundWindow(); "
+                f"[FocusHelper.Win32]::ShowWindow($prevFg, {_SW_MINIMIZE}) | Out-Null; "
+                "Start-Sleep -Milliseconds 150; "
                 "$f = New-Object System.Windows.Forms.FolderBrowserDialog; "
-                "if ($f.ShowDialog($owner) -eq 'OK') { Write-Output $f.SelectedPath }; "
-                "$owner.Close()"
+                "if ($f.ShowDialog() -eq 'OK') { Write-Output $f.SelectedPath }; "
+                f"[FocusHelper.Win32]::ShowWindow($prevFg, {_SW_RESTORE}) | Out-Null"
             )
             kwargs = {'creationflags': 0x08000000}
             result = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, **kwargs)
@@ -138,18 +123,16 @@ end tell'''
             multi_cmd = "$f.Multiselect = $true;" if multiple else ""
             out_cmd = "Write-Output ($f.FileNames -join '`n')" if multiple else "Write-Output $f.FileName"
             # Ver _WIN32_FOCUS_HELPER arriba: mismo problema de foco que
-            # select_folder(), mismo fix.
-            owner_setup = (
+            # select_folder(), mismo fix (minimizar la ventana en foco en
+            # vez de forzar el diálogo por encima de ella).
+            focus_setup = (
                 f"{_WIN32_FOCUS_HELPER} "
-                "$owner = New-Object System.Windows.Forms.Form; "
-                "$owner.TopMost = $true; $owner.StartPosition = 'Manual'; "
-                "$owner.Location = New-Object System.Drawing.Point(-2000, -2000); "
-                "$owner.Size = New-Object System.Drawing.Size(1, 1); "
-                "$owner.ShowInTaskbar = $false; $owner.Show(); "
-                "[FocusHelper.Win32]::ForceForeground($owner.Handle); "
-                "$owner.Activate();"
+                "$prevFg = [FocusHelper.Win32]::GetForegroundWindow(); "
+                f"[FocusHelper.Win32]::ShowWindow($prevFg, {_SW_MINIMIZE}) | Out-Null; "
+                "Start-Sleep -Milliseconds 150;"
             )
-            script = f"Add-Type -AssemblyName System.windows.forms; {owner_setup} $f = New-Object System.Windows.Forms.OpenFileDialog; {filter_str} {multi_cmd} if ($f.ShowDialog($owner) -eq 'OK') {{ {out_cmd} }}; $owner.Close()"
+            restore_cmd = f"[FocusHelper.Win32]::ShowWindow($prevFg, {_SW_RESTORE}) | Out-Null"
+            script = f"Add-Type -AssemblyName System.windows.forms; {focus_setup} $f = New-Object System.Windows.Forms.OpenFileDialog; {filter_str} {multi_cmd} if ($f.ShowDialog() -eq 'OK') {{ {out_cmd} }}; {restore_cmd}"
             kwargs = {'creationflags': 0x08000000}
             result = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, **kwargs)
             output = result.stdout.strip()
