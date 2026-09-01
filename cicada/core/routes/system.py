@@ -29,18 +29,24 @@ def select_folder():
             return {"path": path} if path else {"error": "Cancelado"}
         elif sys.platform == "win32":
             # Cicada.exe corre con console=False (--windowed, sin ventana
-            # propia): un FolderBrowserDialog lanzado sin owner no tiene de
-            # qué tomar foco y puede abrirse detrás del navegador, dando la
-            # impresión de que el botón "Elegir" no responde. Un Form
-            # oculto con TopMost=$true como owner del diálogo lo trae al
-            # frente. Confirmado el síntoma en una Windows real.
+            # propia): PowerShell arranca como proceso de fondo, y Windows
+            # bloquea por diseño que un proceso que no tiene el foco se lo
+            # robe a otro (aquí, el navegador) — un simple TopMost en el
+            # Form propio NO alcanza, confirmado en una Windows real (el
+            # diálogo seguía sin aparecer ni en la barra de tareas). Hace
+            # falta invocar SetForegroundWindow vía P/Invoke sobre el
+            # handle real de la ventana ya creada para forzar el foco.
             script = (
                 "Add-Type -AssemblyName System.windows.forms; "
+                "Add-Type -Name Win32 -Namespace SetFg -MemberDefinition "
+                "'[DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr hWnd);'; "
                 "$owner = New-Object System.Windows.Forms.Form; "
                 "$owner.TopMost = $true; $owner.StartPosition = 'Manual'; "
                 "$owner.Location = New-Object System.Drawing.Point(-2000, -2000); "
                 "$owner.Size = New-Object System.Drawing.Size(1, 1); "
-                "$owner.ShowInTaskbar = $false; $owner.Show(); $owner.Activate(); "
+                "$owner.ShowInTaskbar = $false; $owner.Show(); "
+                "[SetFg.Win32]::SetForegroundWindow($owner.Handle) | Out-Null; "
+                "$owner.Activate(); "
                 "$f = New-Object System.Windows.Forms.FolderBrowserDialog; "
                 "if ($f.ShowDialog($owner) -eq 'OK') { Write-Output $f.SelectedPath }; "
                 "$owner.Close()"
@@ -102,15 +108,21 @@ end tell'''
                 filter_str = f"$f.Filter = 'Archivos compatibles ({';'.join(exts)})|{';'.join(exts)}|Todos los archivos (*.*)|*.*';"
             multi_cmd = "$f.Multiselect = $true;" if multiple else ""
             out_cmd = "Write-Output ($f.FileNames -join '`n')" if multiple else "Write-Output $f.FileName"
-            # Mismo problema de foco que select_folder: sin owner, el
-            # diálogo puede abrirse detrás del navegador en el .exe
-            # --windowed. Ver comentario en select_folder().
+            # Mismo problema de foco que select_folder: Windows bloquea que
+            # un proceso sin foco (PowerShell arrancado en segundo plano)
+            # se lo robe a otro. TopMost solo no alcanza — hace falta
+            # SetForegroundWindow vía P/Invoke. Ver comentario en
+            # select_folder().
             owner_setup = (
+                "Add-Type -Name Win32 -Namespace SetFg -MemberDefinition "
+                "'[DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr hWnd);'; "
                 "$owner = New-Object System.Windows.Forms.Form; "
                 "$owner.TopMost = $true; $owner.StartPosition = 'Manual'; "
                 "$owner.Location = New-Object System.Drawing.Point(-2000, -2000); "
                 "$owner.Size = New-Object System.Drawing.Size(1, 1); "
-                "$owner.ShowInTaskbar = $false; $owner.Show(); $owner.Activate();"
+                "$owner.ShowInTaskbar = $false; $owner.Show(); "
+                "[SetFg.Win32]::SetForegroundWindow($owner.Handle) | Out-Null; "
+                "$owner.Activate();"
             )
             script = f"Add-Type -AssemblyName System.windows.forms; {owner_setup} $f = New-Object System.Windows.Forms.OpenFileDialog; {filter_str} {multi_cmd} if ($f.ShowDialog($owner) -eq 'OK') {{ {out_cmd} }}; $owner.Close()"
             kwargs = {'creationflags': 0x08000000}
