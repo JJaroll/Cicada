@@ -28,7 +28,23 @@ def select_folder():
             path = result.stdout.strip()
             return {"path": path} if path else {"error": "Cancelado"}
         elif sys.platform == "win32":
-            script = "Add-Type -AssemblyName System.windows.forms; $f = New-Object System.Windows.Forms.FolderBrowserDialog; if ($f.ShowDialog() -eq 'OK') { Write-Output $f.SelectedPath }"
+            # Cicada.exe corre con console=False (--windowed, sin ventana
+            # propia): un FolderBrowserDialog lanzado sin owner no tiene de
+            # qué tomar foco y puede abrirse detrás del navegador, dando la
+            # impresión de que el botón "Elegir" no responde. Un Form
+            # oculto con TopMost=$true como owner del diálogo lo trae al
+            # frente. Confirmado el síntoma en una Windows real.
+            script = (
+                "Add-Type -AssemblyName System.windows.forms; "
+                "$owner = New-Object System.Windows.Forms.Form; "
+                "$owner.TopMost = $true; $owner.StartPosition = 'Manual'; "
+                "$owner.Location = New-Object System.Drawing.Point(-2000, -2000); "
+                "$owner.Size = New-Object System.Drawing.Size(1, 1); "
+                "$owner.ShowInTaskbar = $false; $owner.Show(); $owner.Activate(); "
+                "$f = New-Object System.Windows.Forms.FolderBrowserDialog; "
+                "if ($f.ShowDialog($owner) -eq 'OK') { Write-Output $f.SelectedPath }; "
+                "$owner.Close()"
+            )
             kwargs = {'creationflags': 0x08000000}
             result = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, **kwargs)
             path = result.stdout.strip()
@@ -86,7 +102,17 @@ end tell'''
                 filter_str = f"$f.Filter = 'Archivos compatibles ({';'.join(exts)})|{';'.join(exts)}|Todos los archivos (*.*)|*.*';"
             multi_cmd = "$f.Multiselect = $true;" if multiple else ""
             out_cmd = "Write-Output ($f.FileNames -join '`n')" if multiple else "Write-Output $f.FileName"
-            script = f"Add-Type -AssemblyName System.windows.forms; $f = New-Object System.Windows.Forms.OpenFileDialog; {filter_str} {multi_cmd} if ($f.ShowDialog() -eq 'OK') {{ {out_cmd} }}"
+            # Mismo problema de foco que select_folder: sin owner, el
+            # diálogo puede abrirse detrás del navegador en el .exe
+            # --windowed. Ver comentario en select_folder().
+            owner_setup = (
+                "$owner = New-Object System.Windows.Forms.Form; "
+                "$owner.TopMost = $true; $owner.StartPosition = 'Manual'; "
+                "$owner.Location = New-Object System.Drawing.Point(-2000, -2000); "
+                "$owner.Size = New-Object System.Drawing.Size(1, 1); "
+                "$owner.ShowInTaskbar = $false; $owner.Show(); $owner.Activate();"
+            )
+            script = f"Add-Type -AssemblyName System.windows.forms; {owner_setup} $f = New-Object System.Windows.Forms.OpenFileDialog; {filter_str} {multi_cmd} if ($f.ShowDialog($owner) -eq 'OK') {{ {out_cmd} }}; $owner.Close()"
             kwargs = {'creationflags': 0x08000000}
             result = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, **kwargs)
             output = result.stdout.strip()
