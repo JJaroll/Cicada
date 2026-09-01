@@ -7,6 +7,8 @@ import os
 import subprocess
 import sys
 
+from cicada.core.ffmpeg_provisioner import is_ffmpeg_available, resolve_ffmpeg_dir
+
 logger = logging.getLogger(__name__)
 
 
@@ -32,6 +34,14 @@ class AudioDownloader:
 
         os.makedirs(download_path, exist_ok=True)
 
+        if not is_ffmpeg_available():
+            raise RuntimeError(
+                "No se encontró ffmpeg en este equipo. Cicada lo necesita para "
+                "convertir el audio descargado. Instalalo (por ejemplo, con "
+                "'brew install ffmpeg' en macOS) y volvé a intentar."
+            )
+        ffmpeg_location = resolve_ffmpeg_dir()
+
         ydl_opts = {
             'format': 'bestaudio[ext=m4a]/bestaudio/best',
             'outtmpl': os.path.join(download_path, '%(title)s.%(ext)s'),
@@ -44,6 +54,8 @@ class AudioDownloader:
             'no_warnings': True,
             'noprogress': True,
         }
+        if ffmpeg_location:
+            ydl_opts['ffmpeg_location'] = ffmpeg_location
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(query, download=True)

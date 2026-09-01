@@ -27,16 +27,43 @@ if getattr(sys, 'frozen', False):
         if sys.stderr is None:
             sys.stderr = _log_file
 
+import asyncio
+import json
 import logging
 import threading
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
+from cicada.core.ffmpeg_provisioner import ensure_ffmpeg
+from cicada.core.state import manager
+
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    # Se asegura de que haya un ffmpeg utilizable (descargándolo a la
+    # caché de la app si hace falta) sin bloquear el arranque del
+    # servidor. Si el usuario ya tiene la página abierta, ve el
+    # progreso por WebSocket; si no, la descarga sigue en segundo plano
+    # y el mensaje simplemente no llega a nadie (manager.broadcast no
+    # falla sin conexiones activas).
+    def _report(message: str) -> None:
+        try:
+            asyncio.get_running_loop().create_task(
+                manager.broadcast(json.dumps({"type": "info", "message": message}))
+            )
+        except RuntimeError:
+            pass
+
+    asyncio.create_task(ensure_ffmpeg(on_progress=_report))
+    yield
+
+
+app = FastAPI(lifespan=_lifespan)
 
 try:
     from cicada.ipod.api import router as ipod_router
