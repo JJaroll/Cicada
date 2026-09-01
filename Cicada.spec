@@ -57,7 +57,7 @@ a = Analysis(
     ["run.py"],
     pathex=[],
     binaries=[],
-    datas=[("static", "static")],
+    datas=[("static", "static")] + YTMUSICAPI_DATAS,
     hiddenimports=HIDDEN_IMPORTS + CICADA_SUBMODULES,
     hookspath=[],
     hooksconfig={},
