@@ -2,7 +2,17 @@
 
 import sys
 
+from PyInstaller.utils.hooks import collect_data_files
+
 block_cipher = None
+
+# ytmusicapi carga sus traducciones (locales/*/LC_MESSAGES/base.mo) vía
+# gettext.translation() en tiempo de ejecución; no tiene hook propio de
+# PyInstaller, así que el análisis estático no detecta esos .mo como
+# dependencia y quedan fuera del bundle. Sin esto, YouTubeMusicProvider()
+# revienta con FileNotFoundError al arrancar (falla en cicada.core.state,
+# que lo instancia a nivel de módulo). Confirmado con un build real.
+YTMUSICAPI_DATAS = collect_data_files("ytmusicapi")
 
 # --- Icono según plataforma -------------------------------------------------
 if sys.platform == "win32":
@@ -33,7 +43,7 @@ elif sys.platform.startswith("linux"):
     HIDDEN_IMPORTS.append("pystray._xorg")
     HIDDEN_IMPORTS.append("Xlib")
 
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
+from PyInstaller.utils.hooks import collect_submodules
 
 # run.py usa runpy.run_module("cicada.core.main", ...) — un import
 # dinámico por string que el analizador estático de PyInstaller no
@@ -43,19 +53,11 @@ from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 # arrancar. Confirmado corriendo un build real.
 CICADA_SUBMODULES = collect_submodules("cicada")
 
-# ytmusicapi carga sus .mo de traducción (locales/<lang>/LC_MESSAGES/base.mo)
-# como datos, no como módulos Python — el analizador estático no los
-# detecta. Sin esto, YTMusic() revienta con FileNotFoundError: "No
-# translation file found for domain: 'base'" apenas arranca el .app
-# empaquetado (confirmado con un build real), aunque "python run.py"
-# funcione bien porque ahí Python lee directo del venv.
-YTMUSICAPI_LOCALES = collect_data_files("ytmusicapi", includes=["locales/**"])
-
 a = Analysis(
     ["run.py"],
     pathex=[],
     binaries=[],
-    datas=[("static", "static")] + YTMUSICAPI_LOCALES,
+    datas=[("static", "static")],
     hiddenimports=HIDDEN_IMPORTS + CICADA_SUBMODULES,
     hookspath=[],
     hooksconfig={},
