@@ -12,6 +12,40 @@ router = APIRouter()
 
 GITHUB_REPO = "JJaroll/Cicada"
 
+# Cicada.exe corre con console=False (--windowed, sin ventana propia):
+# los diálogos nativos de Windows (FolderBrowserDialog/OpenFileDialog) se
+# lanzan desde un PowerShell hijo que arranca en segundo plano, sin foco.
+# Windows bloquea por diseño que un proceso sin foco se lo robe a otro
+# (aquí, el navegador) — ni TopMost en el Form propio ni una llamada
+# simple a SetForegroundWindow alcanzan (ambos confirmados insuficientes
+# en una Windows real: el diálogo seguía sin aparecer, ni siquiera en la
+# barra de tareas). La técnica que sí funciona de forma confiable es
+# AttachThreadInput: se adjunta temporalmente el hilo de PowerShell al
+# hilo de la ventana que tiene el foco actual (el navegador), lo que hace
+# que Windows trate a ambos como el mismo "contexto de input" y permite
+# que BringWindowToTop/SetForegroundWindow sí funcionen — mismo patrón
+# que usan las herramientas de automatización de UI cuando
+# SetForegroundWindow solo no basta.
+_WIN32_FOCUS_HELPER = (
+    "Add-Type -Name Win32 -Namespace FocusHelper -MemberDefinition @'"
+    "\n[DllImport(\"user32.dll\")] public static extern IntPtr GetForegroundWindow();"
+    "\n[DllImport(\"user32.dll\")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);"
+    "\n[DllImport(\"kernel32.dll\")] public static extern uint GetCurrentThreadId();"
+    "\n[DllImport(\"user32.dll\")] public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);"
+    "\n[DllImport(\"user32.dll\")] public static extern bool BringWindowToTop(IntPtr hWnd);"
+    "\n[DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr hWnd);"
+    "\npublic static void ForceForeground(IntPtr hWnd) {"
+    "\n    IntPtr fg = GetForegroundWindow();"
+    "\n    uint fgThread = GetWindowThreadProcessId(fg, out uint _);"
+    "\n    uint curThread = GetCurrentThreadId();"
+    "\n    bool attached = fgThread != curThread && AttachThreadInput(curThread, fgThread, true);"
+    "\n    BringWindowToTop(hWnd);"
+    "\n    SetForegroundWindow(hWnd);"
+    "\n    if (attached) AttachThreadInput(curThread, fgThread, false);"
+    "\n}"
+    "\n'@\n"
+)
+
 
 def _parse_version(v: str):
     parts = re.findall(r'\d+', v or "")
@@ -28,24 +62,19 @@ def select_folder():
             path = result.stdout.strip()
             return {"path": path} if path else {"error": "Cancelado"}
         elif sys.platform == "win32":
-            # Cicada.exe corre con console=False (--windowed, sin ventana
-            # propia): PowerShell arranca como proceso de fondo, y Windows
-            # bloquea por diseño que un proceso que no tiene el foco se lo
-            # robe a otro (aquí, el navegador) — un simple TopMost en el
-            # Form propio NO alcanza, confirmado en una Windows real (el
-            # diálogo seguía sin aparecer ni en la barra de tareas). Hace
-            # falta invocar SetForegroundWindow vía P/Invoke sobre el
-            # handle real de la ventana ya creada para forzar el foco.
+            # Ver _WIN32_FOCUS_HELPER arriba: sin esto, el diálogo se abre
+            # detrás del navegador sin dar ningún indicio (confirmado en
+            # una Windows real, incluso con TopMost + SetForegroundWindow
+            # simple — ninguno de los dos alcanzó por separado).
             script = (
                 "Add-Type -AssemblyName System.windows.forms; "
-                "Add-Type -Name Win32 -Namespace SetFg -MemberDefinition "
-                "'[DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr hWnd);'; "
+                f"{_WIN32_FOCUS_HELPER} "
                 "$owner = New-Object System.Windows.Forms.Form; "
                 "$owner.TopMost = $true; $owner.StartPosition = 'Manual'; "
                 "$owner.Location = New-Object System.Drawing.Point(-2000, -2000); "
                 "$owner.Size = New-Object System.Drawing.Size(1, 1); "
                 "$owner.ShowInTaskbar = $false; $owner.Show(); "
-                "[SetFg.Win32]::SetForegroundWindow($owner.Handle) | Out-Null; "
+                "[FocusHelper.Win32]::ForceForeground($owner.Handle); "
                 "$owner.Activate(); "
                 "$f = New-Object System.Windows.Forms.FolderBrowserDialog; "
                 "if ($f.ShowDialog($owner) -eq 'OK') { Write-Output $f.SelectedPath }; "
@@ -108,20 +137,16 @@ end tell'''
                 filter_str = f"$f.Filter = 'Archivos compatibles ({';'.join(exts)})|{';'.join(exts)}|Todos los archivos (*.*)|*.*';"
             multi_cmd = "$f.Multiselect = $true;" if multiple else ""
             out_cmd = "Write-Output ($f.FileNames -join '`n')" if multiple else "Write-Output $f.FileName"
-            # Mismo problema de foco que select_folder: Windows bloquea que
-            # un proceso sin foco (PowerShell arrancado en segundo plano)
-            # se lo robe a otro. TopMost solo no alcanza — hace falta
-            # SetForegroundWindow vía P/Invoke. Ver comentario en
-            # select_folder().
+            # Ver _WIN32_FOCUS_HELPER arriba: mismo problema de foco que
+            # select_folder(), mismo fix.
             owner_setup = (
-                "Add-Type -Name Win32 -Namespace SetFg -MemberDefinition "
-                "'[DllImport(\"user32.dll\")] public static extern bool SetForegroundWindow(IntPtr hWnd);'; "
+                f"{_WIN32_FOCUS_HELPER} "
                 "$owner = New-Object System.Windows.Forms.Form; "
                 "$owner.TopMost = $true; $owner.StartPosition = 'Manual'; "
                 "$owner.Location = New-Object System.Drawing.Point(-2000, -2000); "
                 "$owner.Size = New-Object System.Drawing.Size(1, 1); "
                 "$owner.ShowInTaskbar = $false; $owner.Show(); "
-                "[SetFg.Win32]::SetForegroundWindow($owner.Handle) | Out-Null; "
+                "[FocusHelper.Win32]::ForceForeground($owner.Handle); "
                 "$owner.Activate();"
             )
             script = f"Add-Type -AssemblyName System.windows.forms; {owner_setup} $f = New-Object System.Windows.Forms.OpenFileDialog; {filter_str} {multi_cmd} if ($f.ShowDialog($owner) -eq 'OK') {{ {out_cmd} }}; $owner.Close()"
